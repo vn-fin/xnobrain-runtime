@@ -1742,7 +1742,12 @@ class ExtensionOperationWorker:
                     code = "extension_operation_failed"
                 if self.service.store.cancelled(operation):
                     status = "CANCELLED"
-                elif code in {"plugin_scan_incomplete", "plugin_unsafe", "plugin_manifest_invalid"}:
+                elif code in {
+                    "plugin_scan_incomplete",
+                    "plugin_unsafe",
+                    "plugin_manifest_invalid",
+                    "plugin_kind_unsupported",
+                }:
                     status = "BLOCKED"
                 else:
                     status = "FAILED"

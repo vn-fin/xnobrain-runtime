@@ -145,6 +145,29 @@ turn. Updates revoke approval and leave the new artifact disabled. Required
 XNOBrain plugins are protected and trusted only when their bytes match the
 packaged reference, never merely because their name matches.
 
+### Native plugin kinds and error codes
+
+Native `kind: standalone` plugins are the only kind this API installs. Their
+tools, hooks, commands and skills use the reviewed scan, approval and enable
+lifecycle above. Portable and Claude-format packages continue through their own
+format checks.
+
+The manifest loader also recognizes `backend`, `exclusive`, `model-provider` and `platform`, but
+these are not installable through this API. They require code and wiring that
+ships with the Runtime image:
+
+- `platform`: gateway messaging adapter; requires packaged channel support.
+- `model-provider`: model provider; requires managed provider support.
+- `backend`: pluggable backend for a core tool; requires packaged engine support.
+- `exclusive`: single-provider category such as memory; requires packaged engine
+  support.
+
+An install or scan operation that encounters one reports the stable
+`plugin_kind_unsupported` code, a fixed explanation, and ends `BLOCKED`. A
+manifest the pinned loader cannot parse, or an unrecognized kind, remains
+`plugin_manifest_invalid`. These checks classify manifests; they do not sandbox
+plugin Python, so the scanner remains a review aid.
+
 Shell hooks are created inert. Approval and enable are separate actions. The
 engine's valid shell events and maximum timeout (300 seconds) are authoritative.
 Lists expose a command label/digest, not full shell commands. Native consent

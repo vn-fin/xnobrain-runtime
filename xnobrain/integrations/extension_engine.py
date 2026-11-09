@@ -386,6 +386,14 @@ def _check_portable_package(path: Path, findings: list[dict[str, Any]]) -> bool:
     return complete
 
 
+_UNSUPPORTED_NATIVE_KINDS = {
+    "backend": "Backend plugins require packaged engine support",
+    "exclusive": "Exclusive plugins require packaged engine support",
+    "model-provider": "Model provider plugins require managed provider support",
+    "platform": "Platform plugins require packaged channel support",
+}
+
+
 def _check_native_package(path: Path) -> bool:
     """Validate a Hermes Python plugin; return whether coverage is complete."""
     complete = True
@@ -403,8 +411,19 @@ def _check_native_package(path: Path) -> bool:
         from hermes_cli.plugins import PluginManager
 
         parsed = PluginManager()._parse_manifest(path / "plugin.yaml", path, "user", "")
-        if parsed is None or parsed.kind != "standalone":
-            fail("Plugin manifest is unsupported or invalid", "plugin_manifest_invalid")
+        if parsed is None:
+            fail("Plugin manifest is invalid", "plugin_manifest_invalid")
+        kind = getattr(parsed, "kind", None)
+        if kind == "standalone":
+            pass
+        elif isinstance(kind, str) and kind in _UNSUPPORTED_NATIVE_KINDS:
+            fail(
+                f"Plugin kind '{kind}' cannot be installed here; "
+                f"{_UNSUPPORTED_NATIVE_KINDS[kind]}. Only standalone plugins are supported",
+                "plugin_kind_unsupported",
+            )
+        else:
+            fail("Plugin manifest is invalid", "plugin_manifest_invalid")
         if (
             manifest.get("dependencies")
             or manifest.get("requires_packages")
@@ -730,6 +749,10 @@ def _run_git(
 # output printed by plugin code the worker imported) stays a generic 503.
 _CHILD_ERRORS = {
     "plugin_manifest_invalid": ("Plugin manifest is invalid", 409),
+    "plugin_kind_unsupported": (
+        "This plugin kind is unsupported; only standalone plugins can be installed",
+        409,
+    ),
     "invalid_path": ("Unsafe extension storage", 409),
 }
 
