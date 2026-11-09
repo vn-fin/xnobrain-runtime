@@ -35,6 +35,7 @@ import os
 import re
 import secrets
 import time
+from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -92,6 +93,9 @@ DM_POLICIES = ("disabled", "allowlist", "pairing")
 PAIRING_MAX_ATTEMPTS = 5
 PAIRING_LOCKOUT_SECONDS = 15 * 60
 MAX_PENDING_APPROVALS = 500
+# Bounded, ordered dedupe for real provider update/message IDs. Polling and
+# webhook delivery share this set.
+MAX_SEEN_MESSAGE_IDS = 4096
 
 
 def _safe_path_component(identifier: str) -> str:
@@ -625,6 +629,9 @@ class _ChatHistorySync:
             "text": message.get("text", ""),
             "timestamp": message.get("timestamp", time.time()),
             "type": message.get("type", "text"),
+            # This is untrusted external chat content. Consumers must keep it
+            # out of instruction/system-prompt positions.
+            "trust": message.get("trust", "untrusted_external"),
         }
         self._buffer[group_id].append(entry)
         if len(self._buffer[group_id]) > 500:
@@ -805,6 +812,7 @@ class ZaloAdapter(BasePlatformAdapter):
         self._pending_approvals: Dict[str, dict] = {}  # user_id -> captcha info
         self._captcha_passed: set = set()  # user_ids that solved the captcha
         self._pairing_blocks: Dict[str, float] = {}  # user_id -> blocked-until
+        self._seen_message_ids: "OrderedDict[str, None]" = OrderedDict()
 
         # Moderation & group management instances. _GroupManager resolves
         # self._client lazily (client is only created in connect()).
@@ -844,6 +852,25 @@ class ZaloAdapter(BasePlatformAdapter):
         while len(self._pending_approvals) > MAX_PENDING_APPROVALS:
             oldest = next(iter(self._pending_approvals))
             self._pending_approvals.pop(oldest, None)
+
+    def _is_duplicate_message(self, chat_id: str, message_id: str) -> bool:
+        """Return True for a repeated real provider ID; never use timestamps.
+
+        Both long-polling and webhook delivery call ``_handle_incoming`` with
+        the provider's message (or update) ID, so they share this bounded set.
+        A missing ID is not deduped and the message is preserved.
+        """
+        identifier = str(message_id or "").strip()
+        if not identifier:
+            return False
+        key = f"{chat_id}:{identifier}"
+        if key in self._seen_message_ids:
+            self._seen_message_ids.move_to_end(key)
+            return True
+        self._seen_message_ids[key] = None
+        while len(self._seen_message_ids) > MAX_SEEN_MESSAGE_IDS:
+            self._seen_message_ids.popitem(last=False)
+        return False
 
     @property
     def name(self) -> str:
@@ -941,7 +968,6 @@ class ZaloAdapter(BasePlatformAdapter):
 
     async def _poll_loop(self) -> None:
         """Continuously poll for updates."""
-        last_update_id = 0
         consecutive_errors = 0
 
         while self.is_connected:
@@ -961,15 +987,12 @@ class ZaloAdapter(BasePlatformAdapter):
                     if not message:
                         continue
 
-                    await self._handle_incoming(event_name, message)
-
-                    # Track the last update ID to avoid duplicates
-                    mid = message.get("message_id", "") or update.get("message_id", "")
-                    if mid:
-                        try:
-                            last_update_id = int(mid, 16)  # hex string
-                        except (ValueError, TypeError):
-                            pass
+                    update_id = (
+                        update.get("update_id")
+                        or update.get("message_id")
+                        or update.get("result", {}).get("update_id")
+                    )
+                    await self._handle_incoming(event_name, message, update_id=update_id)
 
             except asyncio.CancelledError:
                 raise
@@ -1015,7 +1038,14 @@ class ZaloAdapter(BasePlatformAdapter):
                     event_name = result.get("event_name", "")
                     message = result.get("message", {})
                     if message:
-                        await self._handle_incoming(event_name, message)
+                        update_id = (
+                            result.get("update_id")
+                            or body.get("update_id")
+                            or result.get("message_id")
+                        )
+                        await self._handle_incoming(
+                            event_name, message, update_id=update_id
+                        )
                 return web.json_response({"ok": True})
             except Exception as e:
                 logger.warning("Zalo: webhook handler error: %s", e)
@@ -1040,7 +1070,9 @@ class ZaloAdapter(BasePlatformAdapter):
 
     # ── Incoming message handling ─────────────────────────────────────────
 
-    async def _handle_incoming(self, event_name: str, message: dict) -> None:
+    async def _handle_incoming(
+        self, event_name: str, message: dict, update_id: Optional[str] = None
+    ) -> None:
         """Process an incoming message from Zalo."""
         from_info = message.get("from", {})
         chat_info = message.get("chat", {})
@@ -1050,9 +1082,21 @@ class ZaloAdapter(BasePlatformAdapter):
         chat_id = str(chat_info.get("id", user_id))
         chat_type = chat_info.get("chat_type", "PRIVATE")
         raw_text = (message.get("text") or message.get("caption") or "").strip()
+        message_id = str(message.get("message_id") or update_id or "").strip()
+
+        # Polling and webhook delivery can both observe the same provider
+        # update. Dedupe on the real provider ID before any side effect.
+        if self._is_duplicate_message(chat_id, message_id):
+            logger.debug("Zalo: duplicate update ignored for chat %s", chat_id)
+            return
 
         # ── Group member joined event → welcome message ────────────────
         if "join" in event_name.lower() or "member_joined" in event_name.lower():
+            if not self._is_user_authorized(user_id):
+                logger.debug(
+                    "Zalo: ignoring join welcome for unauthorized user %s", user_id
+                )
+                return
             settings = self._group_settings.get(chat_id)
             if settings.get("welcome", False):
                 welcome_text = settings.get("welcome_text", "") or (
@@ -1092,7 +1136,16 @@ class ZaloAdapter(BasePlatformAdapter):
                 logger.debug("Zalo: group %s muted, ignoring message", chat_id)
                 return
 
-            # 2. Slash commands work regardless of silent mode (admin ops)
+            # 2. Authorization before any history/name-trigger side effect.
+            #    With no adapter allowlist this defers to Hermes core, but it
+            #    still rejects a configured allowlist mismatch here.
+            if not self._group_member_allowed(user_id):
+                logger.debug("Zalo: ignoring group message from unauthorized user %s", user_id)
+                return
+
+            # 3. Slash commands work regardless of silent mode (admin ops).
+            #    The slash handler performs its own authorization and live
+            #    owner/admin lookup before any privileged action.
             slash = parse_slash_command(text)
             if slash:
                 await self._handle_slash_command(
@@ -1100,46 +1153,52 @@ class ZaloAdapter(BasePlatformAdapter):
                 )
                 return
 
-            # 3. Anti-spam check (BEFORE dispatch)
+            # 4. Anti-spam check (BEFORE dispatch)
             spam = self._anti_spam.check(chat_id, user_id, text)
             if spam["spam"]:
                 logger.debug("Zalo: spam blocked for %s in group %s", user_id, chat_id)
                 return
 
-            # 4. Name triggers — auto-reply when configured name is mentioned
-            triggers = settings.get("name_triggers", [])
-            for t in triggers:
-                tname = str(t.get("name", "")).lower()
-                if tname and tname in text.lower():
-                    await self._send_text(chat_id, str(t.get("reply", "")))
-                    return
+            # 5. Side-effect paths require explicit adapter authorization.
+            #    Deferring group delivery to Hermes core is not enough here:
+            #    name triggers and history never reach Hermes authorization.
+            explicitly_authorized = self._is_user_authorized(user_id)
+            if explicitly_authorized:
+                triggers = settings.get("name_triggers", [])
+                for t in triggers:
+                    tname = str(t.get("name", "")).lower()
+                    if tname and tname in text.lower():
+                        await self._send_text(chat_id, str(t.get("reply", "")))
+                        return
 
-            # 5. Follow/tracking — save to chat history when enabled
-            if settings.get("follow", False):
+            # 6. Follow/tracking — untrusted external chat history, kept apart
+            #    from agent instructions.
+            if explicitly_authorized and settings.get("follow", False):
                 self._history_sync.save_message(chat_id, {
-                    "message_id": str(message.get("message_id", "")),
+                    "message_id": message_id,
                     "from_id": user_id,
                     "from_name": user_name,
                     "text": text,
                     "timestamp": time.time(),
                     "type": "text",
+                    "trust": "untrusted_external",
                 })
 
-            # 6. Check if bot is mentioned: @mention or reply to bot
+            # 7. Check if bot is mentioned: @mention or reply to bot
             mentioned = False
 
-            # 6a. Check @mention (account_name OR display_name)
+            # 7a. Check @mention (account_name OR display_name)
             if (self._bot_name and self._bot_name in text) or \
                (self._bot_display_name and self._bot_display_name in text):
                 mentioned = True
 
-            # 6b. Check reply
+            # 7b. Check reply
             if message.get("reply_to"):
                 reply_to = message["reply_to"]
                 if isinstance(reply_to, dict) and reply_to.get("from", {}).get("id") == self._bot_id:
                     mentioned = True
 
-            # 6c. Silent mode: only reply when mentioned
+            # 7c. Silent mode: only reply when mentioned
             #     (default behavior = silent ON; silent OFF still requires mention
             #      to avoid burning tokens on every group message)
             if not mentioned:
@@ -1152,13 +1211,8 @@ class ZaloAdapter(BasePlatformAdapter):
             if self._bot_display_name:
                 text = text.replace(f"@{self._bot_display_name}", "").replace(f"{self._bot_display_name}", "").strip()
 
-            # Auth check for group (check the user who sent it). dm_policy is a
-            # direct-message policy, so it must not gate group traffic.
-            if not self._group_member_allowed(user_id):
-                logger.debug("Zalo: ignoring group message from unauthorized user %s", user_id)
-                return
-
-            # Dispatch group message
+            # Dispatch group message. dm_policy is a direct-message policy, so
+            # it must not gate group traffic.
             await self._dispatch_message(
                 text=text,
                 chat_id=chat_id,
@@ -1167,6 +1221,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 message_type=message_type,
                 media_url=media_url,
                 chat_type="group",
+                message_id=message_id,
             )
             return
 
@@ -1261,6 +1316,7 @@ class ZaloAdapter(BasePlatformAdapter):
             message_type=message_type,
             media_url=media_url,
             chat_type=chat_type,
+            message_id=message_id,
         )
 
     async def _is_live_group_admin(self, chat_id: str, user_id: str) -> bool:
@@ -1565,6 +1621,7 @@ class ZaloAdapter(BasePlatformAdapter):
         message_type: MessageType = MessageType.TEXT,
         media_url: str = None,
         chat_type: str = "dm",
+        message_id: str = "",
     ) -> None:
         """Build a MessageEvent and hand it to the base class handler."""
         if not self._message_handler:
@@ -1582,7 +1639,7 @@ class ZaloAdapter(BasePlatformAdapter):
             text=text,
             message_type=message_type,
             source=source,
-            message_id=str(int(time.time() * 1000)),
+            message_id=str(message_id or ""),
             timestamp=datetime.now(),
         )
 

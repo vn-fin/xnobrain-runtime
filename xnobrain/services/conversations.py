@@ -15,6 +15,7 @@ from ..models.conversations import ConversationOwnershipContext
 from ..repositories import StoreError
 from ..repositories.conversation_creation import ConversationCreationRepository
 from .base import ServiceError, iso
+from .conversation_authority import HostAuthority
 from .conversation_creation import create_bound, signed_creation
 from .conversation_reasoning import ConversationReasoningServiceMixin, store
 
@@ -141,6 +142,18 @@ class ConversationsServiceMixin(ConversationReasoningServiceMixin):
             )
         return self._public_context(stored)
 
+    def _host_context(
+        self,
+        agent_id: str,
+        conversation_id: str,
+        authority: HostAuthority,
+    ) -> dict[str, Any]:
+        """Load the binding for a host-owned channel conversation, never backfill it."""
+        from .conversation_authority import require_host_binding
+
+        stored = require_host_binding(self.repository, agent_id, conversation_id, authority)
+        return self._public_context(stored)
+
     @staticmethod
     def _public_context(context: Mapping[str, Any]) -> dict[str, Any]:
         return {
@@ -156,18 +169,26 @@ class ConversationsServiceMixin(ConversationReasoningServiceMixin):
         conversation_id: str,
         context: Mapping[str, Any],
         trusted_context: Any = None,
+        host_authority: HostAuthority | None = None,
     ) -> dict[str, Any]:
         profile = self._conversation_profile(agent_id)
+        actor = str(getattr(trusted_context, "subject", "") or "")
+        tenant = str(getattr(trusted_context, "tenant_id", "") or "")
+        if not actor and host_authority is not None:
+            actor = host_authority.subject
+            tenant = host_authority.tenant_id
         record = {
             **dict(context),
             "conversation_id": conversation_id,
             "agent_id": agent_id,
-            "actor_user_id": str(getattr(trusted_context, "subject", "") or "") or None,
-            "actor_tenant_id": str(getattr(trusted_context, "tenant_id", "") or ""),
+            "actor_user_id": actor or None,
+            "actor_tenant_id": tenant,
             "executor_workspace_id": None,
             "created_at": iso(),
             "legacy_backfill": False,
         }
+        if host_authority is not None:
+            record["channel_platform"] = host_authority.platform
         return self._public_context(self.repository.create_conversation_context(profile, record))
 
     def authorize_conversation(self, agent_id, conversation_id, trusted_context, *, active=False):
@@ -219,6 +240,8 @@ class ConversationsServiceMixin(ConversationReasoningServiceMixin):
         agent_id: str,
         body: Mapping[str, Any],
         trusted_context: Any = None,
+        *,
+        host_authority: HostAuthority | None = None,
     ) -> dict[str, Any]:
         context = self._normalize_context(body, trusted_context)
         if context["state"] != "active":
@@ -227,6 +250,12 @@ class ConversationsServiceMixin(ConversationReasoningServiceMixin):
             )
         bound_id = signed_creation(body, trusted_context)
         if bound_id:
+            if host_authority is not None:
+                raise ServiceError(
+                    "host authority cannot bind a signed conversation",
+                    status=403,
+                    code="conversation_context_conflict",
+                )
             return create_bound(self, agent_id, bound_id, body, context, trusted_context)
         conversation_id = f"{time.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
         bound = self._bind_conversation_context(
@@ -234,6 +263,7 @@ class ConversationsServiceMixin(ConversationReasoningServiceMixin):
             conversation_id,
             context,
             trusted_context,
+            host_authority,
         )
         try:
             payload = self.agents.create_conversation(
@@ -534,6 +564,7 @@ class ConversationsServiceMixin(ConversationReasoningServiceMixin):
         custom_page_schedule: str | None = None,
         ui_assistance: dict | None = None,
         mcp_grant: str = "",
+        host_authority: HostAuthority | None = None,
     ) -> dict[str, Any]:
         if trusted_context is not None and getattr(trusted_context, "subject", ""):
             from .conversation_authority import require_binding
@@ -543,6 +574,8 @@ class ConversationsServiceMixin(ConversationReasoningServiceMixin):
                     self.repository, agent_id, conversation_id, trusted_context, active=True
                 )
             )
+        elif host_authority is not None:
+            context = self._host_context(agent_id, conversation_id, host_authority)
         else:
             context = self._stored_context(agent_id, conversation_id)
         return await self.conversation_runs.start_run(
@@ -551,6 +584,7 @@ class ConversationsServiceMixin(ConversationReasoningServiceMixin):
             body,
             ownership_context=context,
             trusted_context=trusted_context,
+            host_authority=host_authority,
             custom_page_datasets=custom_page_datasets,
             custom_page_revision=custom_page_revision,
             custom_page_action=custom_page_action,

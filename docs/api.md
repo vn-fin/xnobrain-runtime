@@ -761,23 +761,36 @@ profile and `default` are never listed.
 
 `POST /xnobrain/api/runtime/v1/internal/channels/turn` runs one
 already-authorized gateway message as a normal conversation turn in the main
-Runtime, so it uses the same managed MCP catalog, connect tool, policies, and
-run records as web chat. It requires the same
+Runtime, so it uses the same run service, admission path, managed MCP catalog,
+connect tool, policies, and run records as web chat. The gateway response is
+still text-only: it returns the final reply and usage, not per-tool events,
+attachments, or streamed UI metadata. It requires the same
 `X-XNOBrain-Internal-Token: RUNTIME_INTERNAL_SERVICE_TOKEN` as private message
 ingestion and is gated by `FT_ENABLE_AGENT_CHANNELS`.
 
 The body is
 `{platform: "zalo"|"zalo_bot", agent_id, thread_id, thread_type: "dm"|"group", sender_id, sender_name, text, message_id, ts}`.
 `zalo` thread and sender IDs are numeric (`^[0-9]{1,32}$`); `zalo_bot` IDs use
-`^[A-Za-z0-9_-]{1,64}$`. The endpoint validates that the agent profile exists
-and refuses with `403 channel_dm_policy_unsafe` unless the profile's
+`^[A-Za-z0-9_-]{1,64}$`. The endpoint validates that the agent profile exists,
+that the selected platform is enabled (`403 channel_disabled`), that a matching
+persisted owner binding exists (`403 channel_owner_unavailable`), and refuses
+with `403 channel_dm_policy_unsafe` unless the profile's
 `platforms.<platform>.extra.dm_policy` is `allowlist` or `pairing` and
 `ZALO_ALLOW_ALL_USERS`/`ZALO_BOT_ALLOW_ALL_USERS` (and `allow_all`) are not
-enabled.
+enabled. A request body can never supply or override the owner.
 
 Each `(platform, agent_id, thread_id)` maps to one personal conversation,
 persisted atomically in `<profile>/zalo/threads.json` (mode `0600`) and reused
-across messages. `message_id` becomes the run idempotency key
+across messages. The conversation and every run are attributed to the persisted
+owner binding through an explicit host-owned `HostAuthority`; the turn does not
+synthesize a signed `TrustedRequestContext`, and the persisted local binding is
+not a Control-signed principal. `HostAuthority` binds the exact owner, agent,
+and channel platform. An existing thread mapping whose stored conversation
+lacks that binding is not backfilled: Runtime creates a fresh, properly bound
+conversation for the thread. Authenticated web history visibility is unchanged,
+and a matching owner sees the new channel conversation through the normal
+principal checks.
+`message_id` becomes the run idempotency key
 `<platform>:<message_id>`, so gateway retries return the existing run instead
 of starting a second turn. A different message while the thread's run is
 active returns `409 channel_turn_running`; a reused message ID with different
@@ -790,7 +803,10 @@ approver, so approval requests are denied with the normal Hermes blocked-tool
 result instead of waiting for the 300-second approval timeout. Validation
 errors return `422`, a missing or wrong internal token returns `401`, and a
 failed or cancelled run returns `502 channel_turn_failed` without the upstream
-error text. Text only; media is not forwarded.
+error text. A missing safe per-run owner grant returns
+`503 channel_mcp_grant_unavailable` before the run starts. Text only; media is
+not forwarded, and per-tool events, attachments, and streamed UI metadata are
+not part of the gateway contract.
 
 #### Owner binding and channel MCP grants
 
@@ -798,8 +814,9 @@ Enabling or patching `zalo` or `zalo_bot` through a Control-proxied request that
 carries a verified principal writes `<profile>/.xnobrain/channels/owner.json`
 (mode `0600`, atomic, never through a symlink) with only
 `{user_id, tenant_id, organization_id, agent_id, bound_at}`. Owner fields in a
-request body are never read. Logout and disabling the channel remove the file.
-A verified principal that conflicts with the durable
+request body are never read. The file is shared by both channels and is removed
+only when neither `zalo` nor `zalo_bot` remains enabled. A verified principal
+that conflicts with the durable
 `.community-profile-owner.json` marker, or with an existing binding for another
 user, is refused (`403 permission_denied` or `403 channel_owner_mismatch`).
 
@@ -809,18 +826,41 @@ from Control's internal
 `Authorization: Bearer RUNTIME_INTERNAL_SERVICE_TOKEN` and
 `X-XNOBrain-Workspace-ID: RUNTIME_WORKSPACE_ID`, with body
 `{agent_id, platform}`. The returned `user_id` and `tenant_id` must equal the
-binding. The grant is held in memory only and refreshed about two minutes before
-`expires_at`; it is passed to the run as a host-owned value that never enters
-the run record, persisted channel state, traces, or logs. A missing binding,
-Control failure, identity mismatch, or expired grant runs the turn without MCP
-tools, and the reply is unaffected. No grant is written to disk.
+binding. The in-memory cache is keyed by profile, agent, and platform, so a
+`zalo` grant can never be reused for `zalo_bot` even when the owner is the same.
+The grant is refreshed about two minutes before `expires_at`; an expired entry
+is discarded. It is passed to the run as a host-owned value that never enters
+the run record, persisted channel state, traces, or logs. The binding itself is
+required before any turn starts. Channel turns also require a fresh owner-bound
+per-run grant: a Control failure, identity mismatch, expired grant, or missing
+grant refuses the turn before it starts with
+`503 channel_mcp_grant_unavailable` rather than inheriting a profile-scoped
+bearer from an older web/user turn. For accepted turns, the managed MCP
+session carries the run's grant through the current async run context and
+applies it only to that server request; another concurrent identity cannot
+inherit it. A run bound with no grant deliberately sends no bearer and does not
+fall back to the profile cache. No grant is written to disk.
+
+The gateway launcher
+(`RUNTIME_GATEWAY_CHANNEL_DELEGATION`) never falls back to the native gateway
+agent after it has sent a turn request. If Runtime returns an error, times out,
+or returns an invalid envelope, the gateway sends one sanitized retry message
+and leaves the same provider `message_id` to replay the accepted run. A missing
+provider message ID on a delegated platform also returns the sanitized failure,
+because a retry could not replay one stable turn. Native execution is preserved
+only when delegation is disabled, the platform is not selected, or no request
+could be constructed for a non-identity reason (for example, a missing internal
+token).
 
 The bundled gateway forwards these turns only when
 `RUNTIME_GATEWAY_CHANNEL_DELEGATION` is enabled (default off). It posts to
-`RUNTIME_INTERNAL_URL` with the workspace internal token and falls back to the
-native gateway agent on any HTTP, timeout, disabled-endpoint, or unexpected
-shape error. Fallback logging names only the error class and never the message
-text or token.
+`RUNTIME_INTERNAL_URL` with the workspace internal token. It falls back to the
+native gateway agent only when no request was sent (delegation disabled,
+platform not selected, or missing internal token). A missing provider message
+ID on a delegated platform returns the sanitized failure instead of native
+execution. After a request is sent, any HTTP, timeout, or unexpected-shape
+failure returns one sanitized retry message and never starts a second turn.
+Failure logging names only the error class and never the message text or token.
 
 ## Personal Agent Custom Page v1 (FT0015, in progress)
 

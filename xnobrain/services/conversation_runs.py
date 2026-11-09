@@ -36,6 +36,7 @@ from ..feature_flags import (
     enabled as feature_enabled,
 )
 from .base import ServiceError
+from .conversation_authority import HostAuthority
 from .conversation_failure import conversation_failure
 
 TERMINAL_STATUSES = frozenset({"completed", "failed", "timed_out", "cancelled"})
@@ -110,6 +111,7 @@ class ConversationRunService:
         custom_page_schedule: str | None = None,
         ui_assistance: dict | None = None,
         mcp_grant: str = "",
+        host_authority: HostAuthority | None = None,
     ) -> dict[str, Any]:
         runtime_updates = getattr(self, "runtime_updates", None)
         if runtime_updates is not None:
@@ -119,6 +121,7 @@ class ConversationRunService:
         self.agents.get_conversation(agent_id, conversation_id)
         context = dict(ownership_context or {})
         signed = bool(getattr(trusted_context, "subject", ""))
+        host = None if signed else host_authority
 
         def require_current_binding():
             if signed:
@@ -131,6 +134,16 @@ class ConversationRunService:
                     trusted_context,
                     active=True,
                     expected=context,
+                )
+            elif host is not None:
+                from .conversation_authority import require_host_binding
+
+                require_host_binding(
+                    self.repository,
+                    agent_id,
+                    conversation_id,
+                    host,
+                    active=True,
                 )
 
         require_current_binding()
@@ -237,6 +250,15 @@ class ConversationRunService:
                 from .conversation_authority import principal_matches
 
                 if not principal_matches(existing, trusted_context):
+                    raise ServiceError(
+                        "Run identity is unavailable",
+                        status=403,
+                        code="conversation_owner_forbidden",
+                    )
+            elif host is not None:
+                from .conversation_authority import host_principal_matches
+
+                if not host_principal_matches(existing, host):
                     raise ServiceError(
                         "Run identity is unavailable",
                         status=403,
@@ -370,8 +392,12 @@ class ConversationRunService:
                 "custom_page_schedule": custom_page_schedule,
                 "ui_assistance": ui_assistance,
                 "id": run_id,
-                "actor_user_id": trusted_context.subject if signed else None,
-                "actor_tenant_id": trusted_context.tenant_id if signed else None,
+                "actor_user_id": (
+                    trusted_context.subject if signed else getattr(host, "subject", None)
+                ),
+                "actor_tenant_id": (
+                    trusted_context.tenant_id if signed else getattr(host, "tenant_id", None)
+                ),
                 "agent_id": str(agent_id),
                 "conversation_id": str(conversation_id),
                 "status": "queued",
@@ -418,6 +444,8 @@ class ConversationRunService:
                     "capabilities": list(capabilities),
                 },
             }
+            if host is not None:
+                record["channel_platform"] = host.platform
             payload = dict(body)
             payload["image_paths"] = image_paths
             payload.pop("_agent_maker_principal", None)

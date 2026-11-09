@@ -17,7 +17,7 @@ _PATH = "/xnobrain/api/control/internal/v1/workspace-mcp-grants"
 _REFRESH_MARGIN_SECONDS = 120.0
 _TIMEOUT_SECONDS = 10.0
 _LOCK = threading.RLock()
-_CACHE: dict[str, "_Grant"] = {}
+_CACHE: dict[tuple[str, str, str], "_Grant"] = {}
 
 
 @dataclass(frozen=True)
@@ -82,9 +82,14 @@ class WorkspaceMcpGrantClient:
         """Return a fresh, binding-matching grant or an empty string."""
         if not scope or not user_id:
             return ""
+        cache_key = (str(scope), str(agent_id), str(platform))
         current = time.time() if now is None else float(now)
         with _LOCK:
-            cached = _CACHE.get(scope)
+            cached = _CACHE.get(cache_key)
+        if cached is not None and cached.expires_at <= current:
+            with _LOCK:
+                _CACHE.pop(cache_key, None)
+            cached = None
         if (
             cached is not None
             and _matches(cached, user_id, tenant_id)
@@ -103,10 +108,10 @@ class WorkspaceMcpGrantClient:
             return ""
         if not _matches(fetched, user_id, tenant_id) or fetched.expires_at <= current:
             with _LOCK:
-                _CACHE.pop(scope, None)
+                _CACHE.pop(cache_key, None)
             return ""
         with _LOCK:
-            _CACHE[scope] = fetched
+            _CACHE[cache_key] = fetched
         return fetched.grant
 
     async def _fetch(self, agent_id: str, platform: str) -> _Grant | None:
@@ -114,6 +119,7 @@ class WorkspaceMcpGrantClient:
         workspace = os.getenv("RUNTIME_WORKSPACE_ID", "").strip()
         secret = os.getenv("RUNTIME_INTERNAL_SERVICE_TOKEN", "").strip()
         if not endpoint or not workspace or not secret:
+            _failure("not_configured")
             return None
         headers = {
             "Authorization": "Bearer " + secret,

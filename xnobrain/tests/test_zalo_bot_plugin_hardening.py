@@ -16,9 +16,7 @@ from pathlib import Path
 from unittest import mock
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_PLUGIN_DIR = (
-    _REPO_ROOT / "runtime" / "hermes-plugins" / "platforms" / "zalo_bot"
-)
+_PLUGIN_DIR = _REPO_ROOT / "runtime" / "hermes-plugins" / "platforms" / "zalo_bot"
 _PACKAGE_NAME = "zalo_bot_plugin_hardening"
 _STUB_MODULES = (
     "gateway",
@@ -116,8 +114,7 @@ def _install_stubs():
     )
     hermes_constants = _make_module(
         "hermes_constants",
-        get_hermes_home=lambda: Path(tempfile.gettempdir())
-        / "zalo-bot-hardening-test-home",
+        get_hermes_home=lambda: Path(tempfile.gettempdir()) / "zalo-bot-hardening-test-home",
     )
     gateway.config = gateway_config
     gateway.platforms = gateway_platforms
@@ -226,9 +223,7 @@ class ZaloBotHardeningTests(unittest.IsolatedAsyncioTestCase):
         adapter._group_manager = manager
 
         slash = self.adapter_module.parse_slash_command("/kick @victim spam")
-        await adapter._handle_slash_command(
-            slash, "group1", "user1", "User", "text", None, "GROUP"
-        )
+        await adapter._handle_slash_command(slash, "group1", "user1", "User", "text", None, "GROUP")
 
         self.assertTrue(any("không có quyền" in text for _, text in sent))
         self.assertEqual(manager.kicked, [])
@@ -247,9 +242,7 @@ class ZaloBotHardeningTests(unittest.IsolatedAsyncioTestCase):
         adapter._group_manager = manager
 
         slash = self.adapter_module.parse_slash_command("/pin 123")
-        await adapter._handle_slash_command(
-            slash, "chat1", "user1", "User", "text", None, ""
-        )
+        await adapter._handle_slash_command(slash, "chat1", "user1", "User", "text", None, "")
 
         self.assertTrue(any("không có quyền" in text for _, text in sent))
         self.assertEqual(manager.pinned, [])
@@ -268,9 +261,7 @@ class ZaloBotHardeningTests(unittest.IsolatedAsyncioTestCase):
         adapter._group_manager = manager
 
         slash = self.adapter_module.parse_slash_command("/kick @victim spam")
-        await adapter._handle_slash_command(
-            slash, "group1", "user1", "User", "text", None, "GROUP"
-        )
+        await adapter._handle_slash_command(slash, "group1", "user1", "User", "text", None, "GROUP")
 
         self.assertEqual(manager.kicked, [("group1", "victim", "spam")])
 
@@ -279,9 +270,7 @@ class ZaloBotHardeningTests(unittest.IsolatedAsyncioTestCase):
     def test_unknown_dm_policy_fails_closed(self):
         for raw in ("open", "bogus", "OPEN"):
             with self.subTest(raw=raw):
-                adapter = self._adapter(
-                    bot_token="1:secret", dm_policy=raw, allow_all="true"
-                )
+                adapter = self._adapter(bot_token="1:secret", dm_policy=raw, allow_all="true")
                 self.assertEqual(adapter.dm_policy, "disabled")
                 self.assertEqual(adapter._dm_policy, "disabled")
                 self.assertFalse(adapter._passes_allowlist("user1"))
@@ -294,16 +283,12 @@ class ZaloBotHardeningTests(unittest.IsolatedAsyncioTestCase):
         adapter = self._adapter(bot_token="1:secret", dm_policy="allowlist")
         self.assertFalse(adapter._passes_allowlist("user1"))
 
-        allowed = self._adapter(
-            bot_token="1:secret", dm_policy="allowlist", allowed_users="user1"
-        )
+        allowed = self._adapter(bot_token="1:secret", dm_policy="allowlist", allowed_users="user1")
         self.assertTrue(allowed._passes_allowlist("user1"))
         self.assertFalse(allowed._passes_allowlist("user2"))
 
     async def test_correct_captcha_once_unlocks_next_message(self):
-        adapter = self._adapter(
-            bot_token="1:secret", dm_policy="pairing", allow_all="true"
-        )
+        adapter = self._adapter(bot_token="1:secret", dm_policy="pairing", allow_all="true")
         self._install_sender(adapter)
         dispatched = []
 
@@ -325,9 +310,7 @@ class ZaloBotHardeningTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(dispatched[0].text, "hello")
 
     async def test_wrong_captcha_never_leaks_code_and_locks_after_max(self):
-        adapter = self._adapter(
-            bot_token="1:secret", dm_policy="pairing", allow_all="true"
-        )
+        adapter = self._adapter(bot_token="1:secret", dm_policy="pairing", allow_all="true")
         sent = self._install_sender(adapter)
 
         await adapter._handle_incoming("", self._dm_message())
@@ -337,15 +320,11 @@ class ZaloBotHardeningTests(unittest.IsolatedAsyncioTestCase):
 
         for attempt in range(1, self.adapter_module.PAIRING_MAX_ATTEMPTS + 1):
             sent.clear()
-            await adapter._handle_incoming(
-                "", self._dm_message(text=f"wrong-{attempt}")
-            )
+            await adapter._handle_incoming("", self._dm_message(text=f"wrong-{attempt}"))
             self.assertTrue(sent)
             self.assertNotIn(code, sent[-1][1])
             if attempt < self.adapter_module.PAIRING_MAX_ATTEMPTS:
-                self.assertEqual(
-                    adapter._pending_approvals["user1"]["attempts"], attempt
-                )
+                self.assertEqual(adapter._pending_approvals["user1"]["attempts"], attempt)
 
         self.assertNotIn("user1", adapter._pending_approvals)
         self.assertGreater(adapter._pairing_blocks["user1"], 0)
@@ -359,13 +338,83 @@ class ZaloBotHardeningTests(unittest.IsolatedAsyncioTestCase):
         adapter = self._adapter(bot_token="1:secret", dm_policy="pairing")
         limit = self.adapter_module.MAX_PENDING_APPROVALS
         for index in range(limit + 10):
-            adapter._add_pending_approval(
-                f"user{index}", f"chat{index}", "User", "123456"
-            )
+            adapter._add_pending_approval(f"user{index}", f"chat{index}", "User", "123456")
 
         self.assertEqual(len(adapter._pending_approvals), limit)
         self.assertNotIn("user0", adapter._pending_approvals)
         self.assertIn(f"user{limit + 9}", adapter._pending_approvals)
+
+    # ── M2/M3: group side effects and provider-ID dedupe ──────────────
+
+    async def test_join_welcome_requires_explicit_group_authorization(self):
+        adapter = self._adapter(bot_token="1:secret", dm_policy="pairing")
+        sent = self._install_sender(adapter)
+        adapter._group_settings.set("group-join-1", "welcome", True)
+
+        await adapter._handle_incoming(
+            "message.member_joined",
+            {
+                "from": {"id": "user1", "display_name": "User"},
+                "chat": {"id": "group-join-1", "chat_type": "GROUP"},
+                "message_id": "join-1",
+            },
+        )
+        self.assertEqual(sent, [])
+
+        allowed = self._adapter(bot_token="1:secret", allow_all="true")
+        allowed_sent = self._install_sender(allowed)
+        allowed._group_settings.set("group-join-2", "welcome", True)
+        await allowed._handle_incoming(
+            "message.member_joined",
+            {
+                "from": {"id": "user2", "display_name": "User"},
+                "chat": {"id": "group-join-2", "chat_type": "GROUP"},
+                "message_id": "join-2",
+            },
+        )
+        self.assertTrue(allowed_sent)
+
+    async def test_duplicate_provider_message_id_is_delivered_once(self):
+        adapter = self._adapter(
+            bot_token="1:secret",
+            dm_policy="allowlist",
+            allowed_users="user1",
+        )
+        dispatched = []
+
+        async def handler(event):
+            dispatched.append(event)
+
+        adapter._message_handler = handler
+
+        message = self._dm_message(user_id="user1", chat_id="chat-dedupe", text="hello")
+        message["message_id"] = "provider-message-1"
+
+        await adapter._handle_incoming("", message)
+        await adapter._handle_incoming("", message, update_id="update-1")
+
+        self.assertEqual(len(dispatched), 1)
+        self.assertEqual(dispatched[0].message_id, "provider-message-1")
+
+    async def test_missing_provider_id_preserves_messages_without_dedupe(self):
+        adapter = self._adapter(
+            bot_token="1:secret",
+            dm_policy="allowlist",
+            allowed_users="user1",
+        )
+        dispatched = []
+
+        async def handler(event):
+            dispatched.append(event)
+
+        adapter._message_handler = handler
+
+        message = self._dm_message(user_id="user1", chat_id="chat-no-id", text="hello")
+        await adapter._handle_incoming("", message)
+        await adapter._handle_incoming("", message)
+
+        self.assertEqual(len(dispatched), 2)
+        self.assertEqual(dispatched[0].message_id, "")
 
     # ── M1: config type coercion ──────────────────────────────────────
 
@@ -383,9 +432,7 @@ class ZaloBotHardeningTests(unittest.IsolatedAsyncioTestCase):
         truthy = self._adapter(bot_token="1:secret", allow_all="TRUE")
         self.assertTrue(truthy.allow_all)
 
-        single = self._adapter(
-            bot_token="1:secret", dm_policy="allowlist", allowed_users="abc"
-        )
+        single = self._adapter(bot_token="1:secret", dm_policy="allowlist", allowed_users="abc")
         self.assertEqual(single.allowed_users, {"abc"})
         self.assertFalse(single._passes_allowlist("a"))
 
@@ -420,8 +467,7 @@ class ZaloBotHardeningTests(unittest.IsolatedAsyncioTestCase):
 
             async def get_me(self):
                 raise RuntimeError(
-                    "HTTP Request: POST "
-                    f"https://bot-api.zaloplatforms.com/bot{token}/getMe failed"
+                    f"HTTP Request: POST https://bot-api.zaloplatforms.com/bot{token}/getMe failed"
                 )
 
             async def close(self):

@@ -76,6 +76,16 @@ class _FakeConversationRuns:
         return dict(self.records[run_id])
 
 
+class _GrantSource:
+    def __init__(self, token="channel-grant"):
+        self.token = token
+        self.calls = []
+
+    async def grant(self, scope, *, agent_id, platform, user_id, tenant_id, now=None):
+        self.calls.append((scope, agent_id, platform, user_id, tenant_id))
+        return self.token
+
+
 class _Platform:
     def __init__(self, repository, profile):
         self.repository = repository
@@ -102,13 +112,42 @@ class _Platform:
             raise ServiceError("agent profile not found", status=404, code="not_found")
         return self.profile
 
-    def create_conversation(self, agent_id, body, trusted_context=None):
+    def create_conversation(self, agent_id, body, trusted_context=None, *, host_authority=None):
         conversation_id = f"conv_{len(self.create_calls) + 1}"
         self.create_calls.append((agent_id, body, trusted_context))
         self.conversations.add(conversation_id)
+        if host_authority is not None:
+            self.repository.create_conversation_context(
+                self.profile,
+                {
+                    "schema_version": 1,
+                    "id": "personal",
+                    "owner_kind": "personal",
+                    "organization_id": None,
+                    "payer_kind": "personal",
+                    "sponsor_grant_id": None,
+                    "state": "active",
+                    "conversation_id": conversation_id,
+                    "agent_id": agent_id,
+                    "actor_user_id": host_authority.subject,
+                    "actor_tenant_id": host_authority.tenant_id,
+                    "executor_workspace_id": None,
+                    "created_at": "2026-01-01T00:00:00Z",
+                    "legacy_backfill": False,
+                    "channel_platform": host_authority.platform,
+                },
+            )
         return {"id": conversation_id, "title": body.get("title")}
 
-    async def start_conversation_run(self, agent_id, conversation_id, body):
+    async def start_conversation_run(
+        self,
+        agent_id,
+        conversation_id,
+        body,
+        *,
+        mcp_grant=None,
+        host_authority=None,
+    ):
         self.run_calls.append((agent_id, conversation_id, dict(body)))
         if self.start_error is not None:
             raise self.start_error
@@ -248,6 +287,18 @@ class ChannelTurnServiceTests(unittest.IsolatedAsyncioTestCase):
         self.repository = FileRepository(root / "data", self.profiles)
         self.platform = _Platform(self.repository, self.profile)
         self.service = ChannelsService(self.platform)
+        self.service.repository.write_owner(
+            self.profile,
+            {
+                "user_id": "user-1",
+                "tenant_id": "personal-user-1",
+                "organization_id": "",
+                "agent_id": "agent-1",
+                "bound_at": 1,
+            },
+        )
+        self.grants = _GrantSource()
+        self.service.mcp_grants = self.grants
 
     async def test_service_requires_the_internal_token(self):
         for token in (None, "", "wrong-token", TOKEN + "x"):
@@ -358,7 +409,7 @@ class ChannelTurnServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_channel_approval_requests_are_denied(self):
         platform_records = self.platform.conversation_runs.records
 
-        async def run_with_approval(agent_id, conversation_id, body):
+        async def run_with_approval(agent_id, conversation_id, body, **kwargs):
             self.platform.run_calls.append((agent_id, conversation_id, dict(body)))
             run_id = "run_" + uuid.uuid4().hex
             platform_records[run_id] = {
@@ -388,7 +439,7 @@ class ChannelTurnServiceTests(unittest.IsolatedAsyncioTestCase):
             "usage": {},
         }
 
-        async def run_with_approval(agent_id, conversation_id, body):
+        async def run_with_approval(agent_id, conversation_id, body, **kwargs):
             self.platform.run_calls.append((agent_id, conversation_id, dict(body)))
             self.platform.conversation_runs.records[record["id"]] = record
             self.platform.conversation_runs.events_by_run[record["id"]] = [

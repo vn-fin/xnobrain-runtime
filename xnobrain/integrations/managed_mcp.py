@@ -83,20 +83,82 @@ def control_proxy_httpx_client_factory(default_headers: dict[str, str], connect_
 
 
 class ControlGrantAuth(httpx.Auth):
-    """Attach the current profile grant to every Control proxy request."""
+    """Attach the exact run grant to every Control proxy request."""
 
-    def __init__(self, scope: str):
+    def __init__(self, scope: str, server_key: str = ""):
         self.scope = scope
+        self.server_key = server_key
 
     def auth_flow(self, request):
-        from .control_grants import get
+        from .control_grants import get_for_server
 
-        grant = get(self.scope)
+        grant = get_for_server(self.server_key, self.scope)
         if grant:
             request.headers["Authorization"] = f"Bearer {grant}"
         else:
             request.headers.pop("Authorization", None)
         yield request
+
+
+def _grant_bound_handler(handler, server_key: str):
+    """Carry the caller's run grant across Hermes' MCP-loop thread hop."""
+
+    def bound(*args, **kwargs):
+        from .control_grants import current_run_grant, server_call_scope
+
+        grant = current_run_grant()
+        # A tool handler outside a run must not inherit a profile grant.
+        with server_call_scope(server_key, "" if grant is None else grant):
+            return handler(*args, **kwargs)
+
+    return bound
+
+
+class _GrantScopedSession:
+    """Transfer the current run grant onto one server only for one request."""
+
+    _METHODS = frozenset(
+        {
+            "call_tool",
+            "list_tools",
+            "read_resource",
+            "list_resources",
+            "get_prompt",
+            "list_prompts",
+            "complete",
+        }
+    )
+
+    def __init__(self, session: Any, server_key: str):
+        self._session = session
+        self._server_key = server_key
+        self._lock = asyncio.Lock()
+
+    def __getattr__(self, name: str):
+        value = getattr(self._session, name)
+        if name not in self._METHODS or not callable(value):
+            return value
+
+        async def scoped(*args, **kwargs):
+            from .control_grants import (
+                clear_server_grant,
+                pending_server_grant,
+                set_server_grant,
+            )
+
+            async with self._lock:
+                grant = pending_server_grant(self._server_key)
+                if grant is not None:
+                    set_server_grant(self._server_key, grant)
+                try:
+                    return await value(*args, **kwargs)
+                finally:
+                    clear_server_grant(self._server_key)
+
+        return scoped
+
+    def __dir__(self):
+        return dir(self._session)
 
 
 def ensure_profile_generation(profile: Path) -> str:
@@ -319,7 +381,8 @@ class _PinnedHTTPSMCPServerTask:
         default_headers = dict(config.get("headers") or {})
         default_headers.setdefault("mcp-protocol-version", mcp_tool.LATEST_PROTOCOL_VERSION)
         connect_timeout = float(config.get("connect_timeout", mcp_tool._DEFAULT_CONNECT_TIMEOUT))
-        auth = ControlGrantAuth(self.profile_scope) if control_proxy else None
+        grant_key = f"{self.profile_scope}\0{self.name}"
+        auth = ControlGrantAuth(self.profile_scope, grant_key) if control_proxy else None
 
         sampling_kwargs = self._sampling.session_kwargs() if self._sampling else {}
         if self._elicitation:
@@ -354,7 +417,9 @@ class _PinnedHTTPSMCPServerTask:
                     self.initialize_result = await asyncio.wait_for(
                         session.initialize(), timeout=connect_timeout
                     )
-                    self.session = session
+                    self.session = (
+                        _GrantScopedSession(session, grant_key) if control_proxy else session
+                    )
                     self._mark_lifecycle_started()
                     await self._discover_tools()
                     self._ready.set()
@@ -411,6 +476,8 @@ class ManagedMCPServerTask(_PinnedHTTPSMCPServerTask, MCPServerTask):
                 continue
             schema = mcp_tool._convert_mcp_schema(self.name, tool)
             handler = mcp_tool._make_tool_handler(self.name, tool.name, self.tool_timeout)
+            if self._control_proxy:
+                handler = _grant_bound_handler(handler, f"{self.profile_scope}\0{self.name}")
             candidates.append((schema["name"], schema, handler))
 
         utility_factories = {
@@ -422,6 +489,8 @@ class ManagedMCPServerTask(_PinnedHTTPSMCPServerTask, MCPServerTask):
         for item in mcp_tool._select_utility_schemas(self.name, self, config):
             schema = item["schema"]
             handler = utility_factories[item["handler_key"]](self.name, self.tool_timeout)
+            if self._control_proxy:
+                handler = _grant_bound_handler(handler, f"{self.profile_scope}\0{self.name}")
             candidates.append((schema["name"], schema, handler))
 
         registered = []

@@ -93,13 +93,40 @@ class _Platform:
     def _snapshot_agent(self, agent_id, kind, target, content):
         return self.repository.snapshot(agent_id, kind, target, content)
 
-    def create_conversation(self, agent_id, body, trusted_context=None):
+    def create_conversation(self, agent_id, body, trusted_context=None, *, host_authority=None):
         conversation_id = "conv_" + uuid.uuid4().hex
         self.agents.conversations.add(conversation_id)
+        if host_authority is not None:
+            self.repository.create_conversation_context(
+                self.profile,
+                {
+                    "schema_version": 1,
+                    "id": "personal",
+                    "owner_kind": "personal",
+                    "organization_id": None,
+                    "payer_kind": "personal",
+                    "sponsor_grant_id": None,
+                    "state": "active",
+                    "conversation_id": conversation_id,
+                    "agent_id": agent_id,
+                    "actor_user_id": host_authority.subject,
+                    "actor_tenant_id": host_authority.tenant_id,
+                    "executor_workspace_id": None,
+                    "created_at": "2026-01-01T00:00:00Z",
+                    "legacy_backfill": False,
+                    "channel_platform": host_authority.platform,
+                },
+            )
         return {"id": conversation_id, "title": body.get("title")}
 
     async def start_conversation_run(
-        self, agent_id, conversation_id, body, *, mcp_grant=None
+        self,
+        agent_id,
+        conversation_id,
+        body,
+        *,
+        mcp_grant=None,
+        host_authority=None,
     ):
         self.run_calls.append(dict(body))
         self.mcp_grants.append(mcp_grant)
@@ -123,9 +150,7 @@ class _GrantSource:
         self.error = error
         self.calls: list[tuple] = []
 
-    async def grant(
-        self, scope, *, agent_id, platform, user_id, tenant_id, now=None
-    ):
+    async def grant(self, scope, *, agent_id, platform, user_id, tenant_id, now=None):
         self.calls.append((scope, agent_id, platform, user_id, tenant_id))
         if self.error is not None:
             raise self.error
@@ -226,6 +251,8 @@ class ChannelOwnerBindingTests(_ChannelCase):
         trusted = self._trusted()
         self.service.set_channel_enabled("agent-1", True, trusted=trusted)
         self.assertTrue(self.owner_path.exists())
+        self.service.set_zalo_bot_enabled("agent-1", False)
+        self.assertTrue(self.owner_path.exists())
         self.service.set_channel_enabled("agent-1", False)
         self.assertFalse(self.owner_path.exists())
 
@@ -237,6 +264,8 @@ class ChannelOwnerBindingTests(_ChannelCase):
         self.service.set_channel_enabled("agent-1", True, trusted=trusted)
         self.assertTrue(self.owner_path.exists())
         self.service.logout_channel("agent-1")
+        self.assertTrue(self.owner_path.exists())
+        self.service.set_channel_enabled("agent-1", False)
         self.assertFalse(self.owner_path.exists())
 
     def test_existing_binding_for_another_user_fails_closed(self):
@@ -263,9 +292,7 @@ class ChannelOwnerBindingTests(_ChannelCase):
 
     def test_profile_owner_marker_mismatch_fails_before_any_binding(self):
         self.profile.joinpath(".community-profile-owner.json").write_text(
-            json.dumps(
-                {"subject": "other", "tenant_id": "personal-other", "organization_id": ""}
-            ),
+            json.dumps({"subject": "other", "tenant_id": "personal-other", "organization_id": ""}),
             encoding="utf-8",
         )
         with self.assertRaises(ServiceError) as raised:
@@ -286,6 +313,29 @@ class ChannelOwnerBindingTests(_ChannelCase):
         )
         self.service.set_channel_enabled("agent-1", True, trusted=self._trusted())
         self.assertTrue(self.owner_path.is_file())
+
+    def test_owner_is_preserved_while_either_channel_remains_enabled(self):
+        trusted = self._trusted()
+        self.service.set_channel_enabled("agent-1", True, trusted=trusted)
+        self.service.set_zalo_bot_enabled("agent-1", True, trusted=trusted)
+        self.assertTrue(self.owner_path.is_file())
+
+        self.service.set_channel_enabled("agent-1", False)
+        self.assertTrue(self.owner_path.is_file())
+
+        self.service.set_zalo_bot_enabled("agent-1", False)
+        self.assertFalse(self.owner_path.exists())
+
+    def test_logout_preserves_owner_for_the_other_enabled_channel(self):
+        trusted = self._trusted()
+        self.service.set_channel_enabled("agent-1", True, trusted=trusted)
+        self.service.set_zalo_bot_enabled("agent-1", True, trusted=trusted)
+
+        self.service.logout_zalo_bot("agent-1")
+        self.assertTrue(self.owner_path.is_file())
+
+        self.service.set_channel_enabled("agent-1", False)
+        self.assertFalse(self.owner_path.exists())
 
     def test_symlinked_owner_storage_is_rejected(self):
         outside = Path(self.temporary.name) / "outside"
@@ -321,9 +371,7 @@ class WorkspaceMcpGrantTests(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(self.environment.stop)
 
     def _client(self, responder):
-        http = httpx.AsyncClient(
-            transport=httpx.MockTransport(responder), follow_redirects=False
-        )
+        http = httpx.AsyncClient(transport=httpx.MockTransport(responder), follow_redirects=False)
         self.addAsyncCleanup(http.aclose)
         return WorkspaceMcpGrantClient(http)
 
@@ -391,12 +439,15 @@ class WorkspaceMcpGrantTests(unittest.IsolatedAsyncioTestCase):
         cached = await client.grant("profile", now=base + 60, **kwargs)
         refreshed = await client.grant("profile", now=base + 1700, **kwargs)
         again = await client.grant("profile", now=base + 1710, **kwargs)
-        self.assertEqual((first, cached, refreshed, again), (
-            "grant-1",
-            "grant-1",
-            "grant-2",
-            "grant-2",
-        ))
+        self.assertEqual(
+            (first, cached, refreshed, again),
+            (
+                "grant-1",
+                "grant-1",
+                "grant-2",
+                "grant-2",
+            ),
+        )
         self.assertEqual(len(calls), 2)
 
     async def test_identity_mismatch_is_never_used_or_cached(self):
@@ -455,9 +506,7 @@ class WorkspaceMcpGrantTests(unittest.IsolatedAsyncioTestCase):
             return httpx.Response(403, json={"code": "workspace_not_allowed"})
 
         def expired(_request):
-            return self._response(
-                expires_at=datetime.fromtimestamp(base - 10, timezone.utc)
-            )
+            return self._response(expires_at=datetime.fromtimestamp(base - 10, timezone.utc))
 
         def unreachable(_request):
             raise httpx.ConnectError("private control host")
@@ -511,9 +560,7 @@ class WorkspaceMcpGrantTests(unittest.IsolatedAsyncioTestCase):
         }
         self.assertEqual(await client.grant("profile", now=base, **kwargs), "grant-one")
         state["fail"] = True
-        self.assertEqual(
-            await client.grant("profile", now=base + 1700, **kwargs), "grant-one"
-        )
+        self.assertEqual(await client.grant("profile", now=base + 1700, **kwargs), "grant-one")
         self.assertEqual(await client.grant("profile", now=base + 1801, **kwargs), "")
 
     async def test_control_data_envelope_is_accepted(self):
@@ -580,28 +627,31 @@ class ChannelTurnGrantTests(_ChannelCase):
         self.assertEqual(self.platform.mcp_grants, ["channel-grant-token"])
         self.assertEqual(len(self.grants.calls), 1)
         scope, agent_id, platform, user_id, tenant_id = self.grants.calls[0]
-        self.assertEqual((agent_id, platform, user_id, tenant_id), (
-            "agent-1",
-            "zalo",
-            "user-1",
-            "personal-user-1",
-        ))
+        self.assertEqual(
+            (agent_id, platform, user_id, tenant_id),
+            (
+                "agent-1",
+                "zalo",
+                "user-1",
+                "personal-user-1",
+            ),
+        )
         self.assertTrue(scope.endswith("agent-1"))
         for run_body in self.platform.run_calls:
             self.assertNotIn("_mcp_grant", run_body)
             self.assertNotIn("channel-grant-token", json.dumps(run_body))
-        self.assertNotIn(
-            "channel-grant-token", self.owner_path.read_text(encoding="utf-8")
-        )
+        self.assertNotIn("channel-grant-token", self.owner_path.read_text(encoding="utf-8"))
 
-    async def test_unbound_channel_runs_without_mcp(self):
-        result = await self.service.run_internal_turn(_body(), TOKEN)
+    async def test_unbound_channel_is_refused_before_any_run(self):
+        with self.assertRaises(ServiceError) as raised:
+            await self.service.run_internal_turn(_body(), TOKEN)
 
-        self.assertEqual(result["reply"], "channel reply")
-        self.assertEqual(self.platform.mcp_grants, [None])
+        self.assertEqual(raised.exception.status, 403)
+        self.assertEqual(raised.exception.code, "channel_owner_unavailable")
+        self.assertEqual(self.platform.run_calls, [])
         self.assertEqual(self.grants.calls, [])
 
-    async def test_binding_for_another_agent_is_ignored(self):
+    async def test_binding_for_another_agent_is_refused(self):
         self.service.repository.write_owner(
             self.profile,
             {
@@ -612,26 +662,105 @@ class ChannelTurnGrantTests(_ChannelCase):
                 "bound_at": 1,
             },
         )
+        with self.assertRaises(ServiceError) as raised:
+            await self.service.run_internal_turn(_body(), TOKEN)
+
+        self.assertEqual(raised.exception.status, 403)
+        self.assertEqual(raised.exception.code, "channel_owner_unavailable")
+        self.assertEqual(self.platform.run_calls, [])
+
+    async def test_mismatched_thread_binding_rotates_to_a_fresh_conversation(self):
+        self._bind()
+        stale_id = "conv_stale_platform"
+        self.platform.agents.conversations.add(stale_id)
+        self.repository.create_conversation_context(
+            self.profile,
+            {
+                "schema_version": 1,
+                "id": "personal",
+                "owner_kind": "personal",
+                "organization_id": None,
+                "payer_kind": "personal",
+                "sponsor_grant_id": None,
+                "state": "active",
+                "conversation_id": stale_id,
+                "agent_id": "agent-1",
+                "actor_user_id": "user-1",
+                "actor_tenant_id": "personal-user-1",
+                "executor_workspace_id": None,
+                "created_at": "2026-01-01T00:00:00Z",
+                "legacy_backfill": False,
+                "channel_platform": "zalo_bot",
+            },
+        )
+        self.service.repository.write_thread(
+            self.profile,
+            "zalo",
+            "123456",
+            agent_id="agent-1",
+            conversation_id=stale_id,
+            title="stale",
+            sender_id="789",
+            timestamp=1,
+        )
+
         result = await self.service.run_internal_turn(_body(), TOKEN)
 
-        self.assertEqual(result["reply"], "channel reply")
-        self.assertEqual(self.platform.mcp_grants, [None])
-        self.assertEqual(self.grants.calls, [])
+        self.assertNotEqual(result["conversation_id"], stale_id)
+        mapping = self.service.repository.threads(self.profile)["zalo"]["123456"]
+        self.assertEqual(mapping["conversation_id"], result["conversation_id"])
+        stale = self.repository.get_conversation_context(self.profile, stale_id)
+        self.assertEqual(stale["channel_platform"], "zalo_bot")
+        self.assertEqual(stale["actor_user_id"], "user-1")
 
-    async def test_grant_failure_or_mismatch_still_completes_the_turn(self):
+    def test_owner_bound_channel_conversation_remains_web_visible(self):
+        from xnobrain.services.conversation_authority import require_binding
+
+        conversation_id = "conv_web_visible"
+        self.repository.create_conversation_context(
+            self.profile,
+            {
+                "schema_version": 1,
+                "id": "personal",
+                "owner_kind": "personal",
+                "organization_id": None,
+                "payer_kind": "personal",
+                "sponsor_grant_id": None,
+                "state": "active",
+                "conversation_id": conversation_id,
+                "agent_id": "agent-1",
+                "actor_user_id": "user-1",
+                "actor_tenant_id": "personal-user-1",
+                "executor_workspace_id": None,
+                "created_at": "2026-01-01T00:00:00Z",
+                "legacy_backfill": False,
+                "channel_platform": "zalo",
+            },
+        )
+
+        stored = require_binding(
+            self.repository,
+            "agent-1",
+            conversation_id,
+            TrustedRequestContext(subject="user-1", tenant_id="personal-user-1"),
+        )
+        self.assertEqual(stored["channel_platform"], "zalo")
+
+    async def test_grant_failure_or_expired_scope_refuses_before_tools(self):
         self._bind()
         self.service.mcp_grants = _GrantSource(error=RuntimeError("private detail"))
-        result = await self.service.run_internal_turn(_body(), TOKEN)
-        self.assertEqual(result["reply"], "channel reply")
-        self.assertEqual(self.platform.mcp_grants, [None])
+        with self.assertRaises(ServiceError) as raised:
+            await self.service.run_internal_turn(_body(), TOKEN)
+        self.assertEqual(raised.exception.status, 503)
+        self.assertEqual(raised.exception.code, "channel_mcp_grant_unavailable")
+        self.assertEqual(self.platform.run_calls, [])
 
-        self.platform.mcp_grants.clear()
         self.service.mcp_grants = _GrantSource(token="")
-        result = await self.service.run_internal_turn(
-            _body(message_id="message-2"), TOKEN
-        )
-        self.assertEqual(result["reply"], "channel reply")
-        self.assertEqual(self.platform.mcp_grants, [None])
+        with self.assertRaises(ServiceError) as raised:
+            await self.service.run_internal_turn(_body(message_id="message-2"), TOKEN)
+        self.assertEqual(raised.exception.status, 503)
+        self.assertEqual(raised.exception.code, "channel_mcp_grant_unavailable")
+        self.assertEqual(self.platform.run_calls, [])
 
 
 class _FakeActivity:
@@ -672,18 +801,12 @@ class ConversationRunGrantPayloadTests(unittest.IsolatedAsyncioTestCase):
         self.environment.start()
         self.addCleanup(self.environment.stop)
         self.repository = FileRepository(root / "data", self.profiles)
-        self.service = ConversationRunService(
-            self.repository, _RunRepositoryAgents(), None
-        )
+        self.service = ConversationRunService(self.repository, _RunRepositoryAgents(), None)
 
     async def test_explicit_grant_reaches_the_payload_but_never_the_run_record(self):
         with (
-            mock.patch(
-                "xnobrain.repositories.custom_page_locks.ExecutionLease", _FakeLease
-            ),
-            mock.patch(
-                "xnobrain.repositories.custom_page_locks.ConversationLease", _FakeLease
-            ),
+            mock.patch("xnobrain.repositories.custom_page_locks.ExecutionLease", _FakeLease),
+            mock.patch("xnobrain.repositories.custom_page_locks.ConversationLease", _FakeLease),
         ):
             record = await self.service.start_run(
                 "agent-1",
@@ -696,9 +819,7 @@ class ConversationRunGrantPayloadTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(_FakeActivity.payloads[-1]["_mcp_grant"], "channel-grant-token")
         self.assertNotIn("_mcp_grant", record)
         self.assertNotIn("channel-grant-token", json.dumps(record))
-        persisted = self.repository.get_conversation_run(
-            "agent-1", "conv-1", record["id"]
-        )
+        persisted = self.repository.get_conversation_run("agent-1", "conv-1", record["id"])
         self.assertNotIn("channel-grant-token", json.dumps(persisted))
 
 

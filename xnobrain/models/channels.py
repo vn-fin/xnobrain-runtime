@@ -52,7 +52,11 @@ class ChannelInboundResult(BaseModel):
 
 
 class ChannelTurnRequest(BaseModel):
-    """One authorized gateway message that should run as a normal channel turn."""
+    """One authorized gateway message for an enabled, owner-bound channel turn.
+
+    The request never carries owner identity; Runtime derives it from the
+    profile's persisted owner binding and refuses the turn when absent.
+    """
 
     model_config = ConfigDict(extra="forbid")
 

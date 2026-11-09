@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+
+import httpx
 
 from xnobrain.integrations import control_grants, managed_mcp
 
@@ -94,6 +97,110 @@ class ControlGrantTests(unittest.TestCase):
             clock[0] += control_grants._MANAGEMENT_GRANT_TTL_SECONDS + 1
             self.assertEqual(control_grants.get(scope), "")
             self.assertNotIn(scope, control_grants._GRANTS)
+
+
+class _BlockingSession:
+    def __init__(self, entered: asyncio.Event, release: asyncio.Event):
+        self.entered = entered
+        self.release = release
+
+    async def call_tool(self, name, arguments):
+        self.entered.set()
+        await self.release.wait()
+        return {"name": name}
+
+
+class ControlGrantRunScopeTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.grants = patch.object(control_grants, "_GRANTS", {})
+        self.server_grants = patch.object(control_grants, "_SERVER_GRANTS", {})
+        self.grants.start()
+        self.server_grants.start()
+        self.addCleanup(self.grants.stop)
+        self.addCleanup(self.server_grants.stop)
+
+    @staticmethod
+    def _authorization(auth):
+        request = httpx.Request("POST", "http://control.internal/mcp")
+        flow = auth.auth_flow(request)
+        return next(flow).headers.get("Authorization")
+
+    async def test_concurrent_runs_keep_their_own_server_grant(self):
+        first_entered = asyncio.Event()
+        second_entered = asyncio.Event()
+        release = asyncio.Event()
+        first_session = managed_mcp._GrantScopedSession(
+            _BlockingSession(first_entered, release), "server-a"
+        )
+        second_session = managed_mcp._GrantScopedSession(
+            _BlockingSession(second_entered, release), "server-b"
+        )
+        scope = "profile-scope"
+
+        async def run(session, grant, server_key):
+            with control_grants.bind_run(Path("/tmp/profile"), grant):
+                with control_grants.server_call_scope(
+                    server_key, control_grants.current_run_grant()
+                ):
+                    return await session.call_tool("tool", {})
+
+        first = asyncio.create_task(run(first_session, "grant-first", "server-a"))
+        second = asyncio.create_task(run(second_session, "grant-second", "server-b"))
+        await asyncio.wait_for(
+            asyncio.gather(first_entered.wait(), second_entered.wait()), timeout=2
+        )
+
+        self.assertEqual(
+            self._authorization(managed_mcp.ControlGrantAuth(scope, "server-a")),
+            "Bearer grant-first",
+        )
+        self.assertEqual(
+            self._authorization(managed_mcp.ControlGrantAuth(scope, "server-b")),
+            "Bearer grant-second",
+        )
+        release.set()
+        await asyncio.gather(first, second)
+        self.assertIsNone(
+            managed_mcp.ControlGrantAuth(scope, "server-a")
+            .auth_flow(httpx.Request("POST", "http://control.internal/mcp"))
+            .__next__()
+            .headers.get("Authorization")
+        )
+
+    async def test_handler_wrapper_carries_run_grant_to_mcp_worker_thread(self):
+        def read_pending():
+            return control_grants.pending_server_grant("server-worker")
+
+        handler = managed_mcp._grant_bound_handler(read_pending, "server-worker")
+        with control_grants.bind_run(Path("/tmp/profile"), "grant-worker"):
+            grant = await asyncio.to_thread(handler)
+
+        self.assertEqual(grant, "grant-worker")
+        self.assertIsNone(control_grants.pending_server_grant("server-worker"))
+
+    async def test_bound_empty_run_blocks_profile_grant_fallback(self):
+        scope = "profile-scope"
+        control_grants.set(scope, "web-grant")
+        entered = asyncio.Event()
+        release = asyncio.Event()
+        session = managed_mcp._GrantScopedSession(
+            _BlockingSession(entered, release), "server-empty"
+        )
+
+        async def run():
+            with control_grants.bind_run(Path("/tmp/profile"), ""):
+                with control_grants.server_call_scope(
+                    "server-empty", control_grants.current_run_grant()
+                ):
+                    return await session.call_tool("tool", {})
+
+        task = asyncio.create_task(run())
+        await asyncio.wait_for(entered.wait(), timeout=2)
+        self.assertEqual(control_grants.get_for_server("server-empty", scope), "")
+        self.assertIsNone(self._authorization(managed_mcp.ControlGrantAuth(scope, "server-empty")))
+        release.set()
+        await task
+        self.assertEqual(control_grants.get_for_server("server-empty", scope), "web-grant")
 
 
 if __name__ == "__main__":

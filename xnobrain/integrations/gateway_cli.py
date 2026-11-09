@@ -15,6 +15,7 @@ import time
 import uuid
 from contextlib import suppress
 
+from ..runtime_limits import session_timeout_seconds
 from .accounting_context import (
     AccountingUnavailable,
     accounting_binding,
@@ -24,8 +25,51 @@ from .accounting_context import (
 
 _LOGGER = logging.getLogger(__name__)
 _DELEGATED_PLATFORMS = {"zalo", "zalo_bot"}
-_DELEGATION_TIMEOUT_SECONDS = 900.0
 _TYPING_INTERVAL_SECONDS = 4.0
+# The HTTP call must outlive the run's own bounded session timeout. Once the
+# Runtime may have accepted a turn, the gateway never starts a native second
+# turn; a retry with the same provider message ID replays the accepted run.
+_DELEGATION_TIMEOUT_GRACE_SECONDS = 60.0
+_DELEGATION_FAILURE_TEXT = "This message could not be completed right now. Please retry shortly."
+
+
+class _DelegationAttempted(Exception):
+    """The request may have reached Runtime; native execution is unsafe."""
+
+
+_REDACTED_INGRESS_PREFIXES = (
+    "inbound message:",
+    "telegram topic recovery:",
+    "Unauthorized user:",
+    "Forwarded update prompt to",
+)
+
+
+class _GatewayIngressRedaction(logging.Filter):
+    """Remove user payload/display data from pinned gateway INFO ingress logs."""
+
+    def filter(self, record):
+        try:
+            message = record.getMessage()
+        except Exception:
+            record.msg = "gateway ingress event redacted"
+            record.args = ()
+            return True
+        for prefix in _REDACTED_INGRESS_PREFIXES:
+            if message.startswith(prefix):
+                record.msg = "gateway ingress event redacted"
+                record.args = ()
+                break
+        return True
+
+
+def install_gateway_log_redaction() -> None:
+    """Apply one launcher-owned filter without modifying pinned upstream."""
+    logger = logging.getLogger("gateway.run")
+    if getattr(logger, "_xnobrain_ingress_redaction", False):
+        return
+    logger.addFilter(_GatewayIngressRedaction())
+    logger._xnobrain_ingress_redaction = True
 
 
 def _current_profile():
@@ -193,36 +237,65 @@ def _delegation_payload(message, history, source, event_message_id):
     }
 
 
+def _failed_turn_result(message, history, session_id):
+    """Return one sanitized reply without starting a second agent turn."""
+    return {
+        "final_response": _DELEGATION_FAILURE_TEXT,
+        "messages": [
+            {"role": "user", "content": str(message or "")},
+            {"role": "assistant", "content": _DELEGATION_FAILURE_TEXT},
+        ],
+        "api_calls": 0,
+        "tools": [],
+        "history_offset": len(history or []),
+        "session_id": session_id,
+        "response_previewed": False,
+    }
+
+
 async def _run_delegated_turn(runner, message, history, source, session_id, event_message_id):
     import httpx
 
     token = os.environ.get("RUNTIME_INTERNAL_SERVICE_TOKEN", "").strip()
     payload = _delegation_payload(message, history, source, event_message_id)
     if not token or payload is None:
+        # No request was constructed, so native execution is still safe.
         return None
     typing_task = asyncio.create_task(_typing_keepalive(runner, source))
+    attempted = False
     try:
-        timeout = httpx.Timeout(_DELEGATION_TIMEOUT_SECONDS, connect=10.0)
+        timeout = httpx.Timeout(
+            float(session_timeout_seconds()) + _DELEGATION_TIMEOUT_GRACE_SECONDS,
+            connect=10.0,
+        )
         async with httpx.AsyncClient(timeout=timeout) as client:
+            attempted = True
             response = await client.post(
                 _delegation_endpoint(),
                 json=payload,
                 headers={"x-xnobrain-internal-token": token},
             )
         if response.status_code != 200:
-            return None
+            raise _DelegationAttempted(f"runtime returned HTTP {response.status_code}")
         try:
             envelope = response.json()
-        except ValueError:
-            return None
+        except ValueError as error:
+            raise _DelegationAttempted("runtime returned invalid JSON") from error
         if not isinstance(envelope, dict) or envelope.get("success") is not True:
-            return None
+            raise _DelegationAttempted("runtime returned an error envelope")
         data = envelope.get("data")
         if not isinstance(data, dict) or not isinstance(data.get("reply"), str):
-            return None
+            raise _DelegationAttempted("runtime returned an invalid reply")
+    except _DelegationAttempted:
+        raise
+    except Exception as error:
+        if attempted:
+            raise _DelegationAttempted(type(error).__name__) from error
+        return None
     finally:
         typing_task.cancel()
-        with suppress(asyncio.CancelledError):
+        # Cleanup must never turn an accepted request into a native retry.
+        with suppress(asyncio.CancelledError, Exception):
             await typing_task
     reply = data["reply"]
     return {
@@ -261,6 +334,15 @@ def install_runtime_channel_delegation() -> None:
         platform = str(getattr(getattr(source, "platform", None), "value", "") or "")
         if platform not in _DELEGATED_PLATFORMS:
             return await original(runner, *args, **kwargs)
+        message_identity = str(event_message_id or getattr(source, "message_id", "") or "").strip()
+        if not message_identity:
+            # Without a stable provider ID a retry cannot replay one accepted
+            # turn, so native execution is unsafe for a delegated platform.
+            _LOGGER.warning(
+                "channel delegation skipped: provider message identity unavailable; "
+                "not retrying natively"
+            )
+            return _failed_turn_result(message, history, session_id)
         try:
             result = await _run_delegated_turn(
                 runner,
@@ -270,14 +352,25 @@ def install_runtime_channel_delegation() -> None:
                 session_id,
                 event_message_id,
             )
+        except _DelegationAttempted as error:
+            # Runtime may already have accepted (and persisted) this turn.
+            # Running the native agent now would execute a second turn and could
+            # repeat external side effects. Return one sanitized failure; a
+            # gateway retry with the same message ID replays the accepted run.
+            _LOGGER.warning(
+                "channel delegation failed after a request may have been accepted (%s); "
+                "not retrying natively",
+                type(error).__name__,
+            )
+            return _failed_turn_result(message, history, session_id)
         except Exception as error:
             _LOGGER.warning(
-                "channel delegation failed (%s); using native gateway agent",
+                "channel delegation setup failed (%s); using native gateway agent",
                 type(error).__name__,
             )
             return await original(runner, *args, **kwargs)
         if result is None:
-            _LOGGER.warning("channel delegation was unavailable; using native gateway agent")
+            _LOGGER.warning("channel delegation was not attempted; using native gateway agent")
             return await original(runner, *args, **kwargs)
         return result
 
@@ -292,6 +385,7 @@ def main():
         # Applied before config load so the gateway's own startup scope and
         # every multiplexed per-turn scope see the workspace Router key.
         install_workspace_router_key_scope()
+        install_gateway_log_redaction()
         install_gateway_turns()
         install_runtime_channel_delegation()
         from hermes_cli.main import main as native_main

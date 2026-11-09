@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import sys
 import types
 import unittest
@@ -203,7 +204,7 @@ class GatewayChannelDelegationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(factory.calls[0]["json"]["platform"], "zalo_bot")
         self.assertEqual(factory.calls[0]["json"]["thread_type"], "group")
 
-    async def test_http_error_falls_back_to_native_agent(self):
+    async def test_http_error_never_falls_back_to_native_agent(self):
         factory = _ClientFactory(response=_Response(status_code=404, payload={}))
         runner_class = self.install(factory)
         runner = runner_class()
@@ -218,11 +219,11 @@ class GatewayChannelDelegationTests(unittest.IsolatedAsyncioTestCase):
                 event_message_id="message-3",
             )
 
-        self.assertEqual(result["final_response"], "native reply")
-        self.assertEqual(len(runner_class.native_calls), 1)
-        self.assertIn("using native gateway agent", "\n".join(captured.output))
+        self.assertEqual(result["final_response"], gateway_cli._DELEGATION_FAILURE_TEXT)
+        self.assertEqual(runner_class.native_calls, [])
+        self.assertIn("not retrying natively", "\n".join(captured.output))
 
-    async def test_unexpected_shape_falls_back_to_native_agent(self):
+    async def test_unexpected_shape_never_falls_back_to_native_agent(self):
         factory = _ClientFactory(
             response=_Response(payload={"success": False, "data": {"reply": "no"}})
         )
@@ -238,10 +239,10 @@ class GatewayChannelDelegationTests(unittest.IsolatedAsyncioTestCase):
             event_message_id="message-4",
         )
 
-        self.assertEqual(result["final_response"], "native reply")
-        self.assertEqual(len(runner_class.native_calls), 1)
+        self.assertEqual(result["final_response"], gateway_cli._DELEGATION_FAILURE_TEXT)
+        self.assertEqual(runner_class.native_calls, [])
 
-    async def test_transport_error_falls_back_without_logging_secrets(self):
+    async def test_transport_error_never_falls_back_or_logs_secrets(self):
         factory = _ClientFactory(error=RuntimeError(f"token={TOKEN} message=secret text"))
         runner_class = self.install(factory)
         runner = runner_class()
@@ -256,10 +257,33 @@ class GatewayChannelDelegationTests(unittest.IsolatedAsyncioTestCase):
                 event_message_id="message-5",
             )
 
-        self.assertEqual(result["final_response"], "native reply")
+        self.assertEqual(result["final_response"], gateway_cli._DELEGATION_FAILURE_TEXT)
+        self.assertEqual(runner_class.native_calls, [])
         logs = "\n".join(captured.output)
         self.assertNotIn(TOKEN, logs)
         self.assertNotIn("secret text", logs)
+
+    async def test_missing_message_id_fails_safely_without_native_execution(self):
+        factory = _ClientFactory(response=_Response(payload=_envelope()))
+        runner_class = self.install(factory)
+        runner = runner_class()
+        source = _source()
+        source.message_id = ""
+
+        with self.assertLogs("xnobrain.integrations.gateway_cli", level="WARNING") as captured:
+            result = await runner._run_agent_inner(
+                message="hello",
+                context_prompt="",
+                history=[],
+                source=source,
+                session_id="session-missing",
+                event_message_id=None,
+            )
+
+        self.assertEqual(result["final_response"], gateway_cli._DELEGATION_FAILURE_TEXT)
+        self.assertEqual(factory.calls, [])
+        self.assertEqual(runner_class.native_calls, [])
+        self.assertIn("not retrying natively", "\n".join(captured.output))
 
     async def test_other_platforms_use_the_native_agent_without_a_request(self):
         factory = _ClientFactory(response=_Response(payload=_envelope()))
@@ -301,6 +325,29 @@ class GatewayChannelDelegationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["final_response"], "native reply")
         self.assertFalse(runner_class._xnobrain_channel_delegation)
         self.assertEqual(len(runner_class.native_calls), 1)
+
+
+class GatewayIngressLogRedactionTests(unittest.TestCase):
+    def test_gateway_run_ingress_payload_and_display_name_are_redacted(self):
+        logger = logging.getLogger("gateway.run")
+        gateway_cli.install_gateway_log_redaction()
+        with self.assertLogs("gateway.run", level="INFO") as captured:
+            logger.info(
+                "inbound message: platform=%s user=%s chat=%s msg=%r reply_to_id=%s "
+                "reply_to_text=%r",
+                "zalo",
+                "Nguyen Van Secret",
+                "chat-1",
+                "private payload",
+                "msg-1",
+                "private reply",
+            )
+
+        output = "\n".join(captured.output)
+        self.assertIn("gateway ingress event redacted", output)
+        self.assertNotIn("Nguyen Van Secret", output)
+        self.assertNotIn("private payload", output)
+        self.assertNotIn("private reply", output)
 
 
 if __name__ == "__main__":

@@ -88,6 +88,31 @@ Security hardening applied on top of the vendored upstream code on 2026-11-09:
      construction because Hermes gateway authorization reads the alias.
 6. `plugin.yaml` optional environment.
    - Added `ZALO_BOT_DM_POLICY` with the supported values and default.
+7. M2 — Group authorization before side effects.
+   - `adapter.py`: group messages are checked with `_group_member_allowed()`
+     before slash-command handling, anti-spam tracking, name-trigger replies,
+     and history writes. Name-trigger auto-replies, history writes, and
+     join/member-joined welcome sends require the user to be explicitly
+     authorized by the adapter (allow-all or a configured allowlist), because
+     those paths never reach Hermes gateway authorization. Agent delivery still
+     defers to Hermes core when no adapter allowlist exists, so legitimate
+     group messages are not dropped.
+8. M3 — Bounded dedupe on real provider IDs.
+   - `adapter.py`: long-polling and webhook delivery pass the provider
+     `message_id`/`update_id` into one bounded, ordered `_seen_message_ids`
+     set (`MAX_SEEN_MESSAGE_IDS`). Duplicate delivery is dropped before any side
+     effect. A missing provider ID is never replaced with a timestamp; the
+     message is preserved and simply not deduped.
+   - `_dispatch_message()` now forwards the real message ID in `MessageEvent`
+     instead of `int(time.time() * 1000)`.
+9. M4 — Untrusted channel content separation.
+   - `adapter.py`: tracked group history is tagged
+     `trust: untrusted_external`; sender names and chat history remain separate
+     metadata and are never concatenated into agent instructions.
+10. M5 — Webhook dedupe parity.
+    - `adapter.py`: webhook mode reuses `_handle_incoming()` and the same
+      bounded dedupe set as polling, including `update_id` when the message
+      itself carries no ID.
 
 Focused regression tests live in
 `xnobrain/tests/test_zalo_bot_plugin_hardening.py`.

@@ -22,6 +22,7 @@ from ..integrations import zalo_channels
 from ..integrations.control_mcp_grants import WorkspaceMcpGrantClient
 from ..repositories.channels import ChannelsRepository
 from .base import ServiceError
+from .conversation_authority import HostAuthority, require_host_binding
 
 _APPEND_LOCK = threading.RLock()
 _THREAD_LOCK = threading.RLock()
@@ -104,11 +105,7 @@ class ChannelsService:
                 "agent ownership is unavailable", status=403, code="permission_denied"
             )
         marker_organization = str(marker.get("organization_id") or "")
-        if (
-            marker_organization
-            and organization_id
-            and marker_organization != organization_id
-        ):
+        if marker_organization and organization_id and marker_organization != organization_id:
             raise ServiceError(
                 "agent ownership is unavailable", status=403, code="permission_denied"
             )
@@ -132,14 +129,76 @@ class ChannelsService:
             return
         self.repository.write_owner(profile, record)
 
-    async def _channel_mcp_grant(self, agent_id: str, profile: Path, platform: str) -> str:
-        """Fetch the owner's grant; any failure leaves the turn without MCP."""
+    def _require_owner_binding(self, agent_id: str, profile: Path) -> dict[str, Any]:
+        """Load the persisted verified owner; never infer identity from a request."""
         try:
             binding = self.repository.read_owner(profile)
-        except Exception:
-            return ""
+        except Exception as error:
+            raise ServiceError(
+                "channel owner binding is unavailable",
+                status=403,
+                code="channel_owner_unavailable",
+            ) from error
         if not binding or str(binding.get("agent_id") or "") != agent_id:
-            return ""
+            raise ServiceError(
+                "channel owner binding is unavailable",
+                status=403,
+                code="channel_owner_unavailable",
+            )
+        subject = str(binding.get("user_id") or "")
+        if not subject:
+            raise ServiceError(
+                "channel owner binding is unavailable",
+                status=403,
+                code="channel_owner_unavailable",
+            )
+        marker = self._profile_owner_marker(profile)
+        marker_subject = str(marker.get("subject") or "")
+        if marker_subject and marker_subject != subject:
+            raise ServiceError(
+                "agent ownership is unavailable", status=403, code="permission_denied"
+            )
+        marker_tenant = str(marker.get("tenant_id") or "")
+        binding_tenant = str(binding.get("tenant_id") or "")
+        if marker_tenant and binding_tenant and marker_tenant != binding_tenant:
+            raise ServiceError(
+                "agent ownership is unavailable", status=403, code="permission_denied"
+            )
+        marker_organization = str(marker.get("organization_id") or "")
+        binding_organization = str(binding.get("organization_id") or "")
+        if (
+            marker_organization
+            and binding_organization
+            and marker_organization != binding_organization
+        ):
+            raise ServiceError(
+                "agent ownership is unavailable", status=403, code="permission_denied"
+            )
+        return binding
+
+    def _require_enabled_channel(self, profile: Path, platform: str) -> None:
+        config = self.repository.config(profile)
+        if not bool(self._platform_config(config, platform).get("enabled")):
+            raise ServiceError("channel is disabled", status=403, code="channel_disabled")
+
+    @staticmethod
+    def _host_authority(agent_id: str, platform: str, binding: Mapping[str, Any]) -> HostAuthority:
+        return HostAuthority(
+            subject=str(binding.get("user_id") or ""),
+            tenant_id=str(binding.get("tenant_id") or ""),
+            organization_id=str(binding.get("organization_id") or ""),
+            agent_id=agent_id,
+            platform=platform,
+        )
+
+    async def _channel_mcp_grant(
+        self,
+        agent_id: str,
+        profile: Path,
+        platform: str,
+        binding: Mapping[str, Any],
+    ) -> str:
+        """Fetch the owner's per-run grant; empty means the turn must not start."""
         user_id = str(binding.get("user_id") or "")
         if not user_id:
             return ""
@@ -355,6 +414,7 @@ class ChannelsService:
         thread_id: str,
         sender_id: str,
         sender_name: str,
+        authority: HostAuthority,
     ) -> dict[str, Any]:
         """Reuse or create the one conversation bound to a platform thread."""
         title = f"{self._turn_label(platform)} · {sender_name or sender_id}"
@@ -369,12 +429,20 @@ class ChannelsService:
                 conversation_id = str(record["conversation_id"])
                 try:
                     self._conversation_exists(agent_id, conversation_id)
+                    require_host_binding(
+                        self.platform.repository,
+                        agent_id,
+                        conversation_id,
+                        authority,
+                    )
                 except ServiceError as error:
-                    if error.status != 404:
+                    if error.status != 404 and error.code != "conversation_owner_forbidden":
                         raise
                 else:
                     return {"id": conversation_id, "title": str(record.get("title") or title)}
-            conversation = self.platform.create_conversation(agent_id, {"title": title})
+            conversation = self.platform.create_conversation(
+                agent_id, {"title": title}, host_authority=authority
+            )
             conversation_id = str(conversation.get("id") or "")
             if not conversation_id:
                 raise ServiceError(
@@ -423,7 +491,20 @@ class ChannelsService:
         request = self._validated_turn(body)
         agent_id = request["agent_id"]
         profile = self._profile(agent_id)
+        self._require_enabled_channel(profile, request["platform"])
+        binding = self._require_owner_binding(agent_id, profile)
         self._require_safe_dm_policy(profile, request["platform"])
+        authority = self._host_authority(agent_id, request["platform"], binding)
+        mcp_grant = await self._channel_mcp_grant(agent_id, profile, request["platform"], binding)
+        if not mcp_grant:
+            # A channel run must never inherit a profile-scoped grant from a
+            # previous web turn. Without a fresh owner-bound per-run grant the
+            # managed MCP transport could attach a stale identity bearer.
+            raise ServiceError(
+                "channel credential scope is unavailable",
+                status=503,
+                code="channel_mcp_grant_unavailable",
+            )
         conversation = self._thread_conversation(
             agent_id,
             profile,
@@ -431,25 +512,22 @@ class ChannelsService:
             request["thread_id"],
             request["sender_id"],
             request["sender_name"],
+            authority,
         )
         conversation_id = str(conversation["id"])
-        mcp_grant = await self._channel_mcp_grant(
-            agent_id, profile, request["platform"]
-        )
         run_body = {
             "input": request["text"],
             "run_mode": "background",
             "idempotency_key": f"{request['platform']}:{request['message_id']}",
         }
         try:
-            if mcp_grant:
-                run = await self.platform.start_conversation_run(
-                    agent_id, conversation_id, run_body, mcp_grant=mcp_grant
-                )
-            else:
-                run = await self.platform.start_conversation_run(
-                    agent_id, conversation_id, run_body
-                )
+            run = await self.platform.start_conversation_run(
+                agent_id,
+                conversation_id,
+                run_body,
+                mcp_grant=mcp_grant,
+                host_authority=authority,
+            )
         except ServiceError as error:
             if error.code == "conversation_running":
                 raise ServiceError(
@@ -728,6 +806,19 @@ class ChannelsService:
             "gateway": gateway,
         }
 
+    def _delete_owner_when_no_channel_enabled(
+        self, profile: Path, config: Mapping[str, Any] | None = None
+    ) -> bool:
+        """Keep the one shared owner until every channel is disabled."""
+        current = config if config is not None else self.repository.config(profile)
+        enabled = any(
+            bool(self._platform_config(current, platform).get("enabled"))
+            for platform in ("zalo", "zalo_bot")
+        )
+        if enabled:
+            return False
+        return self.repository.delete_owner(profile)
+
     def _sync_root_multiplex(self) -> None:
         root = self._root_profile()
         root_name = root.name
@@ -771,9 +862,7 @@ class ChannelsService:
     ) -> dict[str, Any]:
         self._require_feature()
         profile = self._profile(agent_id)
-        binding = (
-            self._check_channel_owner(agent_id, profile, trusted) if enabled else None
-        )
+        binding = self._check_channel_owner(agent_id, profile, trusted) if enabled else None
         config = self.repository.config(profile)
         self._snapshot_config(agent_id, profile)
         platforms = config.get("platforms")
@@ -795,7 +884,7 @@ class ChannelsService:
         if enabled:
             self._write_channel_owner(profile, binding)
         else:
-            self.repository.delete_owner(profile)
+            self._delete_owner_when_no_channel_enabled(profile, config)
         self._sync_root_multiplex()
         gateway = self._restart_gateway()
         return self._channel_state(profile, config, gateway)
@@ -897,9 +986,10 @@ class ChannelsService:
         self._require_feature()
         profile = self._profile(agent_id)
         self.repository.delete_session(profile)
-        self.repository.delete_owner(profile)
+        config = self.repository.config(profile)
+        self._delete_owner_when_no_channel_enabled(profile, config)
         gateway = self._restart_gateway()
-        return self._channel_state(profile, self.repository.config(profile), gateway)
+        return self._channel_state(profile, config, gateway)
 
     @staticmethod
     def _ensure_platform_config(config: dict[str, Any], platform: str) -> dict[str, Any]:
@@ -918,9 +1008,7 @@ class ChannelsService:
     ) -> dict[str, Any]:
         self._require_feature()
         profile = self._profile(agent_id)
-        binding = (
-            self._check_channel_owner(agent_id, profile, trusted) if enabled else None
-        )
+        binding = self._check_channel_owner(agent_id, profile, trusted) if enabled else None
         config = self.repository.config(profile)
         self._snapshot_config(agent_id, profile)
         bot = self._ensure_platform_config(config, "zalo_bot")
@@ -935,7 +1023,7 @@ class ChannelsService:
         if enabled:
             self._write_channel_owner(profile, binding)
         else:
-            self.repository.delete_owner(profile)
+            self._delete_owner_when_no_channel_enabled(profile, config)
         self._sync_root_multiplex()
         gateway = self._restart_gateway()
         return self._bot_channel_state(profile, config, gateway)
@@ -1015,7 +1103,7 @@ class ChannelsService:
         self._ensure_platform_config(config, "zalo_bot")["enabled"] = False
         self.repository.write_config(profile, config)
         self._write_bot_token(profile, None)
-        self.repository.delete_owner(profile)
+        self._delete_owner_when_no_channel_enabled(profile, config)
         self._sync_root_multiplex()
         gateway = self._restart_gateway()
         return self._bot_channel_state(profile, config, gateway)
