@@ -78,7 +78,8 @@ elif [[ -n "$key_file" ]]; then
   export RUNTIME_LLM_API_KEY
 fi
 
-if [[ -n "${RUNTIME_WORKSPACE_ID:-}" ]]; then
-  exec "$(dirname "$hermes")/python" -c 'from xnobrain.integrations.capacity_cli import main; main()' "$@"
-fi
-exec "$hermes" "$@"
+# Route every Runtime-owned native CLI invocation, managed or source/native,
+# through the policy bootstrap before native plugin discovery. capacity_cli's
+# admission hook is a no-op when RUNTIME_WORKSPACE_ID is absent, so the source
+# path keeps its previous command semantics while inheriting the same policy.
+exec "$(dirname "$hermes")/python" -c 'from xnobrain.integrations.capacity_cli import main; main()' "$@"

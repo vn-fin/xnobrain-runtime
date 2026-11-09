@@ -28,6 +28,7 @@ from urllib.parse import urlsplit
 
 import yaml
 
+from . import plugin_registration_policy
 from .extension_policy import (
     MANAGED_MCP_KEY,
     PLUGIN_ID,
@@ -75,6 +76,7 @@ def refresh_profile_plugins(profile: Path) -> None:
     with _PLUGIN_REFRESH_LOCK, profile_context(profile):
         manager = get_plugin_manager()
         if _PLUGIN_GENERATIONS.get(home) != generation:
+            plugin_registration_policy.bootstrap(manager)
             manager.discover_and_load(force=True)
             _PLUGIN_GENERATIONS[home] = generation
         _sync_profile_shell_hooks(manager, read_config(profile))
@@ -341,6 +343,11 @@ def _scan_plugin(path: Path) -> dict[str, Any]:
         complete = _check_portable_package(path, findings) and complete
     else:
         complete = _check_native_package(path) and complete
+    if package_format != PORTABLE and plugin_registration_policy.static_forbidden_calls(path):
+        fail(
+            plugin_registration_policy.FORBIDDEN_MESSAGE,
+            "plugin_capability_forbidden",
+        )
     dangerous = any(item["severity"] in {"critical", "high"} for item in findings)
     verdict = "dangerous" if dangerous else "caution" if findings else "safe"
     return {
@@ -758,6 +765,10 @@ _CHILD_ERRORS = {
     "plugin_manifest_invalid": ("Plugin manifest is invalid", 409),
     "plugin_kind_unsupported": (
         "This plugin kind is unsupported; only standalone plugins can be installed",
+        409,
+    ),
+    "plugin_capability_forbidden": (
+        plugin_registration_policy.FORBIDDEN_MESSAGE,
         409,
     ),
     "invalid_path": ("Unsafe extension storage", 409),

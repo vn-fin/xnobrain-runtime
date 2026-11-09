@@ -1772,6 +1772,7 @@ class ExtensionOperationWorker:
                     "plugin_unsafe",
                     "plugin_manifest_invalid",
                     "plugin_kind_unsupported",
+                    "plugin_capability_forbidden",
                 }:
                     status = "BLOCKED"
                 else:

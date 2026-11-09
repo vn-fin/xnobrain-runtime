@@ -171,6 +171,48 @@ manifest the pinned loader cannot parse, or an unrecognized kind, remains
 `plugin_manifest_invalid`. These checks classify manifests; they do not sandbox
 plugin Python, so the scanner remains a review aid.
 
+### Forbidden native registrations
+
+Third-party user and project plugins may not call these pinned Hermes context
+methods:
+
+- `register_middleware`
+- `register_approval_transport`
+- `register_redaction_patterns`
+- `register_secret_source`
+- `register_dashboard_auth_provider`
+
+For an otherwise complete native package, the scan performs a bounded,
+non-executing AST review of `.py` files for explicit `ctx.<method>(...)` calls
+and reports `plugin_capability_forbidden` with the fixed message `Plugin uses a
+forbidden registration capability`. No plugin module is imported and no
+`register()` is called during scan. The scan never needs execution authority,
+and an unapproved artifact cannot cause import/register side effects.
+
+The enforcing policy runs when an approved plugin is loaded: a per-manager
+module facade removes those five methods from the plugin's context before its
+`register()` runs. The same facade is used by native turns, the one-shot
+`capacity_cli` and `worker_cli` launchers, and the gateway launcher. The
+Runtime-owned shell agent launcher routes both managed and source/native
+branches through `capacity_cli` before native discovery; its admission hook is
+a no-op when no workspace is configured. `capacity_cli` imports the pinned main
+first so its own `-p`/`--profile`/sticky-active-profile selector determines
+`HERMES_HOME`, then bootstraps that selected manager before the first discovery.
+A violation unloads the plugin and reports `plugin_capability_forbidden`; the
+artifact digest and approval checks still run first. Normal `register_tool`, `register_hook`, `register_command`
+and `register_skill` plugins are unchanged. Bundled plugins and byte-verified
+required XNOBrain plugins are exempt; an entry-point, project, unknown-source,
+or same-named-but-different-bytes plugin is not.
+
+The AST review is a review aid, not completeness. Aliased contexts, dynamically
+computed calls, and forbidden calls hidden in imported helpers are only known at
+approved load time, where the mediated context guard enforces them. Invoking the
+raw pinned engine directly, outside every Runtime launcher above, is outside
+this policy. This is also not isolation: native plugin Python is still
+executable and can import modules, open sockets, or reach engine internals
+without using `ctx`. The network and filesystem boundary remains plan 017
+Phase 2.
+
 Shell hooks are created inert. Approval and enable are separate actions. The
 engine's valid shell events and maximum timeout (300 seconds) are authoritative.
 Lists expose a command label/digest, not full shell commands. Native consent

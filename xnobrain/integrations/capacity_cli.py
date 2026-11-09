@@ -61,13 +61,29 @@ def install_agent_admission(agent_class=None):
 
 
 def main():
+    # Importing the pinned main applies its own -p/--profile/sticky selector
+    # before any plugin manager is created. Bootstrap the selected manager,
+    # not the pre-selection root.
+    from hermes_cli.main import main as native_main
+    from hermes_cli.plugins import get_plugin_manager
+
+    from .plugin_registration_policy import bootstrap, enforce
+
+    manager = get_plugin_manager()
+    bootstrap(manager)
     from .code_tools import install_code_tools
 
     install_code_tools()
     install_agent_admission()
-    from hermes_cli.main import main as native_main
 
-    native_main()
+    try:
+        enforce(manager)
+        native_main()
+    except Exception as error:
+        if getattr(error, "code", "") == "plugin_capability_forbidden":
+            print("plugin_capability_forbidden", file=sys.stderr)
+            raise SystemExit(1) from None
+        raise
 
 
 if __name__ == "__main__":

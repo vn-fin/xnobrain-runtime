@@ -62,19 +62,28 @@ class CompiledContainerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             fake_hermes = root / "hermes"
-            fake_hermes.write_text(
-                "#!/usr/bin/env python\n"
-                "import os, sys\n"
-                "raise SystemExit(0 if os.environ['RUNTIME_LLM_API_KEY'] == "
-                "os.environ['EXPECTED_KEY'] and sys.argv[1] == '-p' else 1)\n",
-                encoding="utf-8",
-            )
+            fake_hermes.write_text("#!/bin/sh\nexit 99\n", encoding="utf-8")
             fake_hermes.chmod(0o755)
             python = root / "python"
             python.write_text(
                 f'#!/bin/sh\nexec {shlex.quote(sys.executable)} "$@"\n', encoding="utf-8"
             )
             python.chmod(0o755)
+            site = root / "site"
+            site.mkdir()
+            (site / "sitecustomize.py").write_text(
+                "import os, sys, types\n"
+                "import hermes_cli\n"
+                "fake = types.ModuleType('hermes_cli.main')\n"
+                "def _main():\n"
+                "    ok = (os.environ.get('RUNTIME_LLM_API_KEY') == "
+                "os.environ.get('EXPECTED_KEY') and sys.argv[1:] == ['-p', 'poem'])\n"
+                "    raise SystemExit(0 if ok else 1)\n"
+                "fake.main = _main\n"
+                "sys.modules['hermes_cli.main'] = fake\n"
+                "hermes_cli.main = fake\n",
+                encoding="utf-8",
+            )
             (root / "activity").mkdir()
             agent = root / "agent"
             agent.write_text(
@@ -87,29 +96,39 @@ class CompiledContainerTests(unittest.TestCase):
             key_file = root / "router-api-key"
             key_file.write_text("current-key\n", encoding="utf-8")
 
-            def run(expected_key: str, file_path: str) -> subprocess.CompletedProcess[str]:
+            def run(
+                expected_key: str, file_path: str, workspace_id: str
+            ) -> subprocess.CompletedProcess[str]:
+                environment = {
+                    "PATH": os.environ.get("PATH", ""),
+                    "PYTHONPATH": os.pathsep.join(
+                        filter(None, (str(site), str(ROOT), os.getenv("PYTHONPATH")))
+                    ),
+                    "DATA_DIR": str(root / "activity"),
+                    "RUNTIME_LLM_API_KEY": "stale-key",
+                    "RUNTIME_LLM_API_KEY_FILE": file_path,
+                    "EXPECTED_KEY": expected_key,
+                    "XNOBRAIN_ACTIVITY_FD": "3",
+                }
+                if workspace_id:
+                    environment["RUNTIME_WORKSPACE_ID"] = workspace_id
                 return subprocess.run(
                     [str(agent), "-p", "poem"],
-                    env={
-                        "PATH": os.environ.get("PATH", ""),
-                        "PYTHONPATH": os.pathsep.join(
-                            filter(None, (str(ROOT), os.getenv("PYTHONPATH")))
-                        ),
-                        "DATA_DIR": str(root / "activity"),
-                        "RUNTIME_LLM_API_KEY": "stale-key",
-                        "RUNTIME_LLM_API_KEY_FILE": file_path,
-                        "EXPECTED_KEY": expected_key,
-                    },
+                    env=environment,
                     capture_output=True,
                     text=True,
                     check=False,
                 )
 
-            self.assertEqual(run("current-key", str(key_file)).returncode, 0)
-            key_file.write_text("rotated-key\n", encoding="utf-8")
-            self.assertEqual(run("rotated-key", str(key_file)).returncode, 0)
-            self.assertEqual(run("", str(root / "missing-key")).returncode, 0)
-            self.assertEqual(run("stale-key", "").returncode, 0)
+            for workspace_id in ("", "workspace-test"):
+                with self.subTest(workspace_id=workspace_id or "unmanaged"):
+                    key_file.write_text("current-key\n", encoding="utf-8")
+                    first = run("current-key", str(key_file), workspace_id)
+                    self.assertEqual(first.returncode, 0, first.stderr)
+                    key_file.write_text("rotated-key\n", encoding="utf-8")
+                    self.assertEqual(run("rotated-key", str(key_file), workspace_id).returncode, 0)
+                    self.assertEqual(run("", str(root / "missing-key"), workspace_id).returncode, 0)
+                    self.assertEqual(run("stale-key", "", workspace_id).returncode, 0)
 
     def test_cli_profiles_link_to_runtime_agents_without_moving_existing_data(self):
         linker = ROOT / "runtime" / "link-native-profiles.sh"

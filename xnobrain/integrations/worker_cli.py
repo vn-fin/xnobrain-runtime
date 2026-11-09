@@ -67,9 +67,6 @@ def install_worker_agent(binding, run_id, parent_run_id=""):
 
 
 def main():
-    from .code_tools import install_code_tools
-
-    install_code_tools()
     if "--xnobrain-input-stdin" in sys.argv:
         sys.argv.remove("--xnobrain-input-stdin")
         # Keep large Teams prompts out of OS argv (E2BIG) and process listings.
@@ -78,7 +75,18 @@ def main():
             raise ValueError("invalid worker input")
         sys.argv.extend(["-z", message.decode("utf-8")])
 
+    # Importing the pinned main applies any -p/--profile/sticky selector before
+    # the worker creates a plugin manager.
     from hermes_cli.main import main as native_main
+    from hermes_cli.plugins import get_plugin_manager
+
+    from .plugin_registration_policy import bootstrap, enforce
+
+    manager = get_plugin_manager()
+    bootstrap(manager)
+    from .code_tools import install_code_tools
+
+    install_code_tools()
 
     from .run_admission import require_admitted
 
@@ -95,10 +103,16 @@ def main():
             os.environ.get("RUNTIME_EXECUTION_PARENT_RUN_ID", ""),
         )
     try:
+        enforce(manager)
         native_main()
     except SystemExit as error:
         if error.code not in (None, 0):
             raise
+    except Exception as error:
+        if getattr(error, "code", "") == "plugin_capability_forbidden":
+            print("plugin_capability_forbidden", file=sys.stderr)
+            raise SystemExit(1) from None
+        raise
     if outcome is not None and not outcome["completed"]:
         raise RuntimeError("worker exited without completing inference")
 

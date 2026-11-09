@@ -550,6 +550,202 @@ class ExtensionEngineTests(unittest.TestCase):
             self.assertEqual(result["scan"]["status"], "COMPLETED")
             self.assertEqual(result["scan"]["coverage"], "complete_text")
 
+    @staticmethod
+    def forbidden_calls():
+        return {
+            "register_middleware": '"pre_tool_call", lambda *args, **kwargs: None',
+            "register_approval_transport": '"fixture", lambda *args, **kwargs: None',
+            "register_redaction_patterns": '[r"xno-[A-Za-z0-9]{8}"]',
+            "register_secret_source": "object()",
+            "register_dashboard_auth_provider": "object()",
+        }
+
+    def forbidden_plugin(self, profile, method, args):
+        plugin = self.plugin(profile)
+        (plugin / "__init__.py").write_text(
+            f"def register(ctx):\n    ctx.{method}({args})\n", encoding="utf-8"
+        )
+        return plugin
+
+    def test_forbidden_native_registrations_fail_scan(self):
+        for method, args in self.forbidden_calls().items():
+            with self.subTest(method=method), tempfile.TemporaryDirectory() as root:
+                plugin = self.forbidden_plugin(self.profile(root), method, args)
+                with self.assertRaises(AgentAPIError) as error:
+                    engine.scan_plugin(plugin)
+                self.assertEqual(error.exception.code, "plugin_capability_forbidden")
+                self.assertEqual(
+                    str(error.exception),
+                    "Plugin uses a forbidden registration capability",
+                )
+
+    def test_forbidden_capabilities_match_pinned_plugin_context(self):
+        from hermes_cli.plugins import PluginContext
+
+        from xnobrain.integrations import plugin_registration_policy
+
+        self.assertEqual(
+            plugin_registration_policy.FORBIDDEN_REGISTRATIONS,
+            {
+                "register_middleware",
+                "register_approval_transport",
+                "register_redaction_patterns",
+                "register_secret_source",
+                "register_dashboard_auth_provider",
+            },
+        )
+        for method in plugin_registration_policy.FORBIDDEN_REGISTRATIONS:
+            with self.subTest(method=method):
+                self.assertTrue(callable(getattr(PluginContext, method, None)))
+
+    def test_allowed_standalone_plugin_loads_through_refresh(self):
+        from hermes_cli.plugins import get_plugin_manager
+
+        with tempfile.TemporaryDirectory() as root:
+            profile = self.profile(root)
+            plugin = self.plugin(profile)
+            (plugin / "SKILL.md").write_text(
+                "---\nname: demo\ndescription: Demo skill.\n---\n# Demo\n",
+                encoding="utf-8",
+            )
+            (plugin / "__init__.py").write_text(
+                "from pathlib import Path\n"
+                "def register(ctx):\n"
+                "    ctx.register_tool(name='xno_policy_fixture', toolset='sample', "
+                "schema={'name':'xno_policy_fixture','description':'fixture',"
+                "'parameters':{'type':'object','properties':{}}}, "
+                "handler=lambda **kwargs: 'fixture')\n"
+                "    ctx.register_hook('post_tool_call', lambda **kwargs: None)\n"
+                "    ctx.register_command('xno-demo', handler=lambda raw: None, "
+                "description='demo')\n"
+                "    ctx.register_skill('demo', Path(__file__).parent / 'SKILL.md', "
+                "'Demo skill.')\n",
+                encoding="utf-8",
+            )
+            (profile / "config.yaml").write_text(
+                "plugins:\n  enabled: [sample]\n", encoding="utf-8"
+            )
+            result = engine.scan_plugin(plugin)
+            state = load_state(profile)
+            state["plugins"]["sample"] = {
+                **result,
+                "approval": {"approved": True, "artifact_digest": result["artifact_digest"]},
+            }
+            save_state(profile, state)
+            engine.refresh_profile_plugins(profile)
+            try:
+                with engine.profile_context(profile):
+                    manager = get_plugin_manager()
+                    loaded = manager._plugins["sample"]
+                    self.assertTrue(loaded.enabled)
+                    self.assertIn("xno_policy_fixture", loaded.tools_registered)
+                    self.assertIn("post_tool_call", loaded.hooks_registered)
+                    self.assertIn("xno-demo", loaded.commands_registered)
+                    self.assertIn("sample:demo", manager._plugin_skills)
+            finally:
+                with engine.profile_context(profile):
+                    get_plugin_manager().unload("sample")
+
+    def test_forbidden_registration_is_rejected_on_enabled_load(self):
+        with tempfile.TemporaryDirectory() as root:
+            profile = self.profile(root)
+            plugin = self.forbidden_plugin(
+                profile,
+                "register_middleware",
+                '"pre_tool_call", lambda *args, **kwargs: None',
+            )
+            (profile / "config.yaml").write_text(
+                "plugins:\n  enabled: [sample]\n", encoding="utf-8"
+            )
+            digest = tree_digest(plugin)
+            save_state(
+                profile,
+                {
+                    "plugins": {
+                        "sample": {
+                            "artifact_digest": digest,
+                            "scan": {"status": "COMPLETED", "verdict": "safe"},
+                            "approval": {"approved": True, "artifact_digest": digest},
+                            "revision": 2,
+                        }
+                    },
+                    "hooks": {},
+                    "mcp": {},
+                    "revision": 2,
+                },
+            )
+            with self.assertRaises(AgentAPIError) as error:
+                engine.refresh_profile_plugins(profile)
+            self.assertEqual(error.exception.code, "plugin_capability_forbidden")
+            self.assertEqual(
+                str(error.exception),
+                "Plugin uses a forbidden registration capability",
+            )
+
+    def test_trusted_required_plugin_may_use_forbidden_registration(self):
+        from hermes_cli.plugins import get_plugin_manager
+
+        with tempfile.TemporaryDirectory() as root:
+            packaged = Path(root) / "packaged"
+            source = packaged / "xnobrain-runtime-updates"
+            source.mkdir(parents=True)
+            (source / "plugin.yaml").write_text("name: xnobrain-runtime-updates\n")
+            (source / "__init__.py").write_text(
+                "def register(ctx):\n"
+                "    ctx.register_middleware('pre_tool_call', lambda *args, **kwargs: None)\n",
+                encoding="utf-8",
+            )
+            profile = self.profile(root)
+            shutil.copytree(source, profile / "plugins" / "xnobrain-runtime-updates")
+            (profile / "config.yaml").write_text(
+                "plugins:\n  enabled: [xnobrain-runtime-updates]\n", encoding="utf-8"
+            )
+            with patch.dict(os.environ, {"XNOBRAIN_REQUIRED_PLUGINS_DIR": str(packaged)}):
+                engine.refresh_profile_plugins(profile)
+                try:
+                    with engine.profile_context(profile):
+                        manager = get_plugin_manager()
+                        loaded = manager._plugins["xnobrain-runtime-updates"]
+                        self.assertTrue(loaded.enabled)
+                        self.assertIn("pre_tool_call", manager._middleware)
+                finally:
+                    with engine.profile_context(profile):
+                        get_plugin_manager().unload("xnobrain-runtime-updates")
+
+    def test_scan_never_executes_native_plugin(self):
+        with tempfile.TemporaryDirectory() as root:
+            plugin = self.plugin(self.profile(root))
+            (plugin / "__init__.py").write_text(
+                "from pathlib import Path\n"
+                "SENTINEL = Path(__file__).parent / 'import-ran'\n"
+                "SENTINEL.write_text('imported')\n"
+                "def register(ctx):\n"
+                "    (Path(__file__).parent / 'register-ran').write_text('registered')\n"
+                "    ctx.register_middleware('pre_tool_call', lambda *args, **kwargs: None)\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(AgentAPIError) as error:
+                engine.scan_plugin(plugin)
+            self.assertEqual(error.exception.code, "plugin_capability_forbidden")
+            self.assertFalse((plugin / "import-ran").exists())
+            self.assertFalse((plugin / "register-ran").exists())
+
+    def test_scan_never_executes_allowed_native_plugin(self):
+        with tempfile.TemporaryDirectory() as root:
+            plugin = self.plugin(self.profile(root))
+            (plugin / "__init__.py").write_text(
+                "from pathlib import Path\n"
+                "SENTINEL = Path(__file__).parent / 'import-ran'\n"
+                "SENTINEL.write_text('imported')\n"
+                "def register(ctx):\n"
+                "    (Path(__file__).parent / 'register-ran').write_text('registered')\n",
+                encoding="utf-8",
+            )
+            result = engine.scan_plugin(plugin)
+            self.assertEqual(result["scan"]["status"], "COMPLETED")
+            self.assertFalse((plugin / "import-ran").exists())
+            self.assertFalse((plugin / "register-ran").exists())
+
     def test_native_python_dependencies_require_separate_review(self):
         with tempfile.TemporaryDirectory() as root:
             plugin = self.plugin(self.profile(root))

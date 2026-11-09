@@ -382,6 +382,17 @@ def main():
     from .conversation_credentials import install_workspace_router_key_scope
 
     try:
+        # Importing the pinned main applies any -p/--profile/sticky selector
+        # before the gateway creates a plugin manager.
+        from hermes_cli.main import main as native_main
+        from hermes_cli.plugins import get_plugin_manager
+
+        from .plugin_registration_policy import bootstrap, enforce
+
+        # Install policy before any gateway/import path can discover plugins.
+        manager = get_plugin_manager()
+        bootstrap(manager)
+
         # Applied before config load so the gateway's own startup scope and
         # every multiplexed per-turn scope see the workspace Router key.
         install_workspace_router_key_scope()
@@ -391,7 +402,7 @@ def main():
         install_gateway_pairing_locking()
         install_gateway_turns()
         install_runtime_channel_delegation()
-        from hermes_cli.main import main as native_main
+        enforce(manager)
 
         # Run exactly the foreground `hermes gateway run` path.
         sys.argv = ["hermes", "gateway", "run"]
@@ -400,8 +411,11 @@ def main():
         # Preserve the gateway's restart exit code (for example 75).
         raise
     except Exception as error:
-        # Native/provider exceptions may contain request data. Do not echo them.
-        print("Messaging gateway failed: " + type(error).__name__, file=sys.stderr)
+        if getattr(error, "code", "") == "plugin_capability_forbidden":
+            print("plugin_capability_forbidden", file=sys.stderr)
+        else:
+            # Native/provider exceptions may contain request data. Do not echo them.
+            print("Messaging gateway failed: " + type(error).__name__, file=sys.stderr)
         sys.exit(1)
 
 
