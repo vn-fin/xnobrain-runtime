@@ -463,6 +463,42 @@ class ExtensionEngineTests(unittest.TestCase):
                 engine.scan_plugin(plugin)
             self.assertEqual(error.exception.code, "plugin_manifest_invalid")
 
+    def test_recognized_unsupported_native_kinds_have_stable_code(self):
+        for kind in ("backend", "exclusive", "model-provider", "platform"):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as root:
+                plugin = self.plugin(self.profile(root))
+                (plugin / "plugin.yaml").write_text(
+                    f"name: sample\nversion: 1.0.0\nkind: {kind}\n", encoding="utf-8"
+                )
+                with self.assertRaises(AgentAPIError) as error:
+                    engine.scan_plugin(plugin)
+                self.assertEqual(error.exception.code, "plugin_kind_unsupported")
+                self.assertEqual(
+                    str(error.exception),
+                    "This plugin kind is unsupported; only standalone plugins can be installed",
+                )
+
+    def test_unknown_native_kind_remains_manifest_invalid(self):
+        for kind in ("bogus", "tool", "2"):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as root:
+                plugin = self.plugin(self.profile(root))
+                (plugin / "plugin.yaml").write_text(
+                    f"name: sample\nversion: 1.0.0\nkind: {kind}\n", encoding="utf-8"
+                )
+                with self.assertRaises(AgentAPIError) as error:
+                    engine.scan_plugin(plugin)
+                self.assertEqual(error.exception.code, "plugin_manifest_invalid")
+
+    def test_explicit_standalone_native_kind_still_scans(self):
+        with tempfile.TemporaryDirectory() as root:
+            plugin = self.plugin(self.profile(root))
+            (plugin / "plugin.yaml").write_text(
+                "name: sample\nversion: 1.0.0\nkind: standalone\n", encoding="utf-8"
+            )
+            result = engine.scan_plugin(plugin)
+            self.assertEqual(result["scan"]["status"], "COMPLETED")
+            self.assertEqual(result["scan"]["coverage"], "complete_text")
+
     def test_native_python_dependencies_require_separate_review(self):
         with tempfile.TemporaryDirectory() as root:
             plugin = self.plugin(self.profile(root))

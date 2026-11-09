@@ -145,6 +145,70 @@ class ExtensionOperationTests(unittest.TestCase):
         self.assertFalse(record["approval"]["approved"])
         self.assertEqual(record["scan"]["status"], "COMPLETED")
 
+    def test_unsupported_and_unknown_native_kinds_block_operations(self):
+        cases = {
+            "backend": "plugin_kind_unsupported",
+            "exclusive": "plugin_kind_unsupported",
+            "model-provider": "plugin_kind_unsupported",
+            "platform": "plugin_kind_unsupported",
+            "unknown-kind": "plugin_manifest_invalid",
+        }
+        for kind, expected_code in cases.items():
+            with self.subTest(kind=kind):
+
+                def clone_fixture(
+                    _source,
+                    _ref,
+                    stage,
+                    cancelled=lambda: False,
+                    kind=kind,
+                ):
+                    stage.mkdir(parents=True)
+                    (stage / "plugin.yaml").write_text(
+                        f"name: sample\nversion: 1.0.0\nkind: {kind}\n",
+                        encoding="utf-8",
+                    )
+                    (stage / "__init__.py").write_text(
+                        "def register(ctx):\n    pass\n", encoding="utf-8"
+                    )
+                    return "a" * 40
+
+                self.service.create_operation(
+                    "research",
+                    {
+                        "kind": "install",
+                        "plugin_id": "sample",
+                        "source": "https://example.org/example/plugin.git",
+                        "idempotency_key": f"unsupported-{kind}",
+                    },
+                    self.trusted,
+                )
+                operation = self.service.store.claim_next()
+                self.assertIsNotNone(operation)
+                worker = self.service.worker
+                worker._stopping = False
+                claimed = iter([operation])
+
+                def claim_once(claimed=claimed):
+                    item = next(claimed, None)
+                    if item is None:
+                        worker._stopping = True
+                    return item
+
+                with (
+                    patch.object(extension_engine, "clone_plugin", clone_fixture),
+                    patch.object(self.service.store, "claim_next", claim_once),
+                ):
+                    asyncio.run(worker._run())
+
+                result = self.service.get_operation(
+                    "research", operation["operation_id"], self.trusted
+                )
+                self.assertEqual(result["status"], "BLOCKED")
+                self.assertEqual(result["error"]["code"], expected_code)
+                self.assertIsNone(result["progress"])
+                self.assertFalse((self.profile / "plugins" / "sample").exists())
+
     def test_scan_disables_plugin_and_invalidates_approval(self):
         plugin = self.profile / "plugins" / "sample"
         plugin.mkdir(parents=True)

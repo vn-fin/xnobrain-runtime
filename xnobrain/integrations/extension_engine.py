@@ -392,6 +392,7 @@ _UNSUPPORTED_NATIVE_KINDS = {
     "model-provider": "Model provider plugins require managed provider support",
     "platform": "Platform plugins require packaged channel support",
 }
+_NATIVE_PLUGIN_KINDS = frozenset({"standalone", *_UNSUPPORTED_NATIVE_KINDS})
 
 
 def _check_native_package(path: Path) -> bool:
@@ -408,6 +409,11 @@ def _check_native_package(path: Path) -> bool:
             or manifest.get("key", name) != name
         ):
             fail("Plugin identity does not match the native loader", "plugin_manifest_invalid")
+        raw_kind = manifest.get("kind")
+        if raw_kind is not None and (
+            not isinstance(raw_kind, str) or raw_kind.strip().lower() not in _NATIVE_PLUGIN_KINDS
+        ):
+            fail("Plugin manifest is invalid", "plugin_manifest_invalid")
         from hermes_cli.plugins import PluginManager
 
         parsed = PluginManager()._parse_manifest(path / "plugin.yaml", path, "user", "")
