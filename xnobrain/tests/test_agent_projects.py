@@ -106,10 +106,10 @@ class AgentProjectsTests(unittest.TestCase):
                     ),
                 )
 
-    def test_missing_identity_org_and_revoked_context_are_rejected(self):
+    def test_missing_identity_mismatched_workspace_and_revoked_context_are_rejected(self):
         for identity, code in (
             (TrustedRequestContext(), "trusted_subject_required"),
-            (TrustedRequestContext("owner", "tenant", "org"), "agent_projects_personal_only"),
+            (TrustedRequestContext("owner", "tenant", "org"), "agent_projects_workspace_mismatch"),
             (
                 TrustedRequestContext("owner", "tenant", ownership_context={"state": "revoked"}),
                 "agent_projects_authority_revoked",
@@ -117,6 +117,27 @@ class AgentProjectsTests(unittest.TestCase):
         ):
             self.assert_code(code, lambda identity=identity: self.service.read(identity))
         self.assertFalse(self.service.repository.path.exists())
+
+    def test_folder_memberships_are_private_to_the_user_and_selected_workspace(self):
+        org = TrustedRequestContext("owner", "organization-org_one", "org_one")
+        created = self.service.mutate("create", {"name": "Work", "expected_revision": 0}, org)
+        project = created["projects"][0]["id"]
+        self.service.mutate(
+            "assign", {"project_id": project, "expected_revision": 1}, org, agent_id="research"
+        )
+        self.assertEqual(self.service.read(org)["memberships"], {"research": project})
+        for other in (
+            self.owner,
+            TrustedRequestContext("another", "organization-org_one", "org_one"),
+            TrustedRequestContext("owner", "organization-org_two", "org_two"),
+        ):
+            self.assertEqual(self.service.read(other)["projects"], [])
+            self.assert_code(
+                "agent_project_not_found",
+                lambda other=other: self.service.mutate(
+                    "delete", {"expected_revision": 0}, other, project_id=project
+                ),
+            )
 
     def test_big_brother_invalid_name_and_browser_authority_are_rejected(self):
         project = self.create()["projects"][0]["id"]
