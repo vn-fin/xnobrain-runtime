@@ -38,8 +38,9 @@ the separate `xnobrain_managed_mcp_servers` config key and run through
   so same-named servers in two profiles get separate sessions and a recreated
   profile cannot reuse an old session.
 - Catalog API keys and OAuth tokens live in Control. Runtime stores only a Control connection ID
-  and connects through Control's private MCP proxy with a short-lived in-memory
-  grant on each request; the key never enters the profile. Header placeholders
+  and connects through Control's private MCP proxy with an in-memory grant bound
+  to the active conversation run on each request; management calls use a
+  10-minute fallback grant. The key never enters the profile. Header placeholders
   for other managed servers resolve only from the profile's own secret scope.
   Direct public HTTPS transport uses the pinned Hermes SSRF-safe client;
   stdio remains unsupported.
