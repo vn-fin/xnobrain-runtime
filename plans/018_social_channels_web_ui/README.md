@@ -1,4 +1,4 @@
-# 018 — Social channels in the web UI (Zalo first)
+# 018 — Social channels in the web UI (generic framework, Zalo first)
 
 Status: plan, not implemented. Depends on the Runtime channel routes for
 `zalo_bot` (in progress on `feat/zalo-bot-platform`) and on plan
@@ -38,6 +38,16 @@ Verified in `xnobrain-ui` (branch `feat/zalo-channels`) and Runtime:
   entry inside chat without the secret touching the conversation.
 
 ## Design
+
+### Principle: one generic framework
+
+The channels UI is a framework for any social or messaging provider. The shared
+layer (API types, hook, card, registry) has no Zalo-specific names, strings or
+branches; Zalo personal and Zalo Bot are only the first registered descriptors.
+A new provider adds a descriptor, its own i18n keys under
+`channels.<provider>.*`, and, if it needs a new auth step, one small component.
+A genericity test injects a fake provider to prove the shared code needs no
+change, and a text check forbids `=== 'zalo'` comparisons in shared files.
 
 ### Provider descriptors, not per-provider components
 
@@ -93,7 +103,7 @@ state. Every status has copy in `en`, `vi` and `zh`.
 
 | Phase | Scope | Size | Needs |
 | --- | --- | --- | --- |
-| 0 | Generalize types and hook (`platform`, statuses), extract `ChannelCard`, keep Zalo personal pixel- and behaviour-identical | S–M | nothing |
+| 0 | Generic framework: provider registry, generic API types and hook (`useChannel`), descriptor-driven `ChannelCard`; remove Zalo-named shared exports; Zalo personal stays pixel- and behaviour-identical | S–M | nothing |
 | 1 | Zalo Bot card: token form, status, policy and allowed users, logout | M | Runtime `zalo_bot` routes |
 | 2 | Pairing approvals list (Runtime list/approve/deny endpoint and UI) | M | Runtime work |
 | 3 | Workspace Channels overview page and navigation entry | M | Phase 0 |
