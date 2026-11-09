@@ -30,6 +30,10 @@ optional_env:
     description: "Allow any Zalo user to talk to the bot (true/false)"
     prompt: "Allow all users?"
     password: false
+  - name: ZALO_BOT_DM_POLICY
+    description: "Direct-message policy: disabled, allowlist, or pairing (default: pairing)"
+    prompt: "DM policy"
+    password: false
   - name: ZALO_BOT_HOME_CHANNEL
     description: "Default Zalo chat ID for cron / notification delivery"
     prompt: "Home channel chat ID"

@@ -19,8 +19,9 @@ vendored.
 ## Local modifications
 
 Everything except the changes below is byte-identical to the pinned upstream
-commit. Networking, authentication, pairing, admin, anti-spam, history, and
-webhook logic are unchanged.
+commit. The local patches under "Local patches" below also modify behavior;
+the rest of the networking, authentication, pairing, admin, anti-spam,
+history, and webhook logic is unchanged.
 
 1. Platform key and label
    - `adapter.py`: `register()` now registers `name="zalo_bot"` and
@@ -50,6 +51,46 @@ webhook logic are unchanged.
    `_resolve_zalo_secret()` and its lazy `agent.secret_scope` import remain
    because they resolve the token for the adapter, requirement checks, and
    cron delivery outside the setup flow.
+
+## Local patches
+
+Security hardening applied on top of the vendored upstream code on 2026-11-09:
+
+1. H1 — Group admin authorization fails closed.
+   - `adapter.py`: new `_is_live_group_admin()` performs a live
+     `getGroupInfo` member-role lookup; any lookup error, malformed response,
+     missing member entry, or non-`owner`/`admin` role denies. The previous
+     allowlist fallback and the `chat_type == "GROUP"` bypass are removed, so
+     admin-only commands (`/kick`, `/promote`, `/poll`, `/pin`, `/noi-quy`, and
+     local settings commands) always require a live platform role.
+2. H2 — Bot token redaction in logs and errors.
+   - `adapter.py`: `httpx` and `httpcore` loggers are raised to `WARNING` at
+     adapter/client init so request URLs (which embed `/bot{token}`) are not
+     logged at INFO. `_ZaloClient._post()` scrubs the token from exception
+     text and from parsed API data; `connect()` scrubs the token from
+     verification-failure logs and fatal-error messages.
+3. H3 — DM policy enforcement and pairing hardening.
+   - `adapter.py`: `dm_policy` only accepts `disabled`, `allowlist`, or
+     `pairing`; any other value (including legacy `open`) is coerced to
+     `disabled`. `_passes_allowlist()` denies under `allowlist` when no
+     allowlist is configured and denies every DM under `disabled`.
+   - Pairing captcha state is keyed by sender user id instead of chat id,
+     wrong answers never echo the expected code, attempts are capped at
+     `PAIRING_MAX_ATTEMPTS` (5) followed by a 15-minute lockout, and
+     `_pending_approvals` is bounded to `MAX_PENDING_APPROVALS` (500) with the
+     oldest entry evicted.
+4. M1 — Config type coercion.
+   - `adapter.py`: `_coerce_bool()` treats `"false"`/`"0"`/`"no"`/`"off"` as
+     false and `_coerce_allowed_users()` comma-splits a string allowlist
+     instead of iterating it character by character.
+5. `_dm_policy` alias.
+   - `adapter.py`: `self._dm_policy` is set to the normalized `dm_policy` at
+     construction because Hermes gateway authorization reads the alias.
+6. `plugin.yaml` optional environment.
+   - Added `ZALO_BOT_DM_POLICY` with the supported values and default.
+
+Focused regression tests live in
+`xnobrain/tests/test_zalo_bot_plugin_hardening.py`.
 
 ## Update policy
 

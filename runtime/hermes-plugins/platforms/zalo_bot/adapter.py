@@ -13,8 +13,8 @@ Configuration in config.yaml:
           enabled: true
           extra:
             bot_token: "12345678:abc-def-xyz"
-            dm_policy: "pairing"    # or "open", "allowlist"
-            allowed_users: []       # empty = no restrictions (with dm_policy)
+            dm_policy: "pairing"    # disabled | allowlist | pairing
+            allowed_users: []       # comma string or list; required for allowlist
             webhook_url: ""         # optional, overrides long-polling
             webhook_secret: ""      # required if webhook_url is set
             webhook_port: 8443      # port for webhook listener
@@ -22,7 +22,7 @@ Configuration in config.yaml:
 
 Or via environment variables (overrides config.yaml):
     ZALO_BOT_TOKEN, ZALO_BOT_ALLOWED_USERS, ZALO_BOT_ALLOW_ALL_USERS,
-    ZALO_BOT_HOME_CHANNEL, ZALO_BOT_HOME_CHANNEL_NAME
+    ZALO_BOT_DM_POLICY, ZALO_BOT_HOME_CHANNEL, ZALO_BOT_HOME_CHANNEL_NAME
 """
 
 from __future__ import annotations
@@ -85,11 +85,85 @@ HISTORY_DIR = os.environ.get(
 # build local file paths (defence against traversal / odd filenames).
 _SAFE_ID_RE = re.compile(r"[^A-Za-z0-9_-]")
 
+# ── Direct-message / pairing constants ────────────────────────────
+# Only these dm_policy values are supported. Anything else (including the
+# legacy "open" value) is coerced to "disabled" so a typo can never open DMs.
+DM_POLICIES = ("disabled", "allowlist", "pairing")
+PAIRING_MAX_ATTEMPTS = 5
+PAIRING_LOCKOUT_SECONDS = 15 * 60
+MAX_PENDING_APPROVALS = 500
+
 
 def _safe_path_component(identifier: str) -> str:
     """Reduce a chat/group ID to [A-Za-z0-9_-] for local file names."""
     sanitized = _SAFE_ID_RE.sub("_", str(identifier))[:128]
     return sanitized or "unknown"
+
+
+def _coerce_bool(value: Any, default: bool = False) -> bool:
+    """Coerce config/env values to bool without treating "false" as true."""
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in ("1", "true", "yes", "on"):
+            return True
+        if normalized in ("0", "false", "no", "off", ""):
+            return False
+    return default
+
+
+def _coerce_allowed_users(value: Any) -> set:
+    """Normalize an allowlist from a comma string or an iterable of IDs."""
+    if value is None:
+        return set()
+    if isinstance(value, str):
+        items = value.split(",")
+    elif isinstance(value, (list, tuple, set, frozenset)):
+        items = value
+    else:
+        return set()
+    return {str(item).strip() for item in items if str(item).strip()}
+
+
+def _coerce_dm_policy(value: Any) -> str:
+    """Return a supported dm_policy, failing closed to "disabled"."""
+    normalized = str(value or "").strip().lower()
+    return normalized if normalized in DM_POLICIES else "disabled"
+
+
+def _redact_secret_text(text: Any, token: str) -> str:
+    """Replace the bot token in any text destined for a log or an error."""
+    rendered = str(text)
+    if token:
+        rendered = rendered.replace(token, "***")
+    return rendered
+
+
+def _redact_secret_data(value: Any, token: str) -> Any:
+    """Recursively redact the bot token from API response data."""
+    if not token:
+        return value
+    if isinstance(value, str):
+        return value.replace(token, "***")
+    if isinstance(value, dict):
+        return {key: _redact_secret_data(item, token) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_redact_secret_data(item, token) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_redact_secret_data(item, token) for item in value)
+    return value
+
+
+def _quiet_http_loggers() -> None:
+    """Stop httpx/httpcore from logging request URLs that embed the token."""
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+
 
 # ── Slash commands registry ───────────────────────────────────────
 SLASH_COMMANDS = {
@@ -219,9 +293,13 @@ class _ZaloClient:
     """Async HTTP client for the Zalo Bot API using httpx."""
 
     def __init__(self, bot_token: str):
+        _quiet_http_loggers()
         self.bot_token = bot_token
         self._base = ZALO_API_BASE.format(bot_token)
         self._client = None
+
+    def _redact(self, value: Any) -> Any:
+        return _redact_secret_data(value, self.bot_token)
 
     async def _ensure_client(self):
         if self._client is None:
@@ -243,11 +321,9 @@ class _ZaloClient:
         except Exception as e:
             # httpx error text includes the request URL, which embeds the
             # bot token (/bot{token}/...). Re-raise with the token scrubbed.
-            msg = str(e)
-            if self.bot_token:
-                msg = msg.replace(self.bot_token, "***")
+            msg = _redact_secret_text(e, self.bot_token)
             raise RuntimeError(f"{type(e).__name__}: {msg}") from None
-        return resp.json()
+        return self._redact(resp.json())
 
     async def get_me(self) -> dict:
         """Verify bot token and get bot info."""
@@ -678,6 +754,7 @@ class ZaloAdapter(BasePlatformAdapter):
     """
 
     def __init__(self, config, **kwargs):
+        _quiet_http_loggers()
         platform = Platform("zalo_bot")
         super().__init__(config=config, platform=platform)
 
@@ -687,21 +764,27 @@ class ZaloAdapter(BasePlatformAdapter):
         self.bot_token = _resolve_zalo_secret("ZALO_BOT_TOKEN", extra.get("bot_token", ""))
         self.bot_token = self.bot_token.strip()
 
-        # DM policy (env var overrides config.yaml)
-        self.dm_policy = os.getenv("ZALO_BOT_DM_POLICY") or extra.get("dm_policy", "pairing")
+        # DM policy (env var overrides config.yaml). Only disabled, allowlist
+        # and pairing are supported; unknown values fail closed to disabled.
+        self.dm_policy = _coerce_dm_policy(
+            os.getenv("ZALO_BOT_DM_POLICY") or extra.get("dm_policy", "pairing")
+        )
+        # Hermes gateway authorization reads the private alias.
+        self._dm_policy = self.dm_policy
 
-        # Allowed users (authorisation)
+        # Allowed users (authorisation). A string is always comma-split; it is
+        # never iterated character by character.
         allowed_env = os.getenv("ZALO_BOT_ALLOWED_USERS", "").strip()
         if allowed_env:
-            self.allowed_users: set = {u.strip() for u in allowed_env.split(",") if u.strip()}
+            self.allowed_users: set = _coerce_allowed_users(allowed_env)
         else:
-            self.allowed_users: set = set(extra.get("allowed_users", []))
+            self.allowed_users: set = _coerce_allowed_users(extra.get("allowed_users", []))
 
-        allow_all_env = os.getenv("ZALO_BOT_ALLOW_ALL_USERS", "").strip().lower()
+        allow_all_env = os.getenv("ZALO_BOT_ALLOW_ALL_USERS", "").strip()
         if allow_all_env:
-            self.allow_all = allow_all_env in ("1", "true", "yes")
+            self.allow_all = _coerce_bool(allow_all_env)
         else:
-            self.allow_all = extra.get("allow_all", False)
+            self.allow_all = _coerce_bool(extra.get("allow_all", False))
 
         # Webhook mode
         self.webhook_url = extra.get("webhook_url", "")
@@ -719,8 +802,9 @@ class ZaloAdapter(BasePlatformAdapter):
         self._bot_id: str = ""
         self._bot_name: str = ""
         self._bot_display_name: str = ""
-        self._pending_approvals: Dict[str, dict] = {}  # chat_id -> captcha info
-        self._captcha_passed: set = set()  # chat_ids that solved the captcha
+        self._pending_approvals: Dict[str, dict] = {}  # user_id -> captcha info
+        self._captcha_passed: set = set()  # user_ids that solved the captcha
+        self._pairing_blocks: Dict[str, float] = {}  # user_id -> blocked-until
 
         # Moderation & group management instances. _GroupManager resolves
         # self._client lazily (client is only created in connect()).
@@ -740,6 +824,26 @@ class ZaloAdapter(BasePlatformAdapter):
         if len(token) <= 12:
             return token[:4] + "..." + token[-4:] if len(token) > 8 else "***"
         return token[:4] + "..." + token[-4:]
+
+    def _redact(self, value: Any) -> Any:
+        """Redact the bot token from API data before logging it."""
+        return _redact_secret_data(value, self.bot_token)
+
+    def _add_pending_approval(
+        self, user_id: str, chat_id: str, user_name: str, code: str
+    ) -> None:
+        """Store a pending captcha, evicting the oldest entries past the cap."""
+        self._pending_approvals[user_id] = {
+            "code": code,
+            "chat_id": chat_id,
+            "user_id": user_id,
+            "user_name": user_name,
+            "attempts": 0,
+            "expires_at": time.time() + 3600,  # 1 hour
+        }
+        while len(self._pending_approvals) > MAX_PENDING_APPROVALS:
+            oldest = next(iter(self._pending_approvals))
+            self._pending_approvals.pop(oldest, None)
 
     @property
     def name(self) -> str:
@@ -764,10 +868,11 @@ class ZaloAdapter(BasePlatformAdapter):
         try:
             me = await self._client.get_me()
             if not me.get("ok"):
-                logger.error("Zalo: token verification failed: %s", me)
+                safe_me = self._redact(me)
+                logger.error("Zalo: token verification failed: %s", safe_me)
                 self._set_fatal_error(
                     "auth_failed",
-                    f"Zalo token rejected: {me}",
+                    f"Zalo token rejected: {safe_me}",
                     retryable=False,
                 )
                 return False
@@ -782,8 +887,9 @@ class ZaloAdapter(BasePlatformAdapter):
                 self._bot_info.get("account_type", "?"),
             )
         except Exception as e:
-            logger.error("Zalo: token verification error: %s", e)
-            self._set_fatal_error("auth_error", str(e), retryable=True)
+            safe_error = _redact_secret_text(e, self.bot_token)
+            logger.error("Zalo: token verification error: %s", safe_error)
+            self._set_fatal_error("auth_error", safe_error, retryable=True)
             return False
 
         # Start receiving messages (polling or webhook)
@@ -1046,8 +1152,9 @@ class ZaloAdapter(BasePlatformAdapter):
             if self._bot_display_name:
                 text = text.replace(f"@{self._bot_display_name}", "").replace(f"{self._bot_display_name}", "").strip()
 
-            # Auth check for group (check the user who sent it)
-            if not self._passes_allowlist(user_id):
+            # Auth check for group (check the user who sent it). dm_policy is a
+            # direct-message policy, so it must not gate group traffic.
+            if not self._group_member_allowed(user_id):
                 logger.debug("Zalo: ignoring group message from unauthorized user %s", user_id)
                 return
 
@@ -1064,49 +1171,65 @@ class ZaloAdapter(BasePlatformAdapter):
             return
 
         # ── DM handling ─────────────────────────────────────────────────
+        # DM policy gate. Unknown policies were normalized to "disabled" in
+        # __init__, so a typo can never turn into an open DM bot.
+        if self.dm_policy == "disabled":
+            logger.debug("Zalo: DM policy disabled; ignoring message from %s", user_id)
+            return
+
         # DM pairing approval flow (only for PRIVATE chats).
         # The real approval is Hermes core pairing (`hermes pairing approve
         # zalo_bot <code>`). The adapter code below is only a self-served captcha:
         # it proves the requester can read the chat and cuts drive-by spam,
-        # it never grants access on its own.
-        if self.dm_policy == "pairing" and chat_id not in self._captcha_passed:
-            if chat_id not in self._pending_approvals:
+        # it never grants access on its own. Captcha state is keyed by sender
+        # user id (not chat id) and bounded to MAX_PENDING_APPROVALS entries.
+        if self.dm_policy == "pairing" and user_id not in self._captcha_passed:
+            now = time.time()
+            blocked_until = self._pairing_blocks.get(user_id, 0)
+            if blocked_until > now:
+                logger.debug("Zalo: pairing temporarily locked for %s", user_id)
+                return
+            if blocked_until:
+                self._pairing_blocks.pop(user_id, None)
+
+            if user_id not in self._pending_approvals:
                 # First contact — generate a random captcha code
                 code = f"{secrets.randbelow(10**6):06d}"
-                self._pending_approvals[chat_id] = {
-                    "code": code,
-                    "user_id": user_id,
-                    "user_name": user_name,
-                    "expires_at": time.time() + 3600,  # 1 hour
-                }
-                # Send captcha code
+                self._add_pending_approval(user_id, chat_id, user_name, code)
                 await self._send_captcha_code(chat_id, code, user_name)
                 return
 
             # Check if the message is the captcha code
-            approval = self._pending_approvals[chat_id]
+            approval = self._pending_approvals[user_id]
             text = (message.get("text") or "").strip()
-            if approval.get("expires_at", 0) < time.time():
-                self._pending_approvals.pop(chat_id, None)
-                self._captcha_passed.discard(chat_id)
+            if approval.get("expires_at", 0) < now:
+                self._pending_approvals.pop(user_id, None)
+                self._captcha_passed.discard(user_id)
                 await self._send_text(chat_id, "⚠️ Mã xác thực đã hết hạn. Gửi tin nhắn bất kỳ để nhận mã mới.")
                 return
             if text == approval["code"]:
-                # Captcha passed — mark and fall through to handle the message
-                self._captcha_passed.add(chat_id)
-                self._pending_approvals.pop(chat_id, None)
+                # Captcha passed — mark and let the next message through.
+                self._captcha_passed.add(user_id)
+                self._pending_approvals.pop(user_id, None)
                 await self._send_text(chat_id, "✅ Xác thực thành công! Bạn có thể trò chuyện với bot.")
-            else:
-                if approval.get("expires_at", 0) < time.time():
-                    self._pending_approvals.pop(chat_id, None)
-                    self._captcha_passed.discard(chat_id)
-                    await self._send_text(chat_id, "⚠️ Mã xác thực đã hết hạn. Gửi tin nhắn bất kỳ để nhận mã mới.")
-                    return
+                return
+
+            # Wrong answer: never echo the expected code back to the sender.
+            attempts = int(approval.get("attempts", 0)) + 1
+            approval["attempts"] = attempts
+            if attempts >= PAIRING_MAX_ATTEMPTS:
+                self._pending_approvals.pop(user_id, None)
+                self._pairing_blocks[user_id] = now + PAIRING_LOCKOUT_SECONDS
                 await self._send_text(
                     chat_id,
-                    f"⚠️ Vui lòng nhập mã xác thực **{approval['code']}** để bắt đầu trò chuyện."
+                    "⛔ Quá nhiều lần nhập sai. Vui lòng thử lại sau 15 phút.",
                 )
-                return
+            else:
+                await self._send_text(
+                    chat_id,
+                    "⚠️ Mã xác thực không đúng. Vui lòng thử lại.",
+                )
+            return
 
         # Auth check
         if not self._passes_allowlist(user_id):
@@ -1140,6 +1263,35 @@ class ZaloAdapter(BasePlatformAdapter):
             chat_type=chat_type,
         )
 
+    async def _is_live_group_admin(self, chat_id: str, user_id: str) -> bool:
+        """Fail-closed live owner/admin lookup for adapter-handled commands.
+
+        Any lookup error, malformed platform response, missing member entry,
+        or non-owner/admin role denies. There is no allowlist fallback, and a
+        missing or unexpected chat type cannot skip the role check.
+        """
+        try:
+            group_info = await self._group_manager.get_group_info(chat_id)
+        except Exception as e:
+            logger.warning(
+                "Zalo: group admin check failed (%s) — denying", type(e).__name__
+            )
+            return False
+        if not isinstance(group_info, dict) or group_info.get("ok") is False:
+            return False
+        result = group_info.get("result")
+        if not isinstance(result, dict):
+            return False
+        members = result.get("members")
+        if not isinstance(members, list):
+            return False
+        for member in members:
+            if not isinstance(member, dict):
+                continue
+            if str(member.get("user_id")) == str(user_id):
+                return member.get("role") in ("owner", "admin")
+        return False
+
     async def _handle_slash_command(
         self,
         slash: Dict[str, Any],
@@ -1161,32 +1313,13 @@ class ZaloAdapter(BasePlatformAdapter):
             logger.debug("Zalo: ignoring /%s from unauthorized user %s", cmd, user_id)
             return
 
-        # Admin-only check
-        # For group commands, verify user is admin/owner in the group
+        # Admin-only commands must be backed by a live platform owner/admin
+        # role. A failed lookup, malformed response, missing chat type, or
+        # roster miss all deny; never fall back to the allowlist.
         if spec["admin_only"]:
-            if chat_type == "GROUP":
-                # Group admin/owner check via group member roles
-                try:
-                    group_info = await self._group_manager.get_group_info(chat_id)
-                    members = group_info.get("result", {}).get("members", [])
-                    user_role = "member"
-                    for m in members:
-                        if str(m.get("user_id")) == str(user_id):
-                            user_role = m.get("role", "member")
-                            break
-                    if user_role not in ("owner", "admin"):
-                        await self._send_text(chat_id, "❌ Bạn không có quyền thực hiện lệnh này.")
-                        return
-                except Exception as e:
-                    logger.warning("Zalo: group admin check failed (%s) — falling back to allowlist", e)
-                    if not self._is_user_authorized(user_id):
-                        await self._send_text(chat_id, "❌ Bạn không có quyền thực hiện lệnh này.")
-                        return
-            else:
-                # DM: admin-only commands require allowlist authorization
-                if not self._is_user_authorized(user_id):
-                    await self._send_text(chat_id, "❌ Bạn không có quyền thực hiện lệnh này.")
-                    return
+            if not await self._is_live_group_admin(chat_id, user_id):
+                await self._send_text(chat_id, "❌ Bạn không có quyền thực hiện lệnh này.")
+                return
 
         try:
             if cmd == "/menu":
@@ -1394,16 +1527,34 @@ class ZaloAdapter(BasePlatformAdapter):
             return False
         return user_id in self.allowed_users
 
-    def _passes_allowlist(self, user_id: str) -> bool:
-        """Pre-filter for agent-bound messages.
+    def _group_member_allowed(self, user_id: str) -> bool:
+        """Group pre-filter for agent-bound messages.
 
-        These go through Hermes' gateway authorization (allowlist, pairing,
-        allow-all) in handle_message, so with no adapter allowlist configured
-        defer to it instead of dropping users that core pairing could admit.
+        ``dm_policy`` only governs direct messages, so group traffic keeps the
+        legacy behavior: defer to Hermes core when no adapter allowlist exists.
         """
-        if not self.allow_all and not self.allowed_users:
+        if self.allow_all:
             return True
-        return self._is_user_authorized(user_id)
+        if not self.allowed_users:
+            return True
+        return user_id in self.allowed_users
+
+    def _passes_allowlist(self, user_id: str) -> bool:
+        """DM pre-filter for agent-bound messages.
+
+        ``disabled`` denies every DM, ``allowlist`` requires a configured
+        allowlist that contains the user, and ``pairing`` defers to Hermes'
+        gateway authorization when no adapter allowlist is configured.
+        """
+        if self.dm_policy == "disabled":
+            return False
+        if self.dm_policy == "allowlist":
+            return bool(self.allowed_users) and user_id in self.allowed_users
+        if self.allow_all:
+            return True
+        if not self.allowed_users:
+            return True
+        return user_id in self.allowed_users
 
     async def _dispatch_message(
         self,
