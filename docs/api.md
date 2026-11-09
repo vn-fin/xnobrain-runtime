@@ -757,6 +757,50 @@ profile is included in `gateway.multiplex_profile_allowlist` when either
 `platforms.zalo.enabled` or `platforms.zalo_bot.enabled` is true; the root
 profile and `default` are never listed.
 
+### Channel pairing management
+
+Pairing management is generic for `zalo` and `zalo_bot`, gated by
+`FT_ENABLE_AGENT_CHANNELS`, and available only for an enabled channel whose
+persisted owner binding matches the verified same-agent Personal principal.
+It reuses the pinned Hermes `gateway.pairing.PairingStore`; Runtime has no
+second pairing store or database.
+
+| Method and path | Body | Result |
+|---|---|---|
+| `GET /xnobrain/api/runtime/v1/agents/{agent_id}/channels/{platform}/pairings` | — | `ChannelPairingListResult` |
+| `POST .../channels/{platform}/pairings/approve` | `{request_id}` | `ChannelPairingApproveResult` |
+| `POST .../channels/{platform}/pairings/deny` | `{request_id}` | `ChannelPairingDenyResult` |
+| `POST .../channels/{platform}/pairings/revoke` | `{user_id}` | `ChannelPairingRevokeResult` |
+
+`request_id` is the 16-hex identifier returned by the list endpoint. Raw
+pairing codes, hashes, salts, and credential values are never returned.
+`user_name` is a bounded untrusted label. Timestamps are derived from the
+engine's minute-resolution age, so `requested_at`/`expires_at` are approximate
+to the minute.
+
+`approve` and `deny` require `dm_policy: pairing`; other policies return
+`403 channel_pairing_policy_required`. `list` and `revoke` remain available for
+cleanup while the channel is enabled. A missing, expired, or already-consumed
+request returns `404 pairing_request_not_found`; the pinned store does not keep
+a replayable request history, so approve/deny are not idempotent. `deny` may
+return `404 pairing_request_expired` when the expired row is still observable.
+`revoke` is idempotent and returns `200` with `status: "revoked"` or
+`"not_approved"`. Invalid platforms return `422 invalid_platform`; disabled
+channels return `403 channel_disabled`; owner failures return the same
+`channel_owner_*`/`permission_denied` errors as channel configuration.
+
+Runtime and the pinned gateway coordinate mutations with one per-store
+cross-process lock at `<pairing-dir>/.xnobrain-pairing.lock`. The lock is
+thread-reentrant, rejects symlinked pairing directories that escape the Hermes
+root, waits at most five seconds, and fails closed: the gateway mutation returns
+its conservative default, while the API returns
+`503 pairing_store_busy`/`pairing_store_unavailable`. Reads use the engine's
+atomic JSON files and do not require the lock. The gateway launcher installs
+the same lock wrapper around `generate_code`, `approve_code`,
+`approve_request`, `revoke`, `clear_pending`, `list_pending`, and the pinned
+constructor's split-directory migration before the pinned gateway starts; no
+vendor source is edited.
+
 ### Private gateway turns
 
 `POST /xnobrain/api/runtime/v1/internal/channels/turn` runs one

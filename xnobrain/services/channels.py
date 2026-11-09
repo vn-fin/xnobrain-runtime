@@ -31,6 +31,7 @@ _ZALO_ID = re.compile(r"^[0-9]{1,32}$")
 _ZALO_BOT_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _ZALO_BOT_TOKEN = re.compile(r"^[0-9]{1,20}:[A-Za-z0-9_-]{8,128}$")
 _SAFE_IDENTITY = re.compile(r"^[^\x00-\x1f/\\]{1,200}$")
+_PAIRING_REQUEST_ID = re.compile(r"^[0-9a-fA-F]{16}$")
 _DM_POLICIES = {"disabled", "allowlist", "pairing"}
 _SAFE_TURN_DM_POLICIES = {"allowlist", "pairing"}
 _TURN_PLATFORMS = {"zalo", "zalo_bot"}
@@ -560,6 +561,244 @@ class ChannelsService:
                 key: max(0, int(usage.get(key) or 0))
                 for key in ("input_tokens", "output_tokens", "total_tokens")
             },
+        }
+
+    @staticmethod
+    def _pairing_label(value: Any) -> str:
+        text = " ".join(str(value or "").split())
+        return "".join(char for char in text if char.isprintable())[:200]
+
+    @staticmethod
+    def _pairing_platform(value: Any) -> str:
+        platform = str(value or "").strip().lower()
+        if platform not in _TURN_PLATFORMS:
+            raise ServiceError("unsupported channel platform", status=422, code="invalid_platform")
+        return platform
+
+    def _pairing_policy(self, config: Mapping[str, Any], platform: str) -> str:
+        if platform == "zalo":
+            return self._dm_policy(config)
+        return self._bot_dm_policy(config)
+
+    def _require_pairing_policy(self, profile: Path, platform: str) -> None:
+        config = self.repository.config(profile)
+        if self._pairing_policy(config, platform) != "pairing":
+            raise ServiceError(
+                "channel pairing policy is not enabled",
+                status=403,
+                code="channel_pairing_policy_required",
+            )
+
+    def _require_pairing_owner(self, agent_id: str, profile: Path, trusted: Any) -> dict[str, Any]:
+        """Require the verified same-agent Personal owner, never request fields."""
+        subject = str(getattr(trusted, "subject", "") or "").strip()
+        if not subject:
+            raise ServiceError(
+                "verified channel owner is required",
+                status=401,
+                code="trusted_context_required",
+            )
+        context = getattr(trusted, "ownership_context", None)
+        if isinstance(context, Mapping):
+            owner_kind = str(context.get("owner_kind") or "")
+            if owner_kind and owner_kind != "personal":
+                raise ServiceError(
+                    "channel pairing requires a Personal context",
+                    status=403,
+                    code="channel_personal_required",
+                )
+            if context.get("organization_id"):
+                raise ServiceError(
+                    "channel pairing requires a Personal context",
+                    status=403,
+                    code="channel_personal_required",
+                )
+        binding = self._require_owner_binding(agent_id, profile)
+        if str(binding.get("user_id") or "") != subject:
+            raise ServiceError(
+                "channel owner does not match",
+                status=403,
+                code="channel_owner_mismatch",
+            )
+        trusted_tenant = str(getattr(trusted, "tenant_id", "") or "")
+        binding_tenant = str(binding.get("tenant_id") or "")
+        if trusted_tenant and binding_tenant and trusted_tenant != binding_tenant:
+            raise ServiceError(
+                "channel owner does not match",
+                status=403,
+                code="channel_owner_mismatch",
+            )
+        if str(getattr(trusted, "organization_id", "") or ""):
+            raise ServiceError(
+                "channel pairing requires a Personal context",
+                status=403,
+                code="channel_personal_required",
+            )
+        return binding
+
+    def _pairing_store(self, agent_id: str):
+        from ..integrations.hermes_pairings import get_channel_pairing_store
+
+        return get_channel_pairing_store(agent_id, self._root_profile().name)
+
+    async def _call_pairing_store(self, function, *args):
+        from ..repositories.file_lock import FileLockTimeout
+
+        try:
+            return await asyncio.to_thread(function, *args)
+        except ServiceError:
+            raise
+        except FileLockTimeout as error:
+            _LOGGER.warning("channel pairing store lock timed out")
+            raise ServiceError(
+                "channel pairing store is busy",
+                status=503,
+                code="pairing_store_busy",
+            ) from error
+        except Exception as error:
+            _LOGGER.warning("channel pairing store unavailable: %s", type(error).__name__)
+            raise ServiceError(
+                "channel pairing store is unavailable",
+                status=503,
+                code="pairing_store_unavailable",
+            ) from error
+
+    async def list_pairings(
+        self, agent_id: str, platform: str, trusted: Any = None
+    ) -> dict[str, Any]:
+        """List sanitized pending/approved pairing state for one enabled channel."""
+        self._require_feature()
+        platform = self._pairing_platform(platform)
+        profile = self._profile(agent_id)
+        self._require_pairing_owner(agent_id, profile, trusted)
+        self._require_enabled_channel(profile, platform)
+        config = self.repository.config(profile)
+        policy = self._pairing_policy(config, platform)
+        store = self._pairing_store(agent_id)
+        pending_raw, approved_raw = await asyncio.gather(
+            self._call_pairing_store(store.pending, platform),
+            self._call_pairing_store(store.approved, platform),
+        )
+        now = time.time()
+        from ..integrations.hermes_pairings import PAIRING_CODE_TTL_SECONDS
+
+        pending = []
+        for item in pending_raw:
+            if not isinstance(item, Mapping):
+                continue
+            request_id = str(item.get("request_id") or "").strip()
+            user_id = str(item.get("user_id") or "").strip()
+            if not request_id or not user_id:
+                continue
+            if not _PAIRING_REQUEST_ID.fullmatch(request_id):
+                continue
+            if not _SAFE_IDENTITY.fullmatch(user_id):
+                continue
+            try:
+                age_minutes = max(0, int(item.get("age_minutes") or 0))
+            except (TypeError, ValueError):
+                continue
+            requested_at = max(0.0, now - age_minutes * 60.0)
+            pending.append(
+                {
+                    "request_id": request_id,
+                    "user_id": user_id,
+                    "user_name": self._pairing_label(item.get("user_name")),
+                    "requested_at": requested_at,
+                    "expires_at": requested_at + PAIRING_CODE_TTL_SECONDS,
+                }
+            )
+        approved = []
+        for item in approved_raw:
+            if not isinstance(item, Mapping):
+                continue
+            user_id = str(item.get("user_id") or "").strip()
+            if not user_id or not _SAFE_IDENTITY.fullmatch(user_id):
+                continue
+            approved_at = item.get("approved_at")
+            if not isinstance(approved_at, (int, float)) or isinstance(approved_at, bool):
+                approved_at = None
+            approved.append(
+                {
+                    "user_id": user_id,
+                    "user_name": self._pairing_label(item.get("user_name")),
+                    "approved_at": approved_at,
+                }
+            )
+        pending.sort(key=lambda item: item["requested_at"])
+        approved.sort(key=lambda item: item.get("approved_at") or 0.0, reverse=True)
+        return {
+            "platform": platform,
+            "dm_policy": policy,
+            "pending": pending,
+            "approved": approved,
+        }
+
+    async def approve_pairing(
+        self, agent_id: str, platform: str, request_id: str, trusted: Any = None
+    ) -> dict[str, Any]:
+        self._require_feature()
+        platform = self._pairing_platform(platform)
+        profile = self._profile(agent_id)
+        self._require_pairing_owner(agent_id, profile, trusted)
+        self._require_enabled_channel(profile, platform)
+        self._require_pairing_policy(profile, platform)
+        store = self._pairing_store(agent_id)
+        result = await self._call_pairing_store(store.approve, platform, str(request_id))
+        if not isinstance(result, Mapping):
+            raise ServiceError(
+                "pairing request is missing, expired, or already consumed",
+                status=404,
+                code="pairing_request_not_found",
+            )
+        return {
+            "status": "approved",
+            "user_id": str(result.get("user_id") or "").strip()[:200],
+            "user_name": self._pairing_label(result.get("user_name")),
+        }
+
+    async def deny_pairing(
+        self, agent_id: str, platform: str, request_id: str, trusted: Any = None
+    ) -> dict[str, Any]:
+        self._require_feature()
+        platform = self._pairing_platform(platform)
+        profile = self._profile(agent_id)
+        self._require_pairing_owner(agent_id, profile, trusted)
+        self._require_enabled_channel(profile, platform)
+        self._require_pairing_policy(profile, platform)
+        store = self._pairing_store(agent_id)
+        status = await self._call_pairing_store(store.deny, platform, str(request_id))
+        if status == "denied":
+            return {"status": "denied", "request_id": str(request_id)}
+        if status == "expired":
+            raise ServiceError(
+                "pairing request expired",
+                status=404,
+                code="pairing_request_expired",
+            )
+        raise ServiceError(
+            "pairing request is missing or already consumed",
+            status=404,
+            code="pairing_request_not_found",
+        )
+
+    async def revoke_pairing(
+        self, agent_id: str, platform: str, user_id: str, trusted: Any = None
+    ) -> dict[str, Any]:
+        self._require_feature()
+        platform = self._pairing_platform(platform)
+        user_id = str(user_id or "").strip()
+        pattern = _ZALO_ID if platform == "zalo" else _ZALO_BOT_ID
+        if not pattern.fullmatch(user_id):
+            raise ServiceError("channel user ID is invalid", status=422, code="invalid_user_id")
+        profile = self._profile(agent_id)
+        self._require_pairing_owner(agent_id, profile, trusted)
+        self._require_enabled_channel(profile, platform)
+        store = self._pairing_store(agent_id)
+        revoked = await self._call_pairing_store(store.revoke, platform, user_id)
+        return {
+            "status": "revoked" if revoked else "not_approved",
+            "user_id": user_id,
         }
 
     @staticmethod

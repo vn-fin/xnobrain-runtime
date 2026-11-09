@@ -141,3 +141,45 @@ marketplace for platform plugins, auto-update.
 4. Billing model for provider plugins (pass-through vs. markup).
 5. Must proxy credentials share the existing MCP connection store, or get a
    separate table with a different retention policy?
+
+## Workload identity decision (2026-11-09, implementation pending)
+
+Owner-bound background grants must work without a browser refresh and without
+Incus-shaped fixture rows in the Docker source stack. Control owns the identity.
+The existing workspace row remains the authority; add a stable opaque
+`runtime_workload_id` and durable server-resolved `owner_tenant_id`. Keep the
+existing instance-derived internal token contract for legacy managed traffic.
+Issue a separate workload-scoped bearer for grant renewal, derived with a
+distinct domain separator from the Control key; never give Runtime that key.
+
+Both normal provisioning and source assignment persist these fields from the
+verified subject. They never infer a tenant from a user ID or accept ownership
+from a request body. Existing managed rows may be backfilled only from matching
+server-authored provisioning identity. Unknown or conflicting ownership fails
+closed. No synthetic cluster or provisioning row is created for Docker.
+
+For the personal source Runtime, reuse the existing private runtime-secrets
+mount and the Control-owned static assignment path. Atomically write one
+`workload-identity.json` containing workspace/workload IDs, owner/tenant, and
+the derived bearer, mode 0600. Preserve one existing owner: an attempt to bind
+the same source mount to another active owner returns a conflict. Do not rotate
+or replace the shared Runtime internal token. The static proxy uses the real
+server-resolved workspace ID for personal routes; organization routing remains
+unchanged until organization channels are supported. The identity survives
+process restarts. DB commit precedes file publication; retries reuse the stable
+ID, and a failed publication cannot silently reassign the mount.
+
+Grant renewal resolves current workspace ownership/status from Control's durable
+record, validates the workload bearer, and rejects stopped/deleted/reassigned
+workspaces. Cluster/provisioning guards remain for legacy managed identities;
+new workload identities do not pretend that Docker runs on Incus. Runtime reads
+the private identity file, checks it against the verified channel owner, and
+keeps short-lived grants in memory. No secret enters run records, event payloads,
+logs, UI responses, or chat.
+
+Acceptance: real PostgreSQL tests for normal and source identity, restart/renewal,
+wrong owner/tenant/workload/token, failed publication and conflicting source
+assignment; managed provisioning contract tests; no shared-user fixture mutation;
+no master key in Runtime, no fake Incus metadata, and no browser warm-up needed
+after initial verified assignment. Source implementation and tests do not imply
+a deployed Incus verification.

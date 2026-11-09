@@ -216,6 +216,65 @@ class ChannelZaloBotPatch(BaseModel):
         return result
 
 
+class ChannelPairingPending(BaseModel):
+    """One sanitized pending pairing request; no code or hash is exposed."""
+
+    request_id: str = Field(pattern=r"^[0-9a-fA-F]{16}$")
+    user_id: str = Field(min_length=1, max_length=200)
+    user_name: str = Field(default="", max_length=200)
+    requested_at: float = Field(ge=0)
+    expires_at: float = Field(ge=0)
+
+
+class ChannelPairingApproved(BaseModel):
+    """One approved sender in the pinned pairing store."""
+
+    user_id: str = Field(min_length=1, max_length=200)
+    user_name: str = Field(default="", max_length=200)
+    approved_at: float | None = Field(default=None, ge=0)
+
+
+class ChannelPairingListResult(BaseModel):
+    """Sanitized pairing state for one enabled channel."""
+
+    platform: Literal["zalo", "zalo_bot"]
+    dm_policy: DmPolicy
+    pending: list[ChannelPairingPending] = Field(default_factory=list)
+    approved: list[ChannelPairingApproved] = Field(default_factory=list)
+
+
+class ChannelPairingRequest(BaseModel):
+    """Approve or deny one pending request by its server-side id."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: str = Field(pattern=r"^[0-9a-fA-F]{16}$")
+
+
+class ChannelPairingApproveResult(BaseModel):
+    status: Literal["approved"] = "approved"
+    user_id: str
+    user_name: str = ""
+
+
+class ChannelPairingDenyResult(BaseModel):
+    status: Literal["denied"] = "denied"
+    request_id: str
+
+
+class ChannelPairingRevokeRequest(BaseModel):
+    """Revoke one approved sender for the selected channel."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    user_id: str = Field(min_length=1, max_length=200)
+
+
+class ChannelPairingRevokeResult(BaseModel):
+    status: Literal["revoked", "not_approved"]
+    user_id: str
+
+
 class ChannelQrResult(BaseModel):
     """Current QR login state; the image is present only while ``status == "qr"``."""
 

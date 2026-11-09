@@ -386,6 +386,9 @@ def main():
         # every multiplexed per-turn scope see the workspace Router key.
         install_workspace_router_key_scope()
         install_gateway_log_redaction()
+        from .hermes_pairings import install_gateway_pairing_locking
+
+        install_gateway_pairing_locking()
         install_gateway_turns()
         install_runtime_channel_delegation()
         from hermes_cli.main import main as native_main

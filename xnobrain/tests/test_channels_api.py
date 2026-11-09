@@ -65,8 +65,17 @@ class ChannelFeatureGateTests(unittest.IsolatedAsyncioTestCase):
             enabled_response = await client.put(
                 f"{API_PREFIX}/agents/agent-1/channels/zalo", json={"enabled": True}
             )
+            pairings = await client.get(
+                f"{API_PREFIX}/agents/agent-1/channels/zalo/pairings"
+            )
+            approve = await client.post(
+                f"{API_PREFIX}/agents/agent-1/channels/zalo/pairings/approve",
+                json={"request_id": "0123456789abcdef"},
+            )
         self.assertEqual(listed.status_code, 404)
         self.assertEqual(enabled_response.status_code, 404)
+        self.assertEqual(pairings.status_code, 404)
+        self.assertEqual(approve.status_code, 404)
 
     async def test_enabled_flag_registers_the_channel_routes(self):
         with mock.patch.dict(
@@ -80,6 +89,10 @@ class ChannelFeatureGateTests(unittest.IsolatedAsyncioTestCase):
             f"{API_PREFIX}/agents/{{agent_id}}/channels/zalo",
             f"{API_PREFIX}/agents/{{agent_id}}/channels/zalo/qr",
             f"{API_PREFIX}/agents/{{agent_id}}/channels/zalo/logout",
+            f"{API_PREFIX}/agents/{{agent_id}}/channels/{{platform}}/pairings",
+            f"{API_PREFIX}/agents/{{agent_id}}/channels/{{platform}}/pairings/approve",
+            f"{API_PREFIX}/agents/{{agent_id}}/channels/{{platform}}/pairings/deny",
+            f"{API_PREFIX}/agents/{{agent_id}}/channels/{{platform}}/pairings/revoke",
             f"{API_PREFIX}/internal/channels/messages",
         ):
             self.assertTrue(any(item[0] == path for item in paths), path)

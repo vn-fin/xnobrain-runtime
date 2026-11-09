@@ -1,7 +1,9 @@
 # 018 — Social channels in the web UI (generic framework, Zalo first)
 
-Status: plan, not implemented. Depends on the Runtime channel routes for
-`zalo_bot` (in progress on `feat/zalo-bot-platform`) and on plan
+Status: Phase 2 Runtime pairing-management API implemented. The generic UI
+framework, Zalo Bot card, overview route, and Big Brother connect card remain
+UI work. Depends on the Runtime channel routes for `zalo_bot` (in progress on
+`feat/zalo-bot-platform`) and on plan
 [017](../017_plugin_capabilities_over_hermes/README.md) for the later move of
 the bot token to Control. UI code lives in `xnobrain-ui`; no React source
 belongs in Runtime.
@@ -88,9 +90,22 @@ deferred until a third provider exists (YAGNI).
 3. Choose DM policy (`pairing` default, `allowlist`) and allowed users; `open`
    is not offered.
 4. Status becomes `configured` once the gateway has restarted. Pairing
-   approvals appear as a list with Approve and Deny (needs a Runtime endpoint,
-   see Phase 2).
+   approvals appear as a list with Approve and Deny. The Runtime endpoint exists
+   (Phase 2): it lists sanitized pending/approved senders and supports approve,
+   per-request deny, and revoke through the pinned Hermes `PairingStore`.
 5. Logout clears the token and disables the channel after a confirmation.
+
+Phase 2 notes: Runtime reuses `gateway.pairing.PairingStore` in the same scope
+the gateway uses. API and gateway mutations share one per-store cross-process
+flock at `<pairing-dir>/.xnobrain-pairing.lock`; the launcher wraps pinned
+gateway methods and the constructor's legacy-directory migration before
+startup, and the lock fails closed on timeout. The
+pinned engine has no public per-request deny primitive; Runtime's adapter
+removes exactly one pending request under the same file lock and the store's
+own `_lock`/atomic save, never a clear-all or approve-then-revoke sequence. A
+future engine `deny_request` plus process-shared store lock should replace the
+adapter. Approve/deny are not replay-idempotent because the engine does not
+retain consumed request history; `revoke` is idempotent.
 
 ### Statuses and states to cover
 
@@ -105,7 +120,7 @@ state. Every status has copy in `en`, `vi` and `zh`.
 | --- | --- | --- | --- |
 | 0 | Generic framework: provider registry, generic API types and hook (`useChannel`), descriptor-driven `ChannelCard`; remove Zalo-named shared exports; Zalo personal stays pixel- and behaviour-identical | S–M | nothing |
 | 1 | Zalo Bot card: token form, status, policy and allowed users, logout | M | Runtime `zalo_bot` routes |
-| 2 | Pairing approvals list (Runtime list/approve/deny endpoint and UI) | M | Runtime work |
+| 2 | Pairing approvals list (Runtime list/approve/deny/revoke endpoints and UI) | M | Runtime API done; UI remains |
 | 3 | Workspace Channels overview page and navigation entry | M | Phase 0 |
 | 4 | Big Brother channel connect card (`kind: channel`) | S–M | plan 016 code |
 | 5 | Next provider (token-based, e.g. Telegram) as a descriptor plus fields | S–M each | provider plugin in the image |

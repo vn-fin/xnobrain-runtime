@@ -19,9 +19,7 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
             200,
         ),
         "channels_zalo_update": (
-            lambda: service.set_channel_enabled(
-                path["agent_id"], bool(body["enabled"]), trusted
-            ),
+            lambda: service.set_channel_enabled(path["agent_id"], bool(body["enabled"]), trusted),
             "channel updated successfully",
             200,
         ),
@@ -41,9 +39,7 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
             200,
         ),
         "channels_zalo_bot_update": (
-            lambda: service.set_zalo_bot_enabled(
-                path["agent_id"], bool(body["enabled"]), trusted
-            ),
+            lambda: service.set_zalo_bot_enabled(path["agent_id"], bool(body["enabled"]), trusted),
             "channel updated successfully",
             200,
         ),
@@ -55,6 +51,32 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
         "channels_zalo_bot_logout": (
             lambda: service.logout_zalo_bot(path["agent_id"], trusted),
             "channel logged out successfully",
+            200,
+        ),
+        "channels_pairings_list": (
+            lambda: service.list_pairings(path["agent_id"], path["platform"], trusted),
+            "channel pairings retrieved successfully",
+            200,
+        ),
+        "channels_pairings_approve": (
+            lambda: service.approve_pairing(
+                path["agent_id"], path["platform"], body["request_id"], trusted
+            ),
+            "pairing request approved",
+            200,
+        ),
+        "channels_pairings_deny": (
+            lambda: service.deny_pairing(
+                path["agent_id"], path["platform"], body["request_id"], trusted
+            ),
+            "pairing request denied",
+            200,
+        ),
+        "channels_pairings_revoke": (
+            lambda: service.revoke_pairing(
+                path["agent_id"], path["platform"], body["user_id"], trusted
+            ),
+            "pairing approval reviewed",
             200,
         ),
         "channels_internal_message": (

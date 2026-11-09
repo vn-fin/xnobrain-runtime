@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from .base import StoreError
+from .file_lock import FileLock
 
 _AGENT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 TERMINAL = frozenset({"COMPLETED", "FAILED", "CANCELLED", "BLOCKED"})
@@ -45,7 +46,7 @@ class ExtensionOperationStore:
         return self.root / f"{self._agent_hash(agent_id)}.json"
 
     def _locked(self):
-        return _FileLock(self.lock_path)
+        return FileLock(self.lock_path)
 
     def acquire_worker(self) -> int | None:
         """Fence queue reconciliation and processing to one Runtime process."""
@@ -300,19 +301,3 @@ class ExtensionOperationStore:
             if row.get("status") not in TERMINAL
             or now - float(row.get("updated_at", now)) < RETENTION_SECONDS
         ]
-
-
-class _FileLock:
-    def __init__(self, path: Path):
-        self.path = path
-        self.fd: int | None = None
-
-    def __enter__(self):
-        self.fd = os.open(self.path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
-        fcntl.flock(self.fd, fcntl.LOCK_EX)
-        return self
-
-    def __exit__(self, *_args):
-        assert self.fd is not None
-        fcntl.flock(self.fd, fcntl.LOCK_UN)
-        os.close(self.fd)
