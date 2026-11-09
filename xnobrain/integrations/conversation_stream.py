@@ -528,7 +528,9 @@ class ConversationStreamMixin:
                                 "timestamp": timestamp,
                             }
                         )
-                if normalized_tool == "xnobrain_integration_connect" and not bool(
+                # Deferred tools are invoked through the engine's `tool_call` bridge; the
+                # result shape is validated by _integration_connect_event either way.
+                if normalized_tool in {"xnobrain_integration_connect", "tool_call"} and not bool(
                     kwargs.get("is_error", False)
                 ):
                     connect_event = _integration_connect_event(result)
