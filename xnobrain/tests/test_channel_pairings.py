@@ -26,6 +26,7 @@ from xnobrain.models.channels import (
     ChannelPairingRequest,
     ChannelPairingRevokeRequest,
 )
+from xnobrain.repositories import file_lock as file_lock_module
 from xnobrain.repositories.file_lock import FileLock, FileLockTimeout
 from xnobrain.repositories.files import FileRepository
 from xnobrain.services.base import ServiceError
@@ -447,11 +448,104 @@ class ChannelPairingMultiprocessTests(
 
 
 class ChannelPairingLockTests(_ChannelPairingFixtureMixin, unittest.IsolatedAsyncioTestCase):
+    def _try_other_thread(self, path):
+        result = {}
+
+        def acquire():
+            try:
+                with FileLock(path, timeout=0.5):
+                    result["acquired"] = True
+            except Exception as error:  # noqa: BLE001 - test observation
+                result["error"] = error
+
+        thread = threading.Thread(target=acquire)
+        thread.start()
+        thread.join(2)
+        return result
+
     async def test_file_lock_is_thread_reentrant(self):
         path = self._store()._dir / ".reentrant-test.lock"
         with FileLock(path, timeout=0.2):
             with FileLock(path, timeout=0.2):
                 pass
+        self.assertEqual(self._try_other_thread(path), {"acquired": True})
+
+    async def test_same_instance_nested_and_reused_releases_outer_lock(self):
+        path = self._store()._dir / ".same-instance.lock"
+        lock = FileLock(path, timeout=0.2)
+        with lock:
+            with lock:
+                pass
+        self.assertEqual(self._try_other_thread(path), {"acquired": True})
+
+        with lock:
+            pass
+        self.assertEqual(self._try_other_thread(path), {"acquired": True})
+
+    async def test_mixed_owner_borrower_nested_releases_every_count(self):
+        path = self._store()._dir / ".mixed-nesting.lock"
+        owner = FileLock(path, timeout=0.2)
+        borrower = FileLock(path, timeout=0.2)
+        with owner:
+            with borrower:
+                with borrower:
+                    pass
+        self.assertEqual(self._try_other_thread(path), {"acquired": True})
+
+        with borrower:
+            with borrower:
+                pass
+        self.assertEqual(self._try_other_thread(path), {"acquired": True})
+
+    async def test_mixed_nested_exception_releases_every_count(self):
+        path = self._store()._dir / ".mixed-exception.lock"
+        owner = FileLock(path, timeout=0.2)
+        borrower = FileLock(path, timeout=0.2)
+        with self.assertRaises(RuntimeError):
+            with owner:
+                with borrower:
+                    with borrower:
+                        raise RuntimeError("synthetic nested failure")
+        self.assertEqual(self._try_other_thread(path), {"acquired": True})
+
+    async def test_canonical_alias_nesting_is_reentrant(self):
+        directory = self._store()._dir / "alias-dir"
+        directory.mkdir()
+        canonical = directory / ".alias.lock"
+        alias = directory / ".." / "alias-dir" / ".alias.lock"
+        with FileLock(canonical, timeout=0.2):
+            with FileLock(alias, timeout=0.2):
+                pass
+        self.assertEqual(self._try_other_thread(canonical), {"acquired": True})
+
+    async def test_final_symlink_is_rejected(self):
+        directory = self._store()._dir
+        target = directory / ".real-lock"
+        target.write_text("", encoding="utf-8")
+        link = directory / ".linked-lock"
+        link.symlink_to(target)
+        with self.assertRaises(OSError):
+            with FileLock(link, timeout=0.2):
+                pass
+
+    async def test_descriptor_is_closed_when_unlock_fails(self):
+        path = self._store()._dir / ".unlock-failure.lock"
+        original_flock = file_lock_module.fcntl.flock
+        held_fd = {}
+
+        def failing_unlock(descriptor, operation):
+            if operation == file_lock_module.fcntl.LOCK_UN:
+                held_fd["descriptor"] = descriptor
+                raise OSError("unlock failed")
+            return original_flock(descriptor, operation)
+
+        lock = FileLock(path, timeout=0.2)
+        with mock.patch.object(file_lock_module.fcntl, "flock", side_effect=failing_unlock):
+            with self.assertRaises(OSError):
+                with lock:
+                    pass
+        with self.assertRaises(OSError):
+            os.fstat(held_fd["descriptor"])
 
     async def test_file_lock_timeout_is_fail_closed(self):
         path = self._store()._dir / ".timeout-test.lock"
