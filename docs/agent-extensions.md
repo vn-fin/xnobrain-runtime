@@ -17,6 +17,32 @@ The Plugins destination is `/plugins?agent=<id>&tab=catalog|installed|hooks`.
 `panel=tools` opens per-agent capabilities on the existing agent route. Source
 and UI are in separate repositories; no React source belongs in Runtime.
 
+## Private plugin artifact authority
+
+Control owns plugin egress connections and credentials. Before storing one, it
+calls the private, hidden Runtime route
+`POST /xnobrain/api/runtime/v1/internal/plugin-artifact/authority` with only
+`{agent_id, plugin, platform, artifact_digest}` and the verified personal actor
+on the private transport. Runtime proves the target agent ownership, the actual
+approved artifact, and the optional `plugin-egress-v1` manifest declaration; it
+never accepts hosts, paths, rules, tenant/owner/workspace values, or secrets
+from the request.
+
+Standalone plugins must be installed, enabled, explicitly approved, and backed
+by a `COMPLETED`, non-dangerous scan. Both the inventory/scan record digest and
+the approval digest must equal the current bounded tree digest; this prevents a
+stale scan record from authorizing newer bytes. `caution` findings remain
+allowed exactly as in execution admission, while dangerous/incomplete scans,
+pending publication/MCP recovery, and tool-override entries fail closed. The
+optional `egress` declaration is validated by package admission/scan before
+approval. The built-in Zalo Bot is proven from the actual engine-bundled platform
+path and manifest, with Control retaining its fixed rule set and no fabricated
+per-agent approval. The route is read-only: it never executes plugin code,
+cleans caches, writes approval/owner state, or returns paths, file content, or
+credentials. `ChannelState.plugin_artifact` exposes the same read-only built-in
+digest as display metadata, not authority. See
+[`api.md`](api.md#private-plugin-artifact-authority).
+
 ## Catalog compatibility
 
 The independent catalog covers all 31 referenced Openbot entries. Openbot is a

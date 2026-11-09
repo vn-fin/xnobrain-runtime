@@ -44,6 +44,7 @@ from .extension_policy import (
     validate_profile_extensions,
 )
 from .hermes_support import AgentAPIError
+from .plugin_artifacts import PluginArtifactError, canonical_egress
 from .plugin_formats import (
     PORTABLE,
     detect_plugin_format,
@@ -438,6 +439,11 @@ def _check_native_package(path: Path) -> bool:
             )
         else:
             fail("Plugin manifest is invalid", "plugin_manifest_invalid")
+        if "egress" in manifest:
+            try:
+                canonical_egress(manifest.get("egress"))
+            except PluginArtifactError:
+                fail("Plugin egress declaration is invalid", "plugin_egress_invalid")
         if (
             manifest.get("dependencies")
             or manifest.get("requires_packages")
@@ -771,6 +777,7 @@ _CHILD_ERRORS = {
         plugin_registration_policy.FORBIDDEN_MESSAGE,
         409,
     ),
+    "plugin_egress_invalid": ("Plugin egress declaration is invalid", 409),
     "invalid_path": ("Unsafe extension storage", 409),
 }
 

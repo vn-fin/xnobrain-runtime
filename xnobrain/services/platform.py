@@ -163,6 +163,9 @@ class PlatformService(
         from .source_owner import SourceOwnerService
 
         self.source_owner = SourceOwnerService(self)
+        from .plugin_artifact import PluginArtifactService
+
+        self.plugin_artifact = PluginArtifactService(self)
         self.cron.default_timezone = self.time_control.default_timezone
         self.conversation_runs.runtime_updates = self.runtime_updates
         from ..integrations.run_admission import managed

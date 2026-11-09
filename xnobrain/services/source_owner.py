@@ -17,8 +17,7 @@ from ..integrations.workload_identity import (
     read_source_identity_file,
     read_source_owner_attestation,
 )
-from ..trusted_context import TrustedRequestContext
-from .base import ServiceError
+from .authority_actor import require_personal_actor
 
 MAX_PROFILES = 512
 MAX_MARKER_BYTES = 4096
@@ -96,34 +95,7 @@ class SourceOwnerService:
 
     @staticmethod
     def _actor(trusted: Any) -> tuple[str, str]:
-        if not isinstance(trusted, TrustedRequestContext):
-            raise ServiceError(
-                "verified source owner is required",
-                status=401,
-                code="trusted_context_required",
-            )
-        subject = str(trusted.subject or "").strip()
-        tenant = str(trusted.tenant_id or "").strip()
-        if not subject or not tenant:
-            raise ServiceError(
-                "verified source owner is required",
-                status=401,
-                code="trusted_context_required",
-            )
-        context = trusted.ownership_context
-        if str(trusted.organization_id or "") or (
-            isinstance(context, Mapping)
-            and (
-                str(context.get("owner_kind") or "") not in {"", "personal"}
-                or context.get("organization_id")
-            )
-        ):
-            raise ServiceError(
-                "source-owner probe requires a Personal context",
-                status=403,
-                code="permission_denied",
-            )
-        return subject, tenant
+        return require_personal_actor(trusted, label="verified source owner")
 
     def _scan_profiles(
         self,
@@ -201,7 +173,7 @@ class SourceOwnerService:
         return entries
 
     def _check_marker(self, profile: Path, actor_user: str, actor_tenant: str) -> None:
-        value = self._read_json(profile / _OWNER_MARKER)
+        value = read_json_file(profile / _OWNER_MARKER)
         if value is None:
             return
         subject = value.get("subject")
@@ -227,7 +199,7 @@ class SourceOwnerService:
         channels = metadata / "channels"
         if metadata.is_symlink() or channels.is_symlink():
             raise _ProbeConflict
-        value = self._read_json(profile / _CHANNEL_OWNER)
+        value = read_json_file(profile / _CHANNEL_OWNER)
         if value is None:
             return
         user_id = value.get("user_id")
@@ -245,42 +217,42 @@ class SourceOwnerService:
         ):
             raise _ProbeConflict
 
-    @staticmethod
-    def _read_json(path: Path) -> dict | None:
-        if path.is_symlink():
+
+def read_json_file(path: Path) -> dict | None:
+    if path.is_symlink():
+        raise _ProbeConflict
+    try:
+        descriptor = os.open(
+            path,
+            os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK,
+        )
+    except FileNotFoundError:
+        return None
+    except OSError as error:
+        raise _ProbeConflict from error
+    try:
+        details = os.fstat(descriptor)
+        if not stat.S_ISREG(details.st_mode):
             raise _ProbeConflict
-        try:
-            descriptor = os.open(
-                path,
-                os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK,
-            )
-        except FileNotFoundError:
-            return None
-        except OSError as error:
-            raise _ProbeConflict from error
-        try:
-            details = os.fstat(descriptor)
-            if not stat.S_ISREG(details.st_mode):
-                raise _ProbeConflict
-            if details.st_size <= 0 or details.st_size > MAX_MARKER_BYTES:
-                raise _ProbeConflict
-            chunks = []
-            remaining = MAX_MARKER_BYTES + 1
-            while remaining > 0:
-                chunk = os.read(descriptor, remaining)
-                if not chunk:
-                    break
-                chunks.append(chunk)
-                remaining -= len(chunk)
-            raw = b"".join(chunks)
-        finally:
-            os.close(descriptor)
-        if len(raw) > MAX_MARKER_BYTES:
+        if details.st_size <= 0 or details.st_size > MAX_MARKER_BYTES:
             raise _ProbeConflict
-        try:
-            value = json.loads(raw.decode("utf-8"))
-        except (UnicodeDecodeError, ValueError) as error:
-            raise _ProbeConflict from error
-        if not isinstance(value, dict):
-            raise _ProbeConflict
-        return value
+        chunks = []
+        remaining = MAX_MARKER_BYTES + 1
+        while remaining > 0:
+            chunk = os.read(descriptor, remaining)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        raw = b"".join(chunks)
+    finally:
+        os.close(descriptor)
+    if len(raw) > MAX_MARKER_BYTES:
+        raise _ProbeConflict
+    try:
+        value = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError) as error:
+        raise _ProbeConflict from error
+    if not isinstance(value, dict):
+        raise _ProbeConflict
+    return value

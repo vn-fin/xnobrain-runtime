@@ -21,6 +21,7 @@ from .organization_connections import operations as organization_connections_ope
 from .organization_team_executions import operations as organization_team_executions_operations
 from .personal_delegated_executions import operations as personal_delegated_executions_operations
 from .personal_resource_definitions import operations as personal_resource_definitions_operations
+from .plugin_artifact import operations as plugin_artifact_operations
 from .portability import operations as portability_operations
 from .providers import operations as providers_operations
 from .runtime_updates import operations as runtime_updates_operations
@@ -53,6 +54,7 @@ OPERATION_GROUPS = (
     organization_team_executions_operations,
     personal_resource_definitions_operations,
     personal_delegated_executions_operations,
+    plugin_artifact_operations,
     marketplace_operations,
     hosted_operations,
     mcp_operations,

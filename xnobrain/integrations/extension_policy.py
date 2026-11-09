@@ -376,15 +376,92 @@ def read_config(profile: Path) -> dict[str, Any]:
     return config
 
 
+def plugin_recovery_pending(profile: Path) -> str | None:
+    """Return the pending recovery marker name, or ``None``.
+
+    Reads only the two reviewed recovery markers. It never recovers, publishes,
+    or writes them.
+    """
+    for name in ("publication.json", "mcp-recovery.json"):
+        if safe_child(profile, ".xnobrain", "extensions", name).exists():
+            return name
+    return None
+
+
+def admit_user_plugin(
+    profile: Path,
+    name: str,
+    *,
+    artifact: Path | None = None,
+    state: dict[str, Any] | None = None,
+    config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """PURE admission for one enabled, installed user plugin.
+
+    This is the single policy used by execution and the read-only artifact
+    authority. It never calls ``trusted_required`` (which may remove bytecode
+    caches), never scans for approval, and never writes state. Expected policy
+    failures raise ``AgentAPIError`` with a stable code.
+    """
+    pending = plugin_recovery_pending(profile)
+    if pending is not None:
+        fail("Extension recovery is required", "extension_recovery_required", 503)
+    if not isinstance(name, str) or not PLUGIN_ID.fullmatch(name):
+        fail("Plugin identifier is invalid", "plugin_unsafe")
+    artifact = artifact if artifact is not None else safe_child(profile, "plugins", name)
+    state = load_state(profile) if state is None else state
+    config = read_config(profile) if config is None else config
+    plugins = config.get("plugins") or {}
+    if not isinstance(plugins, dict):
+        fail("Plugin configuration is invalid", "plugin_unsafe")
+    enabled = plugins.get("enabled") or []
+    raw_disabled = plugins.get("disabled") or []
+    if not isinstance(enabled, list) or not isinstance(raw_disabled, list):
+        fail("Plugin configuration is invalid", "plugin_unsafe")
+    disabled = set(raw_disabled)
+    if name not in enabled or name in disabled:
+        fail("Plugin is not enabled", "plugin_not_enabled")
+    records = state.get("plugins") or {}
+    if not isinstance(records, dict):
+        fail("Extension state is unavailable", "extension_state_invalid", 503)
+    record = records.get(name, {})
+    if not isinstance(record, dict):
+        fail("Plugin scan is required", "plugin_scan_required")
+    scan = record.get("scan") or {}
+    approval = record.get("approval") or {}
+    if not isinstance(scan, dict) or not isinstance(approval, dict):
+        fail("Plugin scan is required", "plugin_scan_required")
+    if scan.get("status") != "COMPLETED" or scan.get("verdict") == "dangerous":
+        fail("Plugin must pass a complete scan before execution", "plugin_scan_required")
+    current = tree_digest(artifact)
+    if current != record.get("artifact_digest") or current != approval.get("artifact_digest"):
+        fail("Plugin changed since review; scan again", "plugin_scan_stale")
+    if not approval.get("approved"):
+        fail("Plugin requires explicit approval")
+    entries = plugins.get("entries") or {}
+    if not isinstance(entries, dict):
+        fail("Plugin configuration is invalid", "plugin_unsafe")
+    entry = entries.get(name, {})
+    if isinstance(entry, dict) and (
+        entry.get("allow_tool_override") or "tools.override" in (entry.get("capabilities") or [])
+    ):
+        fail("Plugin tool overrides are not supported", "plugin_unsafe")
+    return {
+        "artifact_digest": current,
+        "record": record,
+        "scan": scan,
+        "approval": approval,
+        "entry": entry,
+    }
+
+
 def validate_profile_extensions(profile: Path) -> None:
     """Refuse execution of changed/unapproved user plugins before engine loading."""
     # Profile executable artifacts are source-only. Do not create a bytecode
     # execution channel outside the scanned source tree.
     sys.dont_write_bytecode = True
-    if safe_child(profile, ".xnobrain", "extensions", "publication.json").exists():
-        fail("Extension publication requires recovery", "extension_recovery_required", 503)
-    if safe_child(profile, ".xnobrain", "extensions", "mcp-recovery.json").exists():
-        fail("Extension configuration requires recovery", "extension_recovery_required", 503)
+    if plugin_recovery_pending(profile) is not None:
+        fail("Extension recovery is required", "extension_recovery_required", 503)
     config = read_config(profile)
     plugins = config.get("plugins") or {}
     if not isinstance(plugins, dict):
@@ -418,22 +495,7 @@ def validate_profile_extensions(profile: Path) -> None:
             fail("Enabled plugin artifact is unavailable", "plugin_not_found")
         if trusted_required(profile, name):
             continue
-        record = state["plugins"].get(name, {})
-        scan = record.get("scan") or {}
-        approval = record.get("approval") or {}
-        if scan.get("status") != "COMPLETED" or scan.get("verdict") == "dangerous":
-            fail("Plugin must pass a complete scan before execution", "plugin_scan_required")
-        current = tree_digest(artifact)
-        if current != record.get("artifact_digest") or current != approval.get("artifact_digest"):
-            fail("Plugin changed since review; scan again", "plugin_scan_stale")
-        if not approval.get("approved"):
-            fail("Plugin requires explicit approval")
-        entry = (plugins.get("entries") or {}).get(name, {})
-        if isinstance(entry, dict) and (
-            entry.get("allow_tool_override")
-            or "tools.override" in (entry.get("capabilities") or [])
-        ):
-            fail("Plugin tool overrides are not supported", "plugin_unsafe")
+        admit_user_plugin(profile, name, artifact=artifact, state=state, config=config)
     # Only approved managed shell hooks are written into config. Guard them
     # again when generic config editing/restoration may have changed the bytes.
     for record in state["hooks"].values():

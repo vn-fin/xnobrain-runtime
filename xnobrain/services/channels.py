@@ -20,6 +20,7 @@ from ..feature_flags import FEATURE_AGENT_CHANNELS
 from ..feature_flags import enabled as feature_enabled
 from ..integrations import zalo_channels
 from ..integrations.control_mcp_grants import WorkspaceMcpGrantClient
+from ..integrations.plugin_artifacts import builtin_platform_metadata
 from ..repositories.channels import ChannelsRepository
 from ..trusted_context import TrustedRequestContext
 from .base import ServiceError
@@ -1140,6 +1141,7 @@ class ChannelsService:
             "dm_policy": self._bot_dm_policy(config),
             "home_channel": home_channel,
             "token_set": token_set,
+            "plugin_artifact": builtin_platform_metadata("zalo_bot"),
         }
 
     def list_channels(self, agent_id: str) -> dict[str, Any]:

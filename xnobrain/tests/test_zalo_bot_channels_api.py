@@ -283,6 +283,20 @@ class ZaloBotChannelTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(listed["channels"][0]["token_set"])
         self.assertTrue(listed["channels"][1]["enabled"])
 
+    def test_bot_state_includes_server_artifact_metadata(self):
+        artifact = {
+            "plugin": "zalo_bot",
+            "artifact_digest": "sha256:" + "a" * 64,
+        }
+        with mock.patch(
+            "xnobrain.services.channels.builtin_platform_metadata",
+            return_value=artifact,
+        ):
+            state = self.service.list_channels("agent-1")["channels"][1]
+        self.assertEqual(state["plugin_artifact"], artifact)
+        self.assertEqual(state["token_set"], False)
+        self.assertNotIn("path", state["plugin_artifact"])
+
     def test_multiplex_allowlist_can_be_driven_by_zalo_bot_only(self):
         self.service.set_zalo_bot_enabled("big-brother", True)
         self.service.set_zalo_bot_enabled("agent-1", True)

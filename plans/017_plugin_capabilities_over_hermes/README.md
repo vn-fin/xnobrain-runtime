@@ -84,7 +84,43 @@ generalizes the MCP proxy pattern.
 6. Providers that cost money also record usage through the existing billing and
    telemetry path.
 
-### Zalo Bot as the first user
+### Runtime artifact authority boundary
+
+Control's `ArtifactAuthority` port is backed by the private Runtime route
+`POST /xnobrain/api/runtime/v1/internal/plugin-artifact/authority`, called with
+the existing server-owned workspace transport and verified personal actor. The
+request carries only `{agent_id, plugin, platform, artifact_digest}`; ownership,
+tenant, workspace, hosts, paths, rules, and credentials never come from the
+browser.
+
+- Named agents require an exact durable owner marker. The logical Big Brother
+  root requires the Control-published source identity or the complete managed
+  workload identity plus Control's independent durable owner resolution. A
+  missing root marker, the one-time source-owner enrollment attestation, and
+  the legacy shared token are not ongoing artifact authority.
+- Standalone plugins are proven from the actual installed inventory, current
+  bounded tree digest, `COMPLETED` non-dangerous scan, explicit approval, and
+  enabled state. The inventory/scan record digest and approval digest must both
+  equal current bytes; a stale scan record never authorizes newer bytes.
+  `caution` findings remain allowed as in execution admission, while dangerous
+  or incomplete scans, pending publication/MCP recovery, and tool-override
+  entries fail closed. The optional `egress` block in the approved
+  `plugin.yaml` uses the same `plugin-egress-v1` schema as Control (8 rules, 16
+  endpoints per rule, exact hosts, GET/POST, fixed placeholders, one credential
+  placement) and is validated during package admission/scan. No egress
+  declaration means `unsupported` for a connection; local plugin behavior is
+  otherwise unchanged.
+- The built-in `zalo_bot` is proven from the actual engine-bundled path and
+  manifest, not from a per-agent approval row or a repository fallback. Control
+  retains its fixed Zalo Bot rules. Runtime returns the actual tree digest and
+  no rules. Source mode does not publish a release-time platform tree digest;
+  this remains image/platform policy evidence, not remote cryptographic
+  attestation, and no build pin is invented here.
+- Runtime never executes plugin code, writes approval or owner state, cleans
+  caches, or returns paths, content, secrets, or foreign owner identities.
+  Control computes the canonical rules digest.
+
+## Zalo Bot as the first user
 
 The Bot API puts the token in the URL path (`/bot{token}/getMe`). Through the
 proxy the plugin keeps only a placeholder base URL and Control substitutes the

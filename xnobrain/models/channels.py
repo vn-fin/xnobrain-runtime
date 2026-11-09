@@ -106,6 +106,17 @@ class SendChannelMessageRequest(BaseModel):
     text: str = Field(min_length=1, max_length=20000)
 
 
+class ChannelPluginArtifact(BaseModel):
+    """Read-only server artifact metadata for the built-in platform plugin.
+
+    This is presentation metadata only; the private Control artifact authority
+    endpoint recomputes the digest and verifies ownership on every decision.
+    """
+
+    plugin: str
+    artifact_digest: str
+
+
 class ChannelState(BaseModel):
     """One agent-scoped channel and its runtime status."""
 
@@ -118,6 +129,7 @@ class ChannelState(BaseModel):
     home_channel: str | None = None
     # The bot token itself is write-only and is never part of this contract.
     token_set: bool = False
+    plugin_artifact: ChannelPluginArtifact | None = None
 
 
 class ChannelGatewayState(BaseModel):

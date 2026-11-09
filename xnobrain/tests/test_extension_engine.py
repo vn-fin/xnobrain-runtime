@@ -86,6 +86,66 @@ class ExtensionEngineTests(unittest.TestCase):
         (path / "__init__.py").write_text("def register(ctx):\n    pass\n")
         return path
 
+    def test_valid_egress_declaration_is_admitted_by_scan(self):
+        with tempfile.TemporaryDirectory() as root:
+            plugin = self.plugin(self.profile(root))
+            (plugin / "plugin.yaml").write_text(
+                yaml.safe_dump(
+                    {
+                        "name": "sample",
+                        "version": "1.0.0",
+                        "kind": "standalone",
+                        "egress": {
+                            "version": "plugin-egress-v1",
+                            "rules": [
+                                {
+                                    "host": "api.example.test",
+                                    "methods": ["POST"],
+                                    "path_template": "/v1/{endpoint}",
+                                    "endpoints": ["send", "getMe"],
+                                    "auth": {"kind": "bearer"},
+                                }
+                            ],
+                        },
+                    },
+                    sort_keys=False,
+                ),
+                encoding="utf-8",
+            )
+            result = engine.scan_plugin(plugin)
+            self.assertEqual(result["scan"]["status"], "COMPLETED")
+            self.assertEqual(result["scan"]["verdict"], "safe")
+
+    def test_malformed_egress_blocks_scan(self):
+        with tempfile.TemporaryDirectory() as root:
+            plugin = self.plugin(self.profile(root))
+            (plugin / "plugin.yaml").write_text(
+                yaml.safe_dump(
+                    {
+                        "name": "sample",
+                        "version": "1.0.0",
+                        "kind": "standalone",
+                        "egress": {
+                            "version": "plugin-egress-v1",
+                            "rules": [
+                                {
+                                    "host": "localhost",
+                                    "methods": ["PUT"],
+                                    "path_template": "v1/{endpoint}",
+                                    "endpoints": ["send"],
+                                    "auth": {"kind": "bearer"},
+                                }
+                            ],
+                        },
+                    },
+                    sort_keys=False,
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaises(AgentAPIError) as error:
+                engine.scan_plugin(plugin)
+            self.assertEqual(error.exception.code, "plugin_egress_invalid")
+
     def test_scan_never_obeys_plugin_ignore_file(self):
         with tempfile.TemporaryDirectory() as root:
             profile = self.profile(root)
@@ -848,6 +908,59 @@ class ExtensionEngineTests(unittest.TestCase):
             with self.assertRaises(AgentAPIError) as error:
                 validate_profile_extensions(profile)
             self.assertEqual(error.exception.code, "plugin_scan_stale")
+
+    def _admission_state(self, profile, artifact, *, verdict="safe", record_digest=None):
+        current = tree_digest(artifact)
+        state = load_state(profile)
+        state["plugins"]["sample"] = {
+            "artifact_digest": record_digest or current,
+            "scan": {
+                "status": "COMPLETED",
+                "verdict": verdict,
+                "coverage": "complete_text",
+                "findings": [],
+            },
+            "approval": {"approved": True, "artifact_digest": current},
+            "revision": 1,
+        }
+        save_state(profile, state)
+        (profile / "config.yaml").write_text("plugins:\n  enabled: [sample]\n")
+
+    def test_execution_admission_accepts_complete_caution(self):
+        with tempfile.TemporaryDirectory() as root:
+            profile = self.profile(root)
+            artifact = self.plugin(profile)
+            self._admission_state(profile, artifact, verdict="caution")
+            validate_profile_extensions(profile)
+
+    def test_execution_admission_rejects_stale_inventory_digest(self):
+        with tempfile.TemporaryDirectory() as root:
+            profile = self.profile(root)
+            artifact = self.plugin(profile)
+            self._admission_state(profile, artifact, record_digest="a" * 64)
+            with self.assertRaises(AgentAPIError) as error:
+                validate_profile_extensions(profile)
+            self.assertEqual(error.exception.code, "plugin_scan_stale")
+
+    def test_execution_admission_rejects_recovery_and_tool_override(self):
+        with tempfile.TemporaryDirectory() as root:
+            profile = self.profile(root)
+            artifact = self.plugin(profile)
+            self._admission_state(profile, artifact)
+            marker = profile / ".xnobrain" / "extensions" / "publication.json"
+            marker.write_text("{}", encoding="utf-8")
+            with self.assertRaises(AgentAPIError) as error:
+                validate_profile_extensions(profile)
+            self.assertEqual(error.exception.code, "extension_recovery_required")
+            marker.unlink()
+            config = yaml.safe_load((profile / "config.yaml").read_text(encoding="utf-8"))
+            config["plugins"]["entries"] = {"sample": {"allow_tool_override": True}}
+            (profile / "config.yaml").write_text(
+                yaml.safe_dump(config, sort_keys=False), encoding="utf-8"
+            )
+            with self.assertRaises(AgentAPIError) as error:
+                validate_profile_extensions(profile)
+            self.assertEqual(error.exception.code, "plugin_unsafe")
 
     def test_system_name_alone_is_not_a_trust_grant(self):
         with tempfile.TemporaryDirectory() as root:

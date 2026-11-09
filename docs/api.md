@@ -963,6 +963,67 @@ Deployments must inject the two operator attestation values only for the initial
 legacy bootstrap, then remove them after Control publishes the authoritative
 identity. Control-side relays must deny this path publicly.
 
+### Private plugin artifact authority
+
+`POST /xnobrain/api/runtime/v1/internal/plugin-artifact/authority` is the
+read-only private authority Control uses before it stores an approved plugin
+egress connection. It is excluded from public OpenAPI, accepts only
+`{agent_id, plugin, platform, artifact_digest}` with extra fields forbidden, and
+requires a verified Control-signed Personal `TrustedRequestContext`. The body
+never carries owner, tenant, workspace, host, path, rules, or credentials.
+
+The data envelope contains only
+`{status: "match"|"not_owned"|"not_approved"|"stale"|"unsupported"|"unavailable"}`
+and, on `match`, the normalized `sha256:` `artifact_digest`, `source`, and (for
+approved standalone plugins only) canonical `plugin-egress-v1` rules. No path,
+file content, secret, credential, or other owner identity is returned. The
+route never writes state, changes approval, cleans caches, or executes plugin
+code.
+
+- Named agents require an exact `.community-profile-owner.json` subject,
+  tenant, and empty organization. A missing, foreign, malformed, or symlinked
+  marker is `not_owned`.
+- The logical Big Brother root requires the Control-published source identity
+  file with exact subject/tenant, or the complete managed workload identity with
+  the exact owner tenant. Control independently resolves the durable workspace
+  owner before routing. A missing root marker, the operator enrollment
+  attestation, and the legacy shared token are not ongoing artifact authority.
+- The built-in `zalo_bot` platform must match `plugin=zalo_bot`,
+  `platform=zalo_bot`, the actual engine-bundled path selected by the server,
+  and its `plugin.yaml` name/kind. Runtime returns its bounded tree digest and
+  no rules; Control keeps its fixed Zalo Bot rule set. There is no per-agent
+  install approval row, no repository fallback when the bundled platform is
+  missing, and no fabricated release attestation. The digest is computed from
+  the actual image tree, not from a release-published plugin digest.
+- A generic standalone plugin must be installed, enabled, explicitly approved,
+  and have a `COMPLETED`, non-dangerous scan. The inventory/scan record digest
+  and the approval digest must both equal the current bounded tree digest, so a
+  stale scan record cannot authorize newer bytes even when approval and the
+  requested digest match. `caution` findings remain allowed exactly as in
+  execution admission; dangerous or incomplete scans fail closed. Pending
+  publication/MCP recovery and a `allow_tool_override`/`tools.override` entry
+  also fail closed. Runtime never cleans the live artifact or bytecode caches
+  to make it pass.
+- Standalone rules come only from an optional bounded `egress` block in the
+  approved `plugin.yaml`, using the same `plugin-egress-v1` schema as Control:
+  at most 8 rules and 16 endpoints per rule, exact lowercase DNS hosts, only
+  `GET`/`POST`, fixed `{token}`/`{endpoint}` placeholders, one credential
+  placement across the connection, and unknown fields forbidden. The manifest
+  bytes are already part of the approved tree digest, and package admission /
+  scan validates the declaration before approval. A plugin without a valid
+  egress declaration is `unsupported` for a connection; ordinary local plugin
+  behavior is unchanged.
+
+Control-side public Runtime relays must deny this path. Control computes the
+canonical rules digest itself; Runtime does not duplicate that canonicalizer.
+The built-in Zalo Bot rules are never accepted from the browser or from the
+Runtime response.
+
+`ChannelState.plugin_artifact` may expose the same server-read
+`{plugin, artifact_digest}` for the built-in Zalo Bot so a later browser token
+form can display the actual artifact. It is presentation metadata, not
+authority; this private endpoint rechecks ownership and the digest.
+
 ## Personal Agent Custom Page v1 (FT0015, in progress)
 
 > Release exposure is controlled by the coordinated root flags `FT_ENABLE_UI_CUSTOMIZATION` and `FT_ENABLE_AGENT_CUSTOM_PAGE`; both default off. Disabled backend paths fail closed and retained data is not deleted.
