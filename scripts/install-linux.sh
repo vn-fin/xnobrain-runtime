@@ -254,10 +254,6 @@ hermes_args=(
 if [[ "$skip_browser" == true ]]; then
   hermes_args+=(--skip-browser)
 fi
-# Hermes' npm workspace includes its desktop app, but this installer runs the
-# server/CLI only. Keep browser-tool dependencies and lifecycle scripts enabled
-# without downloading the unused Electron desktop binary.
-ELECTRON_SKIP_BINARY_DOWNLOAD=1 \
 HERMES_HOME="$hermes_home" HERMES_INSTALL_DIR="$hermes_install_dir" \
   bash "$installer_file" "${hermes_args[@]}"
 rm -f "$installer_file"
