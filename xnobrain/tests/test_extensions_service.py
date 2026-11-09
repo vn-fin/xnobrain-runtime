@@ -113,6 +113,32 @@ class ExtensionServiceTests(unittest.TestCase):
                 )
             self.assertEqual(timeout_error.exception.code, "invalid_hook_timeout")
 
+    def test_composio_endpoint_host_policy(self):
+        public_addresses = [(None, None, None, "", ("93.184.216.34", 443))]
+        with patch(
+            "xnobrain.services.extensions.socket.getaddrinfo",
+            return_value=public_addresses,
+        ):
+            for accepted in (
+                "https://connect.composio.dev/mcp",
+                "https://backend.composio.dev/v3/mcp/abc",
+            ):
+                ExtensionsService._validate_catalog_endpoint(
+                    accepted, "https_only_public_composio_host"
+                )
+
+        for rejected in (
+            "https://evilcomposio.dev/mcp",
+            "https://composio.dev.evil.com/mcp",
+            "https://composio.com/mcp",
+            "http://connect.composio.dev/mcp",
+        ):
+            with self.assertRaises(ServiceError) as error:
+                ExtensionsService._validate_catalog_endpoint(
+                    rejected, "https_only_public_composio_host"
+                )
+            self.assertEqual(error.exception.code, "unsafe_endpoint")
+
     def test_visibility_uses_revision_and_persists(self):
         plugin = self.profile / "plugins" / "readme-helper"
         plugin.mkdir(parents=True)
