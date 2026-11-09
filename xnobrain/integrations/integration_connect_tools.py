@@ -25,6 +25,13 @@ TOOLSET = "xnobrain_integration_connect"
 CONNECT_KINDS = {"catalog_mcp", "plugin_mcp", "custom_mcp"}
 AUTH_KINDS = {"oauth", "api_key", "none"}
 MAX_CATALOG_CANDIDATES = 5
+CONNECT_GUIDANCE = (
+    "When the user asks to add, connect or sign in to an MCP server, integration, "
+    "connector or app (for example Notion or Todoist), call xnobrain_integration_connect "
+    "first. It shows a connect card where the user enters credentials or signs in. "
+    "Do not use `agent mcp add`, the terminal or config edits for this, and never ask "
+    "for API keys or tokens in chat."
+)
 INSTRUCTION = (
     "A connect card is shown in the chat. Ask the user to finish there. "
     "Never ask for credentials in chat."
@@ -273,29 +280,44 @@ def _catalog_candidates(entries: list, raw_id: str) -> list[str]:
     return result
 
 
-def register_tools():
+def _function_schema() -> dict:
+    return {
+        "name": TOOL_NAME,
+        "description": (
+            "Use this FIRST whenever the user asks to add, connect or sign in to an MCP "
+            "server, integration, connector or app. It shows a connect card in the chat "
+            "where the user enters credentials or signs in themselves, so never use "
+            "`agent mcp add` or ask for keys in chat. Read-only: it never installs, "
+            "never changes settings, and never accepts credentials."
+        ),
+        "parameters": IntegrationConnectArguments.model_json_schema(),
+    }
+
+
+def register_tools(profile_dir):
+    """Register the tool in the profile's registry scope.
+
+    The engine rebuilds ``agent.tools`` from the registry between turns and drops
+    tools appended by hand, so the tool must live in the registry. A profile scope
+    keeps it out of every other agent's tool list; unbound runs get an error result.
+    """
+    from hermes_constants import hermes_home_key
     from tools.registry import registry
 
+    scope = hermes_home_key(profile_dir)
     with _LOCK:
-        if _SCHEMAS:
+        function = _function_schema()
+        _SCHEMAS[TOOL_NAME] = {"type": "function", "function": function}
+        if registry.get_entry(TOOL_NAME, scope=scope) is not None:
             return
-        function = {
-            "name": TOOL_NAME,
-            "description": (
-                "Request an integration connect card so the user can add or sign in to "
-                "an MCP server or plugin MCP themselves. Read-only: it never installs, "
-                "never changes settings, and never accepts credentials."
-            ),
-            "parameters": IntegrationConnectArguments.model_json_schema(),
-        }
         registry.register(
             name=TOOL_NAME,
             toolset=TOOLSET,
             schema=function,
             handler=lambda args, _name=TOOL_NAME, **kw: call(_name, args, **kw),
-            check_fn=lambda: False,
+            description=function["description"],
+            scope=scope,
         )
-        _SCHEMAS[TOOL_NAME] = {"type": "function", "function": function}
 
 
 @contextmanager
@@ -304,7 +326,6 @@ def bind_run(service, session, trusted):
         yield False
         return
     session = str(session or "")
-    register_tools()
     with _LOCK:
         if session in _BINDINGS:
             raise ServiceError(
@@ -318,13 +339,19 @@ def bind_run(service, session, trusted):
             _BINDINGS.pop(session, None)
 
 
-def install_tools(agent, session):
+def install_tools(agent, session, profile_dir):
     with _LOCK:
         if session not in _BINDINGS or int(getattr(agent, "_delegate_depth", 0) or 0):
             return
+    register_tools(profile_dir)
+    with _LOCK:
         schemas = copy.deepcopy(list(_SCHEMAS.values()))
     existing = {tool.get("function", {}).get("name") for tool in getattr(agent, "tools", [])}
     agent.tools = list(getattr(agent, "tools", []) or []) + [
         tool for tool in schemas if tool["function"]["name"] not in existing
     ]
     agent.valid_tool_names = set(getattr(agent, "valid_tool_names", set())) | set(_SCHEMAS)
+    # Without the toolset the between-turns refresh filters the registry tool out.
+    enabled = getattr(agent, "enabled_toolsets", None)
+    if enabled is not None and TOOLSET not in enabled:
+        agent.enabled_toolsets = sorted({*enabled, TOOLSET})

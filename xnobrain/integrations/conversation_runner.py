@@ -1463,7 +1463,7 @@ class ConversationRunnerMixin:
                 if name == BIG_BROTHER_AGENT_ID and prepared.get("_agent_maker_principal"):
                     from .integration_connect_tools import install_tools as install_connect_tools
 
-                    install_connect_tools(agent, conversation_id)
+                    install_connect_tools(agent, conversation_id, profile_dir)
                 from .xno_data_tools import install_tools as install_xno_data_tools
 
                 install_xno_data_tools(agent, conversation_id)
@@ -1681,7 +1681,12 @@ class ConversationRunnerMixin:
                 "Retry existing page images after an inspection failure; report unverified page numbers. "
                 "A loaded image is only inspected after you actually examine its pixels."
             )
-            feature_prompt = "\n\n".join(filter(None, (feature_prompt, image_guidance)))
+            connect_guidance = None
+            if name == BIG_BROTHER_AGENT_ID and prepared.get("_agent_maker_principal"):
+                from .integration_connect_tools import CONNECT_GUIDANCE as connect_guidance
+            feature_prompt = "\n\n".join(
+                filter(None, (feature_prompt, image_guidance, connect_guidance))
+            )
             aggregate_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
             result: dict[str, Any] = {}
             first_turn = True

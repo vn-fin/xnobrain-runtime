@@ -175,19 +175,29 @@ class IntegrationConnectToolTests(unittest.TestCase):
         self.assertEqual(request["url"], "https://mcp.example.com/mcp")
 
     def test_install_tools_requires_binding_and_skips_delegated_children(self):
-        connect.register_tools()
+        profile = "/tmp/connect-test-profile"
         unbound = SimpleNamespace(tools=[], valid_tool_names=set())
-        connect.install_tools(unbound, "not-bound")
+        connect.install_tools(unbound, "not-bound", profile)
         self.assertEqual(unbound.tools, [])
 
-        bound = SimpleNamespace(tools=[], valid_tool_names=set())
+        bound = SimpleNamespace(tools=[], valid_tool_names=set(), enabled_toolsets=["web"])
         with connect.bind_run(self.service, self.session, self.trusted):
-            connect.install_tools(bound, self.session)
+            connect.install_tools(bound, self.session, profile)
             self.assertEqual(len(bound.tools), 1)
             self.assertIn(connect.TOOL_NAME, bound.valid_tool_names)
+            self.assertIn(connect.TOOLSET, bound.enabled_toolsets)
+
+            from hermes_constants import hermes_home_key
+            from tools.registry import registry
+
+            scope = hermes_home_key(profile)
+            self.assertIsNotNone(registry.get_entry(connect.TOOL_NAME, scope=scope))
+            connect.install_tools(
+                SimpleNamespace(tools=[], valid_tool_names=set()), self.session, profile
+            )
 
             child = SimpleNamespace(tools=[], valid_tool_names=set(), _delegate_depth=1)
-            connect.install_tools(child, self.session)
+            connect.install_tools(child, self.session, profile)
             self.assertEqual(child.tools, [])
 
 
@@ -236,6 +246,15 @@ class IntegrationConnectEventTests(unittest.TestCase):
                 json.dumps({"success": True, "connect_request": {"id": "a" * 32}})
             )
         )
+
+
+class ConnectGuidanceTests(unittest.TestCase):
+    def test_guidance_and_description_steer_away_from_cli_and_chat_secrets(self):
+        from xnobrain.integrations import integration_connect_tools as tools
+
+        self.assertIn(tools.TOOL_NAME, tools.CONNECT_GUIDANCE)
+        self.assertIn("agent mcp add", tools.CONNECT_GUIDANCE)
+        self.assertIn("never ask", tools.CONNECT_GUIDANCE)
 
 
 if __name__ == "__main__":
