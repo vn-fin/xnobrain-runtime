@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from typing import Literal
+from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ExtensionOperationCreate(BaseModel):
@@ -31,8 +32,16 @@ class CatalogInstall(BaseModel):
 class PluginMcpConnection(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    connection_id: str = Field(pattern=r"^[0-9a-fA-F-]{36}$")
+    connection_id: str = Field(min_length=1, max_length=36)
     plugin_revision: str = Field(min_length=1, max_length=128)
+
+    @field_validator("connection_id")
+    @classmethod
+    def _canonical_connection_id(cls, value: str) -> str:
+        try:
+            return str(UUID(value))
+        except (TypeError, ValueError, AttributeError) as error:
+            raise ValueError("connection_id must be a UUID") from error
 
 
 class ExtensionApproval(BaseModel):

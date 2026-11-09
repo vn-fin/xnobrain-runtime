@@ -107,7 +107,9 @@ then calls Control's `POST /xnobrain/api/control/v1/mcp/connections/{id}/oauth/s
 The browser posts `{state, code}` (or `{state, error}` when authorization is
 denied) to Control's `/xnobrain/api/control/v1/mcp/oauth/callback`, then calls
 Runtime `POST /agents-plugins/{agent_id}/mcp/reconnect` so servers parked on
-`needs_sign_in` reconnect with the fresh grant Control attaches. Runtime has
+`needs_sign_in` reconnect with the fresh grant Control attaches. Reconnect
+clears the retry backoff for those servers and reruns the profile MCP sync
+immediately, without waiting for the next chat turn. Runtime has
 no OAuth start or callback routes and stores no catalog OAuth tokens or DCR
 client data. Runtime startup removes legacy `xnobrain-*` token files and catalog
 MCP entries that contain plaintext headers or `auth: oauth`; users reconnect
@@ -173,6 +175,18 @@ engine's valid shell events and maximum timeout (300 seconds) are authoritative.
 Lists expose a command label/digest, not full shell commands. Native consent
 records and Runtime approval must agree; auto-accept settings cannot bypass the
 preflight check. Plugin/gateway hook metadata is read-only.
+
+Hooks written directly into `config.yaml` before managed hooks existed are
+adopted into `.xnobrain/extensions/state.json` on the next load or validation.
+The adopted record is disabled and unapproved, keeps its event, command,
+matcher and timeout, and the entry is removed from `config.yaml`, so it never
+runs until the user approves and enables it in the Hooks screen. Migration runs
+under the same profile lifecycle lock as other extension state writes.
+
+Hooks that share one command are independent. Disabling, revoking or deleting
+one hook removes only its own event/matcher/command config entry; native consent
+for the `(event, command)` pair is revoked only when no other enabled and
+approved hook still uses it.
 
 Tools report enabled, available, ready and missing requirements separately.
 Persistent disabled toolsets remain an upper bound on per-run selections.
@@ -349,10 +363,12 @@ uses the same scan, approval, and enable lifecycle as any other Git install.
 
 Portable plugin MCP servers that declare OAuth or header placeholders are
 never connected directly with credentials. Inventory rows include the declared
-HTTPS URL, auth kind, and installed plugin `commit` revision (uploaded
-archives use `upload:<digest>`). The UI obtains host approval, creates a
-Control connection, and stores its ID through `PUT
+HTTPS URL, auth kind, the declared key header (`auth_header`, the first header
+whose value is empty or a `${...}` placeholder) and installed plugin `commit`
+revision (uploaded archives use `upload:<digest>`). The UI obtains host
+approval, creates a Control connection, and stores its ID through `PUT
 /agents-plugins/{agent_id}/plugins/{plugin_id}/mcp/{server_name}/connection`.
+`connection_id` must be a UUID and is stored in canonical lowercase form.
 `DELETE` on that path clears the mapping. Runtime uses a mapping only while its
 revision matches the installed commit; otherwise the server remains
 `needs_sign_in`. Plugin updates change the revision and removal clears mappings.

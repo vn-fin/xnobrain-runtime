@@ -301,12 +301,23 @@ def portable_summary(path: Path) -> dict[str, Any]:
                 needs_key = isinstance(headers, dict) and any(
                     value == "" or "${" in str(value) for value in headers.values()
                 )
+                auth_header = None
+                if needs_key:
+                    auth_header = next(
+                        (
+                            str(key)
+                            for key, value in headers.items()
+                            if value == "" or "${" in str(value)
+                        ),
+                        None,
+                    )
                 servers.append(
                     {
                         "name": str(name),
                         "host": host or "",
                         "upstream_url": url or "",
                         "auth_kind": "api_key" if needs_key else "none",
+                        "auth_header": auth_header,
                     }
                 )
     return {"skills": skills, "mcp_servers": servers}

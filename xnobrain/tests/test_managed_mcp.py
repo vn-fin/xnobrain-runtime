@@ -648,6 +648,37 @@ class ManagedMCPTests(unittest.TestCase):
         self.assertEqual(load_state(profile)["profile_generation"], generation)
         self.assertEqual(managed_mcp.ensure_profile_generation(profile), generation)
 
+    def test_ensure_profile_generation_uses_the_lifecycle_gate_reentrantly(self):
+        profile = Path(self.temporary.name) / "gated"
+        profile.mkdir()
+        save_state(profile, {"plugins": {}, "hooks": {}, "mcp": {}, "revision": 1})
+        real_gate = managed_mcp.profile_lifecycle_gate
+        calls = []
+
+        def gate(target):
+            calls.append(target)
+            return real_gate(target)
+
+        with patch.object(managed_mcp, "profile_lifecycle_gate", side_effect=gate):
+            generation = managed_mcp.ensure_profile_generation(profile)
+        self.assertEqual(calls, [profile])
+        with real_gate(profile):
+            self.assertEqual(managed_mcp.ensure_profile_generation(profile), generation)
+
+    def test_ensure_profile_generation_works_during_a_chat_turn(self):
+        from xnobrain.repositories.custom_page_locks import ExecutionLease
+
+        profile = Path(self.temporary.name) / "turn"
+        profile.mkdir()
+        save_state(profile, {"plugins": {}, "hooks": {}, "mcp": {}, "revision": 1})
+        with patch.dict(os.environ, {"DATA_DIR": ""}):
+            lease = ExecutionLease(profile.parent, profile.name)
+            try:
+                generation = managed_mcp.ensure_profile_generation(profile)
+            finally:
+                lease.close()
+        self.assertEqual(load_state(profile)["profile_generation"], generation)
+
     def test_stale_profile_generation_cannot_reconnect(self):
         profile = self.profiles[0]
         stale_generation = self.generations[0]
@@ -753,9 +784,7 @@ class ManagedMCPTests(unittest.TestCase):
     def test_toolset_key_falls_back_and_caps_empty_or_odd_slugs(self):
         server_id = "xnb-424df6590c46efbf126024c43041189d"
         for logical_name in ("custom:", "plugin:", "xnobrain-", "!!!"):
-            self.assertEqual(
-                managed_mcp._toolset_key(logical_name, server_id), f"mcp-{server_id}"
-            )
+            self.assertEqual(managed_mcp._toolset_key(logical_name, server_id), f"mcp-{server_id}")
         capped = managed_mcp._toolset_key("xnobrain-" + "a" * 40, server_id)
         self.assertEqual(capped, f"mcp-{'a' * 32}-{server_id}")
         boundary = managed_mcp._toolset_key("xnobrain-" + "a" * 31 + "-tail", server_id)

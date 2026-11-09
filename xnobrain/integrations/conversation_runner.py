@@ -37,6 +37,17 @@ from .hermes_support import (
 )
 
 
+async def _run_goal_call(profile_dir: Path, callback):
+    """Run one goal operation under the profile scope off the event loop."""
+    from .conversation_credentials import conversation_profile_scope
+
+    def run():
+        with conversation_profile_scope(profile_dir):
+            return callback()
+
+    return await asyncio.to_thread(run)
+
+
 class ConversationRunnerMixin:
     _FEATURE_PROMPTS = {
         "custom_page": (
@@ -1600,15 +1611,16 @@ class ConversationRunnerMixin:
             from .conversation_goals import _goal_payload, ensure_composer_goal
 
             def read_goal():
-                with conversation_profile_scope(profile_dir):
-                    return GoalManager(conversation_id).state
+                return _run_goal_call(profile_dir, lambda: GoalManager(conversation_id).state)
 
             def judge_goal(response: str, user_initiated: bool):
-                with conversation_profile_scope(profile_dir):
-                    return GoalManager(conversation_id).evaluate_after_turn(
+                return _run_goal_call(
+                    profile_dir,
+                    lambda: GoalManager(conversation_id).evaluate_after_turn(
                         response,
                         user_initiated=user_initiated,
-                    )
+                    ),
+                )
 
             def emit_goal(state: Any, decision: Mapping[str, Any] | None = None) -> None:
                 tool_progress_callback(
@@ -1623,13 +1635,15 @@ class ConversationRunnerMixin:
             if capabilities is None:
                 capabilities = [str(prepared.get("feature") or "")]
             if "goal" in capabilities:
-                with conversation_profile_scope(profile_dir):
-                    ensure_composer_goal(
+                await _run_goal_call(
+                    profile_dir,
+                    lambda: ensure_composer_goal(
                         GoalManager(conversation_id),
                         str(prepared["message"]),
                         self._goal_max_turns(profile_dir),
-                    )
-            initial_goal = read_goal()
+                    ),
+                )
+            initial_goal = await read_goal()
             if initial_goal is not None:
                 emit_goal(initial_goal)
 
@@ -1701,14 +1715,14 @@ class ConversationRunnerMixin:
                     aggregate_usage[key] += int(turn_usage.get(key) or 0)
                 if bool(result.get("interrupted")) or bool(result.get("failed")):
                     break
-                current_goal = read_goal()
+                current_goal = await read_goal()
                 if current_goal is None or str(current_goal.status) != "active":
                     if current_goal is not None:
                         emit_goal(current_goal)
                     break
                 output = str(result.get("final_response") or "")
-                decision = await asyncio.to_thread(judge_goal, output, first_turn)
-                current_goal = read_goal()
+                decision = await judge_goal(output, first_turn)
+                current_goal = await read_goal()
                 emit_goal(current_goal, decision)
                 if not bool(decision.get("should_continue")):
                     break

@@ -18,6 +18,7 @@ import sys
 import tempfile
 import threading
 import time
+import uuid
 import zipfile
 import zlib
 from contextlib import contextmanager
@@ -876,11 +877,18 @@ def hook_record_approval(profile: Path, event: str, command: str) -> None:
 def hook_register(profile: Path, event: str, command: str, matcher=None, timeout=60) -> None:
     if event not in hook_events()["valid_events"]:
         fail("Hook event is unsupported", "invalid_hook_event", 422)
+    matcher = _hook_matcher(matcher)
     config = read_config(profile)
     hooks = config.setdefault("hooks", {})
     entries = hooks.setdefault(event, [])
     entries[:] = [
-        entry for entry in entries if not isinstance(entry, dict) or entry.get("command") != command
+        entry
+        for entry in entries
+        if not (
+            isinstance(entry, dict)
+            and entry.get("command") == command
+            and _hook_matcher(entry.get("matcher")) == matcher
+        )
     ]
     entries.append(
         {"command": command, "matcher": matcher, "timeout": min(300, int(timeout or 60))}
@@ -888,20 +896,81 @@ def hook_register(profile: Path, event: str, command: str, matcher=None, timeout
     _write_config(profile, config)
 
 
-def hook_revoke(profile: Path, event: str, command: str) -> None:
+def _hook_matcher(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    return value.strip() or None
+
+
+def _other_enabled_hook(
+    profile: Path, event: str, command: str, exclude_hook_id: str | None
+) -> bool:
+    """Return whether another enabled and approved hook still needs this command."""
+    for hook_id, record in (load_state(profile).get("hooks") or {}).items():
+        if hook_id == exclude_hook_id or not isinstance(record, dict):
+            continue
+        if record.get("event") != event or record.get("command") != command:
+            continue
+        approval = record.get("approval") or {}
+        if (
+            record.get("enabled")
+            and approval.get("approved") is True
+            and approval.get("digest") == record.get("command_digest")
+        ):
+            return True
+    return False
+
+
+def _revoke_allowlist_pair(shell_hooks: Any, event: str, command: str) -> None:
+    """Remove only this ``(event, command)`` consent, leaving other events intact."""
+    with shell_hooks._locked_update_approvals() as data:
+        data["approvals"] = [
+            entry
+            for entry in data.get("approvals", [])
+            if not (
+                isinstance(entry, dict)
+                and entry.get("event") == event
+                and entry.get("command") == command
+            )
+        ]
+
+
+def hook_revoke(
+    profile: Path,
+    event: str,
+    command: str,
+    matcher=None,
+    *,
+    exclude_hook_id: str | None = None,
+) -> None:
     from agent import shell_hooks
 
-    with profile_context(profile):
-        shell_hooks.revoke(command)
     config = read_config(profile)
-    entries = (config.get("hooks") or {}).get(event)
+    hooks = config.get("hooks")
+    entries = hooks.get(event) if isinstance(hooks, dict) else None
     if isinstance(entries, list):
-        config["hooks"][event] = [
+        matcher_key = _hook_matcher(matcher)
+        kept = [
             entry
             for entry in entries
-            if not isinstance(entry, dict) or entry.get("command") != command
+            if not (
+                isinstance(entry, dict)
+                and entry.get("command") == command
+                and _hook_matcher(entry.get("matcher")) == matcher_key
+            )
         ]
-        _write_config(profile, config)
+        if len(kept) != len(entries):
+            if kept:
+                hooks[event] = kept
+            else:
+                hooks.pop(event, None)
+            if not hooks:
+                config.pop("hooks", None)
+            _write_config(profile, config)
+    if _other_enabled_hook(profile, event, command, exclude_hook_id):
+        return
+    with profile_context(profile):
+        _revoke_allowlist_pair(shell_hooks, event, command)
 
 
 _GENERATION = re.compile(r"[a-f0-9]{32}")
@@ -1009,6 +1078,21 @@ def _portable_plugin_mcp_servers(profile: Path) -> dict[str, Any]:
         return {}
 
 
+def _canonical_connection_id(value: Any) -> str:
+    try:
+        return str(uuid.UUID(str(value)))
+    except (TypeError, ValueError, AttributeError) as error:
+        raise ValueError("Control connection ID is invalid") from error
+
+
+def _valid_connection_id(value: Any) -> bool:
+    try:
+        _canonical_connection_id(value)
+        return True
+    except ValueError:
+        return False
+
+
 def refresh_profile_mcp(profile: Path) -> None:
     """Reconcile this profile's MCP connections before constructing an agent.
 
@@ -1026,7 +1110,7 @@ def refresh_profile_mcp(profile: Path) -> None:
         if not (
             isinstance(server, dict)
             and server.get("xnobrain_connection_id")
-            and not re.fullmatch(r"[0-9a-fA-F-]{36}", str(server.get("xnobrain_connection_id")))
+            and not _valid_connection_id(server.get("xnobrain_connection_id"))
         )
     }
     plugin_servers = _portable_plugin_mcp_servers(profile)
@@ -1051,9 +1135,10 @@ def refresh_profile_mcp(profile: Path) -> None:
         revision = str(record.get("commit") or "")
         mapping = mappings.get(f"{plugin_id}/{server_name}") if plugin_id else None
         if isinstance(mapping, dict) and mapping.get("plugin_revision") == revision:
-            connection_id = str(mapping.get("connection_id") or "")
             control_url = os.environ.get("RUNTIME_CONTROL_URL", "").rstrip("/")
-            if not re.fullmatch(r"[0-9a-fA-F-]{36}", connection_id):
+            try:
+                connection_id = _canonical_connection_id(mapping.get("connection_id"))
+            except ValueError:
                 plugin_servers.pop(engine_name, None)
                 continue
             server.clear()
@@ -1106,6 +1191,25 @@ def mcp_profile_isolation_supported() -> bool:
 
 def mcp_probe(profile: Path, server_name: str) -> dict[str, Any]:
     try:
+        server = (read_config(profile).get(MANAGED_MCP_KEY) or {}).get(server_name)
+    except Exception:
+        return {"connected": False, "status": "unavailable", "tools_count": 0}
+    if isinstance(server, dict) and server.get("xnobrain_connection_id"):
+        # Control-proxied servers use a private http:// URL that is rebuilt
+        # from the in-memory grant; public HTTPS validation is meaningless here.
+        # The live managed task in this process is the authoritative probe.
+        from .managed_mcp import profile_mcp_status
+
+        generation = str(load_state(profile).get("profile_generation") or "")
+        if _GENERATION.fullmatch(generation):
+            try:
+                status = profile_mcp_status(profile, generation).get(server_name)
+            except (ValueError, RuntimeError):
+                status = None
+            if isinstance(status, dict):
+                return status
+        return {"connected": False, "status": "unavailable", "tools_count": 0}
+    try:
         return _query(profile, "mcp", {"server_name": server_name})
     except Exception:
         return {"connected": False, "status": "unavailable", "tools_count": 0}
@@ -1128,7 +1232,16 @@ async def _probe_mcp(profile: Path, server_name: str) -> dict[str, Any]:
     server = (read_config(profile).get(MANAGED_MCP_KEY) or {}).get(server_name)
     if not isinstance(server, dict) or not server.get("url"):
         return {"connected": False, "status": "unavailable", "tools_count": 0}
-    public_https(server["url"])
+    connection_id = server.get("xnobrain_connection_id")
+    control_url = os.environ.get("RUNTIME_CONTROL_URL", "").rstrip("/")
+    # Only the exact Control proxy URL may skip public HTTPS pinning.
+    control_proxy = (
+        isinstance(connection_id, str)
+        and bool(control_url)
+        and server["url"] == f"{control_url}/xnobrain/api/control/internal/v1/mcp/{connection_id}"
+    )
+    if not control_proxy:
+        public_https(server["url"])
 
     class PinnedPublicTransport(httpx.AsyncBaseTransport):
         def __init__(self):
@@ -1153,12 +1266,14 @@ async def _probe_mcp(profile: Path, server_name: str) -> dict[str, Any]:
             await self.transport.aclose()
 
     def factory(headers=None, timeout=None, auth=None):
+        transport = None if control_proxy else PinnedPublicTransport()
         return httpx.AsyncClient(
             headers=headers,
             timeout=timeout,
             auth=auth,
             follow_redirects=False,
-            transport=PinnedPublicTransport(),
+            trust_env=False,
+            transport=transport,
         )
 
     async with streamablehttp_client(

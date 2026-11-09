@@ -104,6 +104,53 @@ class ExtensionEngineTests(unittest.TestCase):
             self.assertEqual(engine.mcp_status(profile), [])
             engine.mcp_disconnect(profile, "xnobrain-context7")
 
+    def test_control_proxy_probe_uses_managed_task_status(self):
+        from xnobrain.integrations import managed_mcp
+
+        with tempfile.TemporaryDirectory() as root:
+            profile = self.profile(root)
+            connection_id = "8b1a8e93-748b-46b0-8d97-d4d2c7a6b221"
+            (profile / "config.yaml").write_text(
+                yaml.safe_dump(
+                    {
+                        "xnobrain_managed_mcp_servers": {
+                            "xnobrain-docs": {
+                                "url": "http://control.internal/xnobrain/api/control/"
+                                f"internal/v1/mcp/{connection_id}",
+                                "xnobrain_connection_id": connection_id,
+                            }
+                        }
+                    }
+                )
+            )
+            save_state(
+                profile,
+                {
+                    "plugins": {},
+                    "hooks": {},
+                    "mcp": {},
+                    "profile_generation": "a" * 32,
+                    "revision": 1,
+                },
+            )
+            status = {
+                "xnobrain-docs": {
+                    "connected": True,
+                    "status": "connected",
+                    "tools_count": 2,
+                }
+            }
+            with (
+                patch.object(managed_mcp, "profile_mcp_status", return_value=status) as live,
+                patch.object(engine, "_query") as query,
+                patch.object(engine, "public_https") as https,
+            ):
+                result = engine.mcp_probe(profile, "xnobrain-docs")
+            self.assertEqual(result, status["xnobrain-docs"])
+            live.assert_called_once_with(profile, "a" * 32)
+            query.assert_not_called()
+            https.assert_not_called()
+
     def test_refresh_routes_profile_mcp_servers_through_scoped_adapter(self):
         from xnobrain.integrations import managed_mcp
 
@@ -226,6 +273,7 @@ class ExtensionEngineTests(unittest.TestCase):
                             "host": "mcp.example.com",
                             "upstream_url": "https://mcp.example.com/mcp",
                             "auth_kind": "none",
+                            "auth_header": None,
                         }
                     ],
                 },
@@ -337,12 +385,14 @@ class ExtensionEngineTests(unittest.TestCase):
                         "host": "mcp.example.com",
                         "upstream_url": "https://mcp.example.com/mcp",
                         "auth_kind": "none",
+                        "auth_header": None,
                     },
                     {
                         "name": "github",
                         "host": "api.example.com",
                         "upstream_url": "https://api.example.com/mcp",
                         "auth_kind": "api_key",
+                        "auth_header": "Authorization",
                     },
                 ],
             )
@@ -369,6 +419,7 @@ class ExtensionEngineTests(unittest.TestCase):
                         "host": "mcp.example.com",
                         "upstream_url": "https://mcp.example.com/mcp",
                         "auth_kind": "none",
+                        "auth_header": None,
                     }
                 ],
             )
@@ -544,9 +595,43 @@ class ExtensionEngineTests(unittest.TestCase):
                     }
                 )
             )
-            with self.assertRaises(AgentAPIError) as error:
-                validate_profile_extensions(profile)
-            self.assertEqual(error.exception.code, "hook_approval_required")
+            # Auto-accept cannot approve a hook; migration makes it inert.
+            validate_profile_extensions(profile)
+            (record,) = load_state(profile)["hooks"].values()
+            self.assertFalse(record["enabled"])
+            self.assertFalse(record["approval"]["approved"])
+            self.assertNotIn("hooks", yaml.safe_load((profile / "config.yaml").read_text()))
+
+    def test_legacy_config_hook_is_adopted_disabled_and_unapproved(self):
+        with tempfile.TemporaryDirectory() as root:
+            profile = self.profile(root)
+            command = "printf legacy-hook"
+            (profile / "config.yaml").write_text(
+                yaml.safe_dump(
+                    {
+                        "hooks": {
+                            "pre_tool_call": [
+                                {"command": command, "matcher": "terminal", "timeout": 10}
+                            ]
+                        }
+                    }
+                )
+            )
+            validate_profile_extensions(profile)
+            state = load_state(profile)
+            (record,) = state["hooks"].values()
+            self.assertEqual(record["event"], "pre_tool_call")
+            self.assertEqual(record["command"], command)
+            self.assertEqual(record["matcher"], "terminal")
+            self.assertEqual(record["timeout"], 10)
+            self.assertFalse(record["enabled"])
+            self.assertFalse(record["approval"]["approved"])
+            self.assertEqual(record["approval"]["digest"], "")
+            config = yaml.safe_load((profile / "config.yaml").read_text())
+            self.assertNotIn("hooks", config)
+            # Validation stays clean after migration.
+            validate_profile_extensions(profile)
+            self.assertEqual(load_state(profile)["hooks"], state["hooks"])
 
     def test_approved_hash_required_at_execution_and_mutation_invalidates_it(self):
         with tempfile.TemporaryDirectory() as root:
@@ -618,9 +703,23 @@ class ExtensionEngineTests(unittest.TestCase):
             command = f"touch {marker}"
             profile_a = self.profile(root, "a")
             profile_b = self.profile(root, "b")
-            config = {"hooks": {"pre_tool_call": [{"command": command, "timeout": 10}]}}
-            (profile_a / "config.yaml").write_text(yaml.safe_dump(config))
+            from xnobrain.integrations.extension_policy import hook_digest
+
+            digest = hook_digest("pre_tool_call", command, None, 10)
+            state = load_state(profile_a)
+            state["hooks"]["profile-a-hook"] = {
+                "event": "pre_tool_call",
+                "command": command,
+                "matcher": None,
+                "timeout": 10,
+                "command_digest": digest,
+                "enabled": True,
+                "approval": {"approved": True, "digest": digest},
+                "revision": 1,
+            }
+            save_state(profile_a, state)
             engine.hook_record_approval(profile_a, "pre_tool_call", command)
+            engine.hook_register(profile_a, "pre_tool_call", command, None, 10)
 
             engine.refresh_profile_plugins(profile_a)
             engine.refresh_profile_plugins(profile_b)
@@ -646,10 +745,11 @@ class ExtensionEngineTests(unittest.TestCase):
             profile = self.profile(root)
             config = {"hooks": {"pre_tool_call": [{"command": f"touch {marker}"}]}}
             (profile / "config.yaml").write_text(yaml.safe_dump(config))
-            # Execution validation refuses the profile before any hook is wired.
-            with self.assertRaises(AgentAPIError) as error:
-                engine.refresh_profile_plugins(profile)
-            self.assertEqual(error.exception.code, "hook_approval_required")
+            # Migration makes the config-only hook inert before it is wired.
+            engine.refresh_profile_plugins(profile)
+            (record,) = load_state(profile)["hooks"].values()
+            self.assertFalse(record["enabled"])
+            self.assertFalse(record["approval"]["approved"])
             with engine.profile_context(profile):
                 get_plugin_manager().invoke_hook("pre_tool_call", tool_name="terminal", args={})
             self.assertFalse(marker.exists())
@@ -671,7 +771,7 @@ class ExtensionEngineTests(unittest.TestCase):
             listed = engine.hook_list(profile)
             self.assertTrue(listed[0]["approved"])
             self.assertNotIn("printf", str(listed))
-            engine.hook_revoke(profile, "pre_tool_call", "printf approved")
+            engine.hook_revoke(profile, "pre_tool_call", "printf approved", "file")
             self.assertEqual(engine.hook_list(profile), [])
 
     def test_toolset_toggle_updates_native_and_cli_positive_selection(self):
@@ -816,6 +916,38 @@ class ExtensionEngineTests(unittest.TestCase):
         # Unmapped and stale-revision auth servers never connect directly.
         self.assertNotIn(f"{ns['kit']}__unmapped", plugins)
         self.assertNotIn(f"{ns['old']}__api", plugins)
+
+    def test_refresh_drops_plugin_mapping_with_non_uuid_connection_id(self):
+        from hermes_cli.plugins import _portable_skill_namespace
+
+        namespace = _portable_skill_namespace("kit")
+        servers = {
+            f"{namespace}__api": {
+                "url": "https://api.example/mcp",
+                "headers": {"Authorization": ""},
+            }
+        }
+        state = {
+            "profile_generation": "a" * 32,
+            "plugins": {"kit": {"commit": "rev-2"}},
+            "plugin_mcp": {
+                "kit/api": {"connection_id": "-" * 36, "plugin_revision": "rev-2"},
+            },
+        }
+        captured = {}
+        with (
+            tempfile.TemporaryDirectory() as root,
+            patch.dict(os.environ, {"RUNTIME_CONTROL_URL": "http://control:3000"}),
+            patch.object(engine, "read_config", return_value={}),
+            patch.object(engine, "load_state", return_value=state),
+            patch.object(engine, "_portable_plugin_mcp_servers", return_value=servers),
+            patch(
+                "xnobrain.integrations.managed_mcp.sync_profile_mcp",
+                side_effect=lambda *args: captured.update(plugins=args[4]),
+            ),
+        ):
+            engine.refresh_profile_mcp(Path(root))
+        self.assertNotIn(f"{namespace}__api", captured["plugins"])
 
 
 if __name__ == "__main__":

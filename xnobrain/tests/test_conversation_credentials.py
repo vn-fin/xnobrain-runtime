@@ -1,9 +1,10 @@
 """No-network regressions for workspace keys in goal/background profile scopes."""
 
 import os
+import threading
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest import TestCase
+from unittest import IsolatedAsyncioTestCase, TestCase
 from unittest.mock import patch
 
 from agent.secret_scope import (
@@ -164,3 +165,22 @@ class ConversationCredentialsTests(TestCase):
                         self.assertEqual(get_secret(LLM_ROUTER_KEY_ENV), "synthetic-cron-file-key")
         finally:
             set_multiplex_active(previous_mode)
+
+
+class GoalOffloadTests(IsolatedAsyncioTestCase):
+    async def test_goal_call_runs_off_the_event_loop(self):
+        from contextlib import nullcontext
+
+        from xnobrain.integrations import conversation_runner
+
+        loop_thread = threading.get_ident()
+        with TemporaryDirectory() as directory:
+            profile = Path(directory)
+            with patch(
+                "xnobrain.integrations.conversation_credentials.conversation_profile_scope",
+                side_effect=lambda _profile: nullcontext(),
+            ):
+                worker_thread = await conversation_runner._run_goal_call(
+                    profile, threading.get_ident
+                )
+        self.assertNotEqual(worker_thread, loop_thread)

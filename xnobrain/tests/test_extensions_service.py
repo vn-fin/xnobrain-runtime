@@ -92,6 +92,88 @@ class ExtensionServiceTests(unittest.TestCase):
         self.assertFalse(state["hooks"][result["id"]]["approval"]["approved"])
         self.assertFalse((self.profile / "config.yaml").exists())
 
+    def test_legacy_config_hook_is_listed_after_migration(self):
+        import yaml
+
+        command = "printf legacy"
+        (self.profile / "config.yaml").write_text(
+            yaml.safe_dump(
+                {
+                    "hooks": {
+                        "pre_tool_call": [
+                            {"command": command, "matcher": "terminal", "timeout": 15}
+                        ]
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        result = self.service.list_hooks("research", self.trusted)
+        self.assertEqual(len(result["hooks"]), 1)
+        hook = result["hooks"][0]
+        self.assertFalse(hook["enabled"])
+        self.assertFalse(hook["approval"]["approved"])
+        self.assertEqual(hook["event"], "pre_tool_call")
+        self.assertEqual(hook["matcher"], "terminal")
+        self.assertEqual(hook["timeout"], 15)
+        config = yaml.safe_load((self.profile / "config.yaml").read_text())
+        self.assertNotIn("hooks", config)
+
+    def test_hooks_sharing_a_command_do_not_revoke_each_other(self):
+        import yaml
+        from agent import shell_hooks
+
+        contract = {"valid_events": ["pre_tool_call"], "unsupported": []}
+        command = "printf shared-hook"
+        hooks = []
+        with patch.object(extension_engine, "hook_events", return_value=contract):
+            for matcher in ("^read_.*$", "^write_.*$"):
+                hook = self.service.create_hook(
+                    "research",
+                    {
+                        "event": "pre_tool_call",
+                        "command": command,
+                        "matcher": matcher,
+                        "timeout": 30,
+                    },
+                    self.trusted,
+                )
+                self.service.approve_hook(
+                    "research",
+                    hook["id"],
+                    {
+                        "command_digest": hook["command_digest"],
+                        "approved": True,
+                        "expected_revision": hook["revision"],
+                    },
+                    self.trusted,
+                )
+                self.service.set_hook_enabled("research", hook["id"], True, self.trusted)
+                hooks.append(hook)
+
+        config = yaml.safe_load((self.profile / "config.yaml").read_text())
+        self.assertEqual(
+            [entry["matcher"] for entry in config["hooks"]["pre_tool_call"]],
+            ["^read_.*$", "^write_.*$"],
+        )
+        with extension_engine.profile_context(self.profile):
+            self.assertIsNotNone(shell_hooks.allowlist_entry_for("pre_tool_call", command))
+
+        self.service.set_hook_enabled("research", hooks[0]["id"], False, self.trusted)
+        config = yaml.safe_load((self.profile / "config.yaml").read_text())
+        self.assertEqual(
+            [entry["matcher"] for entry in config["hooks"]["pre_tool_call"]],
+            ["^write_.*$"],
+        )
+        with extension_engine.profile_context(self.profile):
+            self.assertIsNotNone(shell_hooks.allowlist_entry_for("pre_tool_call", command))
+
+        self.service.set_hook_enabled("research", hooks[1]["id"], False, self.trusted)
+        config = yaml.safe_load((self.profile / "config.yaml").read_text())
+        self.assertNotIn("hooks", config)
+        with extension_engine.profile_context(self.profile):
+            self.assertIsNone(shell_hooks.allowlist_entry_for("pre_tool_call", command))
+
     def test_hook_event_and_timeout_are_validated(self):
         contract = {
             "valid_events": ["pre_tool_call"],
@@ -173,6 +255,25 @@ class ExtensionServiceTests(unittest.TestCase):
                 self.trusted,
             )
         self.assertEqual(error.exception.code, "extension_revision_conflict")
+
+    def test_plugin_mcp_rows_expose_auth_header_for_api_key_servers(self):
+        rows = ExtensionsService._plugin_mcp_rows(
+            self.profile,
+            "sample",
+            [
+                {
+                    "name": "docs",
+                    "host": "mcp.example.com",
+                    "auth_kind": "api_key",
+                    "auth_header": "Authorization",
+                    "upstream_url": "https://mcp.example.com/mcp",
+                }
+            ],
+            False,
+            {"commit": "a" * 40},
+        )
+        self.assertEqual(rows[0]["auth_header"], "Authorization")
+        self.assertEqual(rows[0]["chat_status"], "disabled")
 
     def test_profile_owner_must_match(self):
         (self.profile / ".community-profile-owner.json").write_text(

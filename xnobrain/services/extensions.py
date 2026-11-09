@@ -647,6 +647,7 @@ class ExtensionsService:
                 "name": str(item.get("name", ""))[:128],
                 "host": str(item.get("host", ""))[:255],
                 "auth_kind": item.get("auth_kind", "none"),
+                "auth_header": item.get("auth_header"),
                 "upstream_url": item.get("upstream_url", ""),
                 "plugin_revision": revision,
                 "connection_id": (
@@ -742,6 +743,9 @@ class ExtensionsService:
         """Wake proxy MCP tasks parked on sign-in; Control attaches a fresh grant."""
         profile, _ = self._profile(agent_id, trusted)
         self._set_mcp_grant(profile, trusted)
+        from ..integrations.managed_mcp import reconnect_profile_mcp
+
+        reconnect_profile_mcp(profile)
         return {"agent_id": agent_id, "reconnecting": True}
 
     @staticmethod
@@ -1340,7 +1344,7 @@ class ExtensionsService:
 
     def list_hooks(self, agent_id: str, trusted: Any) -> dict[str, Any]:
         profile, _owner = self._profile(agent_id, trusted)
-        state = self._state(profile)
+        _config, state = extension_policy.migrate_legacy_hooks(profile)
         try:
             engine_rows = extension_engine.hook_list(profile)
             event_contract = extension_engine.hook_events()
@@ -1436,12 +1440,7 @@ class ExtensionsService:
 
     @staticmethod
     def _hook_digest(event: str, command: str, matcher: str | None, timeout: int) -> str:
-        payload = json.dumps(
-            {"event": event, "command": command, "matcher": matcher, "timeout": timeout},
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-        return hashlib.sha256(payload.encode()).hexdigest()
+        return extension_policy.hook_digest(event, command, matcher, timeout)
 
     def approve_hook(
         self, agent_id: str, hook_id: str, body: dict[str, Any], trusted: Any
@@ -1463,7 +1462,13 @@ class ExtensionsService:
                 record["approval"] = {"approved": True, "digest": record["command_digest"]}
             else:
                 self._snapshot_config(agent_id, profile)
-                extension_engine.hook_revoke(profile, record["event"], record["command"])
+                extension_engine.hook_revoke(
+                    profile,
+                    record["event"],
+                    record["command"],
+                    record.get("matcher"),
+                    exclude_hook_id=hook_id,
+                )
                 record["enabled"] = False
                 record["approval"] = {"approved": False, "digest": ""}
             record["revision"] = int(record.get("revision", 1)) + 1
@@ -1505,7 +1510,13 @@ class ExtensionsService:
                 )
             else:
                 self._snapshot_config(agent_id, profile)
-                extension_engine.hook_revoke(profile, record["event"], record["command"])
+                extension_engine.hook_revoke(
+                    profile,
+                    record["event"],
+                    record["command"],
+                    record.get("matcher"),
+                    exclude_hook_id=hook_id,
+                )
             record["enabled"] = enabled
             record["revision"] = int(record.get("revision", 1)) + 1
             state["revision"] = int(state.get("revision", 1)) + 1
@@ -1525,7 +1536,13 @@ class ExtensionsService:
             if not record:
                 raise ServiceError("Hook not found", status=404, code="not_found")
             self._snapshot_config(agent_id, profile)
-            extension_engine.hook_revoke(profile, record["event"], record["command"])
+            extension_engine.hook_revoke(
+                profile,
+                record["event"],
+                record["command"],
+                record.get("matcher"),
+                exclude_hook_id=hook_id,
+            )
             state["hooks"].pop(hook_id, None)
             state["revision"] = int(state.get("revision", 1)) + 1
             self._save(profile, state)

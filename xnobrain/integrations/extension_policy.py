@@ -109,6 +109,149 @@ def save_state(profile: Path, state: dict[str, Any]) -> None:
     atomic_json(state_root(profile) / "state.json", state)
 
 
+def profile_lifecycle_gate(profile: Path):
+    """Return the lifecycle gate that guards this profile's extension state.
+
+    Repository writers lock ``DATA_DIR``; Runtime exports it in every packaged
+    environment. A bare profile path keeps source tests self-contained.
+    """
+    from ..repositories.custom_page_locks import lifecycle_gate
+
+    profile = Path(profile)
+    configured = os.environ.get("DATA_DIR", "").strip()
+    root = Path(configured) if configured else profile.parent
+    return lifecycle_gate(root, profile.name)
+
+
+def hook_digest(event: str, command: str, matcher: str | None, timeout: int) -> str:
+    payload = json.dumps(
+        {"event": event, "command": command, "matcher": matcher, "timeout": timeout},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def _config_hook_rows(config: dict[str, Any]) -> list[tuple[str, int, Any, str]]:
+    """Return normalised ``(event, index, spec, digest)`` rows for config hooks."""
+    from agent import shell_hooks
+
+    hooks = config.get("hooks")
+    if not isinstance(hooks, dict):
+        return []
+    rows = []
+    for event, entries in hooks.items():
+        if not isinstance(entries, list):
+            continue
+        for index, entry in enumerate(entries):
+            if not isinstance(entry, dict):
+                continue
+            specs = shell_hooks.iter_configured_hooks({"hooks": {event: [entry]}})
+            if not specs:
+                continue
+            spec = specs[0]
+            rows.append(
+                (
+                    event,
+                    index,
+                    spec,
+                    hook_digest(spec.event, spec.command, spec.matcher, spec.timeout),
+                )
+            )
+    return rows
+
+
+def _adopt_legacy_hooks(
+    profile: Path, config: dict[str, Any], state: dict[str, Any]
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Move config-only hooks into managed, disabled state records.
+
+    Hooks written before managed Hooks existed have no state record, so
+    execution would fail closed with nothing for the user to approve. Adopt
+    them as unapproved and disabled, then remove them from ``config.yaml``.
+    """
+    known = {
+        str((record or {}).get("command_digest") or "")
+        for record in (state.get("hooks") or {}).values()
+        if isinstance(record, dict)
+    }
+    rows = _config_hook_rows(config)
+    pending = [row for row in rows if row[3] not in known]
+    if not pending:
+        return config, state
+    hooks = state.setdefault("hooks", {})
+    adopted = set()
+    existing_ids = set(hooks)
+    for _event, _index, spec, digest in pending:
+        if digest in adopted:
+            continue
+        hook_id = hashlib.sha256(os.urandom(32)).hexdigest()[:24]
+        while hook_id in existing_ids:
+            hook_id = hashlib.sha256(os.urandom(32)).hexdigest()[:24]
+        existing_ids.add(hook_id)
+        hooks[hook_id] = {
+            "event": spec.event,
+            "command": spec.command,
+            "matcher": spec.matcher,
+            "timeout": int(spec.timeout),
+            "command_digest": digest,
+            "enabled": False,
+            "approval": {"approved": False, "digest": ""},
+            "revision": 1,
+        }
+        adopted.add(digest)
+    adopted_positions = {(row[0], row[1]) for row in rows if row[3] in adopted}
+    config_hooks = config.get("hooks")
+    if isinstance(config_hooks, dict):
+        for event in list(config_hooks):
+            entries = config_hooks[event]
+            if not isinstance(entries, list):
+                continue
+            kept = [
+                entry
+                for index, entry in enumerate(entries)
+                if (event, index) not in adopted_positions
+            ]
+            if kept:
+                config_hooks[event] = kept
+            else:
+                config_hooks.pop(event, None)
+        if not config_hooks:
+            config.pop("hooks", None)
+    state["revision"] = int(state.get("revision", 1)) + 1
+    save_state(profile, state)
+    from .extension_engine import _write_config
+
+    _write_config(profile, config)
+    return config, state
+
+
+def migrate_legacy_hooks(
+    profile: Path,
+    config: dict[str, Any] | None = None,
+    state: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Adopt pre-managed config hooks under the extension lifecycle lock."""
+    config = read_config(profile) if config is None else config
+    state = load_state(profile) if state is None else state
+    known = {
+        str((record or {}).get("command_digest") or "")
+        for record in (state.get("hooks") or {}).values()
+        if isinstance(record, dict)
+    }
+    if not any(row[3] not in known for row in _config_hook_rows(config)):
+        return config, state
+    from ..repositories.base import StoreError
+
+    try:
+        with profile_lifecycle_gate(profile):
+            return _adopt_legacy_hooks(profile, read_config(profile), load_state(profile))
+    except StoreError:
+        # Busy profiles migrate on the next idle validation; this turn stays
+        # fail-closed on the config hook below.
+        return config, state
+
+
 # Repository content the plugin loader never imports or reads. It is dropped
 # from a cloned artifact so CI files, test fixtures and documentation cannot
 # block or bloat the scan of the code that actually runs.
@@ -246,6 +389,7 @@ def validate_profile_extensions(profile: Path) -> None:
     if not isinstance(plugins, dict):
         fail("Plugin configuration is invalid", "plugin_unsafe")
     state = load_state(profile)
+    config, state = migrate_legacy_hooks(profile, config, state)
     enabled = plugins.get("enabled") or []
     disabled = set(plugins.get("disabled") or [])
     if not isinstance(enabled, list):

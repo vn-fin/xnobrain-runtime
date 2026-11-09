@@ -177,9 +177,20 @@ class ExtensionAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.json()["error"]["code"], "plugin_revision_mismatch")
 
     async def test_plugin_mcp_reconnect_stores_fresh_grant(self):
-        from xnobrain.integrations import control_grants
+        from xnobrain.integrations import control_grants, managed_mcp
 
-        with patch.object(control_grants, "set") as set_grant:
+        scope = managed_mcp._profile_scope(self.profile)
+        key = (scope, "a" * 32, "xnobrain-docs")
+        managed_mcp._CUSTOM_STATUS[key] = {
+            "status": "needs_sign_in",
+            "retry_after": 10**12,
+            "failures": 3,
+        }
+        self.addCleanup(managed_mcp._CUSTOM_STATUS.pop, key, None)
+        with (
+            patch.object(control_grants, "set") as set_grant,
+            patch.object(extension_engine, "refresh_profile_mcp") as refresh,
+        ):
             response = await self.client.post(
                 f"{API_PREFIX}/agents-plugins/research/mcp/reconnect",
                 headers={**self.headers(), "X-XNOBrain-MCP-Grant": "fresh-grant"},
@@ -187,6 +198,9 @@ class ExtensionAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200)
         set_grant.assert_called_once()
         self.assertEqual(set_grant.call_args.args[1], "fresh-grant")
+        refresh.assert_called_once()
+        self.assertNotIn("retry_after", managed_mcp._CUSTOM_STATUS[key])
+        self.assertNotIn("failures", managed_mcp._CUSTOM_STATUS[key])
 
     async def test_plugin_mcp_mapping_stores_connection_for_current_revision(self):
         from hermes_cli.plugins import _portable_skill_namespace
@@ -202,13 +216,29 @@ class ExtensionAPITests(unittest.IsolatedAsyncioTestCase):
                 f"{API_PREFIX}/agents-plugins/research/plugins/sample/mcp/docs/connection",
                 headers=self.headers(),
                 json={
-                    "connection_id": "11111111-1111-4111-8111-111111111111",
+                    "connection_id": "8B1A8E93-748B-46B0-8D97-D4D2C7A6B221",
                     "plugin_revision": "a" * 40,
                 },
             )
         self.assertEqual(response.status_code, 200, response.text)
         mapping = extension_engine.load_state(self.profile)["plugin_mcp"]["sample/docs"]
-        self.assertEqual(mapping["connection_id"], "11111111-1111-4111-8111-111111111111")
+        self.assertEqual(mapping["connection_id"], "8b1a8e93-748b-46b0-8d97-d4d2c7a6b221")
+
+    async def test_plugin_mcp_mapping_rejects_invalid_connection_ids(self):
+        for connection_id in (
+            "-" * 36,
+            "not-a-uuid",
+            "11111111-1111-4111-8111-11111111111",
+        ):
+            response = await self.client.put(
+                f"{API_PREFIX}/agents-plugins/research/plugins/sample/mcp/docs/connection",
+                headers=self.headers(),
+                json={
+                    "connection_id": connection_id,
+                    "plugin_revision": "a" * 40,
+                },
+            )
+            self.assertEqual(response.status_code, 422, connection_id)
 
     async def test_profile_owner_binding_rejects_another_signed_actor(self):
         (self.profile / ".community-profile-owner.json").write_text(
@@ -488,6 +518,7 @@ class ExtensionAPITests(unittest.IsolatedAsyncioTestCase):
                     "name": "docs",
                     "host": "mcp.example.com",
                     "auth_kind": "none",
+                    "auth_header": None,
                     "upstream_url": "https://mcp.example.com/mcp",
                     "plugin_revision": "c" * 40,
                     "connection_id": None,

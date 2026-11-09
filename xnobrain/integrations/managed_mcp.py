@@ -28,7 +28,7 @@ import httpx
 from tools.mcp_tool import MCPServerTask
 
 from .extension_engine import profile_context, public_https
-from .extension_policy import load_state, save_state
+from .extension_policy import load_state, profile_lifecycle_gate, save_state
 
 _LOGGER = logging.getLogger(__name__)
 _GENERATION = re.compile(r"^[a-f0-9]{32}$")
@@ -102,6 +102,20 @@ class ControlGrantAuth(httpx.Auth):
 def ensure_profile_generation(profile: Path) -> str:
     """Return this profile's generation, creating one on first MCP use."""
     profile = Path(profile)
+    # State writers in the extension service hold the profile lifecycle lock.
+    # Re-enter it here so a first-MCP generation cannot overwrite their update.
+    from ..repositories.base import StoreError
+
+    try:
+        with profile_lifecycle_gate(profile):
+            return _ensure_generation(profile)
+    except StoreError:
+        # A chat turn holds the shared execution lease, which already keeps
+        # lifecycle writers out, so the manager lock alone is enough here.
+        return _ensure_generation(profile)
+
+
+def _ensure_generation(profile: Path) -> str:
     with _MANAGER_LOCK:
         state = load_state(profile)
         generation = state.get("profile_generation")
@@ -173,6 +187,25 @@ def reconnect_control_tasks(scope: str) -> None:
                 loop.call_soon_threadsafe(event.set)
             else:
                 event.set()
+
+
+def reconnect_profile_mcp(profile: Path) -> None:
+    """Retry every sign-in-parked server for this profile after a fresh grant.
+
+    A failed proxy start leaves ``_MANAGED_TASKS`` and records its retry state
+    in ``_CUSTOM_STATUS``. Clearing that backoff and running the normal sync
+    path reconnects immediately instead of waiting for the next chat turn.
+    """
+    profile = Path(profile)
+    scope = _profile_scope(profile)
+    with _MANAGER_LOCK:
+        for key, entry in _CUSTOM_STATUS.items():
+            if key[0] == scope and entry.get("status") == "needs_sign_in":
+                entry.pop("retry_after", None)
+                entry.pop("failures", None)
+    from .extension_engine import refresh_profile_mcp
+
+    refresh_profile_mcp(profile)
 
 
 def _is_unauthorized(error: BaseException) -> bool:
