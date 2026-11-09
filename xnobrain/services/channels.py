@@ -21,6 +21,7 @@ from ..feature_flags import enabled as feature_enabled
 from ..integrations import zalo_channels
 from ..integrations.control_mcp_grants import WorkspaceMcpGrantClient
 from ..repositories.channels import ChannelsRepository
+from ..trusted_context import TrustedRequestContext
 from .base import ServiceError
 from .conversation_authority import HostAuthority, require_host_binding
 
@@ -37,6 +38,11 @@ _SAFE_TURN_DM_POLICIES = {"allowlist", "pairing"}
 _TURN_PLATFORMS = {"zalo", "zalo_bot"}
 _ENABLED_VALUES = {"1", "true", "yes", "on"}
 _MAX_TURN_TEXT = 20000
+_GATEWAY_CONNECT_INSTRUCTION = (
+    "To finish connecting this channel, open this agent's conversation in the "
+    "XNOBrain web app and complete the connection form there. Do not send tokens, "
+    "QR callback values or other credentials in Zalo."
+)
 _QR_WAIT_SECONDS = 5.0
 _BOT_TOKEN_ENV = "ZALO_BOT_TOKEN"
 
@@ -181,6 +187,99 @@ class ChannelsService:
         config = self.repository.config(profile)
         if not bool(self._platform_config(config, platform).get("enabled")):
             raise ServiceError("channel is disabled", status=403, code="channel_disabled")
+
+    def connect_target(
+        self, agent_id: str, *, trusted: Any = None, host_authority: Any = None
+    ) -> Path:
+        """Read-only channel connect target without configuring the channel."""
+        self._require_feature()
+        profile = self._profile(agent_id)
+
+        if host_authority is not None:
+            if not isinstance(host_authority, HostAuthority):
+                raise ServiceError(
+                    "channel connect authority is invalid",
+                    status=403,
+                    code="channel_owner_mismatch",
+                )
+            binding = self._require_owner_binding(agent_id, profile)
+            if (
+                host_authority.agent_id != agent_id
+                or host_authority.platform not in _TURN_PLATFORMS
+                or not host_authority.subject
+                or not host_authority.tenant_id
+                or host_authority.organization_id
+            ):
+                raise ServiceError(
+                    "channel connect target does not match the host authority",
+                    status=403,
+                    code="channel_owner_mismatch",
+                )
+            binding_tenant = str(binding.get("tenant_id") or "")
+            if (
+                host_authority.subject != str(binding.get("user_id") or "")
+                or not binding_tenant
+                or host_authority.tenant_id != binding_tenant
+            ):
+                raise ServiceError(
+                    "channel owner does not match",
+                    status=403,
+                    code="channel_owner_mismatch",
+                )
+            if str(binding.get("organization_id") or ""):
+                raise ServiceError(
+                    "channel connect requires a Personal context",
+                    status=403,
+                    code="channel_personal_required",
+                )
+            return profile
+
+        if not isinstance(trusted, TrustedRequestContext):
+            raise ServiceError(
+                "verified channel owner is required",
+                status=401,
+                code="trusted_context_required",
+            )
+        subject = str(trusted.subject or "").strip()
+        trusted_tenant = str(trusted.tenant_id or "").strip()
+        if not subject or not trusted_tenant:
+            raise ServiceError(
+                "verified channel owner is required",
+                status=401,
+                code="trusted_context_required",
+            )
+        context = trusted.ownership_context
+        if str(trusted.organization_id or "") or (
+            isinstance(context, Mapping)
+            and (
+                str(context.get("owner_kind") or "") not in {"", "personal"}
+                or context.get("organization_id")
+            )
+        ):
+            raise ServiceError(
+                "channel connect requires a Personal context",
+                status=403,
+                code="channel_personal_required",
+            )
+
+        # First connect has no owner.json yet. Validate the durable marker and
+        # any existing owner read-only, without creating or changing either.
+        self._check_channel_owner(agent_id, profile, trusted)
+        existing = self.repository.read_owner(profile)
+        if existing is not None:
+            existing_tenant = str(existing.get("tenant_id") or "")
+            if (
+                str(existing.get("user_id") or "") != subject
+                or not existing_tenant
+                or existing_tenant != trusted_tenant
+                or str(existing.get("organization_id") or "")
+            ):
+                raise ServiceError(
+                    "channel owner does not match",
+                    status=403,
+                    code="channel_owner_mismatch",
+                )
+        return profile
 
     @staticmethod
     def _host_authority(agent_id: str, platform: str, binding: Mapping[str, Any]) -> HostAuthority:
@@ -468,12 +567,17 @@ class ChannelsService:
         agent_id: str,
         conversation_id: str,
         run_id: str,
-    ) -> dict[str, Any]:
-        """Drain one run and deny interactive approvals; channel turns have no UI."""
+    ) -> tuple[dict[str, Any], bool]:
+        """Drain one run; deny approvals and note web-only connect requests."""
+        connect_requested = False
         async for event in self.platform.conversation_runs.events(
             agent_id, conversation_id, run_id
         ):
-            if str(event.get("event") or "") != "approval.request":
+            name = str(event.get("event") or "")
+            if name == "integration.connect_requested":
+                connect_requested = True
+                continue
+            if name != "approval.request":
                 continue
             try:
                 self.platform.resolve_approval(run_id, {"choice": "deny"})
@@ -483,7 +587,10 @@ class ChannelsService:
                         "channel turn approval denial failed: %s",
                         type(error).__name__,
                     )
-        return self.platform.conversation_runs.get_run(agent_id, conversation_id, run_id)
+        return (
+            self.platform.conversation_runs.get_run(agent_id, conversation_id, run_id),
+            connect_requested,
+        )
 
     async def run_internal_turn(self, body: Mapping[str, Any], token: str | None) -> dict[str, Any]:
         """Run one authorized gateway message through the main Runtime."""
@@ -548,15 +655,18 @@ class ChannelsService:
             raise ServiceError(
                 "channel turn could not start", status=502, code="channel_turn_failed"
             )
-        record = await self._wait_for_turn(agent_id, conversation_id, run_id)
+        record, connect_requested = await self._wait_for_turn(agent_id, conversation_id, run_id)
         if str(record.get("status") or "") != "completed":
             raise ServiceError("channel turn failed", status=502, code="channel_turn_failed")
         raw_usage = record.get("usage")
         usage = raw_usage if isinstance(raw_usage, Mapping) else {}
+        reply = str(record.get("output") or "")
+        if connect_requested:
+            reply = _GATEWAY_CONNECT_INSTRUCTION
         return {
             "conversation_id": conversation_id,
             "run_id": run_id,
-            "reply": str(record.get("output") or ""),
+            "reply": reply,
             "usage": {
                 key: max(0, int(usage.get(key) or 0))
                 for key in ("input_tokens", "output_tokens", "total_tokens")

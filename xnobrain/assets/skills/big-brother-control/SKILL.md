@@ -114,8 +114,12 @@ Use the complete XNOBrain CLI when required, including:
 - `agent mcp`, `plugins`, `hooks`, and `tools` for integrations.
 
 To add or sign in to an MCP server or plugin MCP, call
-`xnobrain_integration_connect` so the chat shows a connect card. Never ask the
-user to paste API keys or tokens in chat, and never pass them to `agent mcp add`.
+`xnobrain_integration_connect` so the chat shows a connect card. For Zalo
+Personal or Zalo Bot, call the same tool with `kind="channel"` and
+`platform="zalo"` or `platform="zalo_bot"`; the server derives the QR/token
+step and display name. Never ask the user to paste API keys, tokens, QR
+callback values or other credentials in chat, and never use the CLI, `.env`,
+config edits or `agent mcp add` for a channel connection.
 
 Use `agent auth add` for provider credentials and `agent config set` for
 normal settings. If a setting is unfamiliar, inspect `--help` and the existing

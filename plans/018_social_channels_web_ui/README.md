@@ -1,12 +1,13 @@
 # 018 — Social channels in the web UI (generic framework, Zalo first)
 
-Status: Phase 2 Runtime pairing-management API implemented. The generic UI
-framework, Zalo Bot card, overview route, and Big Brother connect card remain
-UI work. Depends on the Runtime channel routes for `zalo_bot` (in progress on
-`feat/zalo-bot-platform`) and on plan
-[017](../017_plugin_capabilities_over_hermes/README.md) for the later move of
-the bot token to Control. UI code lives in `xnobrain-ui`; no React source
-belongs in Runtime.
+Status: Phases 0–4 are source-implemented across `feat/zalo-bot-platform`
+(Runtime) and `feat/channels-ui-generalize` (UI), with focused API, concurrency,
+component, and TypeScript checks. This is not live Zalo/browser end-to-end
+verification. UI commits include `805f4c2`, `f04c531`, and `a483190`; Runtime
+includes the pairing API, process-shared locking, and channel connect events.
+Phase 5 (another provider) and Phase 6 (Control-held bot credentials) remain.
+Plan [017](../017_plugin_capabilities_over_hermes/README.md) owns the proxy and
+workload authority dependencies. React source belongs only in `xnobrain-ui`.
 
 ## Goal
 
@@ -107,6 +108,20 @@ future engine `deny_request` plus process-shared store lock should replace the
 adapter. Approve/deny are not replay-idempotent because the engine does not
 retain consumed request history; `revoke` is idempotent.
 
+Phase 4 notes: `xnobrain_integration_connect` accepts `kind="channel"` with
+`platform="zalo"|"zalo_bot"` and derives display/auth on the server. Channel
+targets are read-only and never enable the channel or read/write credentials.
+The first web connect does not require an owner binding or enabled channel; it
+checks a verified Personal signed principal against the profile marker and any
+existing owner without writing state. Zalo-hosted Big Brother uses the explicit
+typed run `HostAuthority` only for the same owner/agent/source-platform channel
+target, not for MCP/extension management. Caller-supplied host-authority
+payloads, mappings, and duck objects are rejected; internal authority is
+injected only by the verified channel-turn service. A gateway turn that emits
+`integration.connect_requested` returns a plain web-conversation instruction
+instead of pretending a React card exists in Zalo. No public UI origin is
+currently configured, so no link is fabricated.
+
 ### Statuses and states to cover
 
 `disabled`, `needs_token`, `needs_login`, `qr`, `starting`, `connected`,
@@ -120,9 +135,9 @@ state. Every status has copy in `en`, `vi` and `zh`.
 | --- | --- | --- | --- |
 | 0 | Generic framework: provider registry, generic API types and hook (`useChannel`), descriptor-driven `ChannelCard`; remove Zalo-named shared exports; Zalo personal stays pixel- and behaviour-identical | S–M | nothing |
 | 1 | Zalo Bot card: token form, status, policy and allowed users, logout | M | Runtime `zalo_bot` routes |
-| 2 | Pairing approvals list (Runtime list/approve/deny/revoke endpoints and UI) | M | Runtime API done; UI remains |
+| 2 | Pairing approvals list (Runtime list/approve/deny/revoke endpoints and UI) | M | Runtime and UI source implemented; live verification pending |
 | 3 | Workspace Channels overview page and navigation entry | M | Phase 0 |
-| 4 | Big Brother channel connect card (`kind: channel`) | S–M | plan 016 code |
+| 4 | Big Brother channel connect card (`kind: channel`) | S–M | Runtime consumer contract done; web card remains |
 | 5 | Next provider (token-based, e.g. Telegram) as a descriptor plus fields | S–M each | provider plugin in the image |
 | 6 | Move the bot token to the Control proxy; UI unchanged | S (UI) | plan 017 Phase 1 |
 

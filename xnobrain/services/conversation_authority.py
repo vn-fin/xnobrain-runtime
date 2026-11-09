@@ -27,6 +27,18 @@ class HostAuthority:
     platform: str = ""
 
 
+def host_authority_from_data(data) -> HostAuthority | None:
+    """Rebuild a typed host authority from trusted in-memory queue data."""
+    if not isinstance(data, Mapping):
+        return None
+    fields = set(HostAuthority.__dataclass_fields__)
+    if set(data) != fields or any(not isinstance(data.get(field), str) for field in fields):
+        return None
+    if not data.get("subject") or not data.get("agent_id") or not data.get("platform"):
+        return None
+    return HostAuthority(**data)
+
+
 def principal_matches(record, trusted) -> bool:
     return (
         isinstance(record, Mapping)

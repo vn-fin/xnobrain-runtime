@@ -122,6 +122,12 @@ class ConversationRunService:
         context = dict(ownership_context or {})
         signed = bool(getattr(trusted_context, "subject", ""))
         host = None if signed else host_authority
+        if host is not None and not isinstance(host, HostAuthority):
+            raise ServiceError(
+                "host authority is invalid",
+                status=403,
+                code="conversation_owner_forbidden",
+            )
 
         def require_current_binding():
             if signed:
@@ -459,6 +465,9 @@ class ConversationRunService:
             payload.pop("_reasoning_snapshot", None)
             if reasoning is not None:
                 payload["_reasoning_snapshot"] = reasoning
+            # Host authority is never accepted from the request body.
+            payload.pop("_channel_host_authority", None)
+            payload.pop("_channel_host_authority_data", None)
             payload.pop("attachment", None)
             payload.pop("attachments", None)
             payload["input"] = runner_message
@@ -482,6 +491,8 @@ class ConversationRunService:
                 payload["_mcp_grant"] = getattr(trusted_context, "mcp_grant", "")
             if mcp_grant:
                 payload["_mcp_grant"] = mcp_grant
+            if host is not None:
+                payload["_channel_host_authority"] = host
 
             if (
                 context.get("owner_kind") == "personal"

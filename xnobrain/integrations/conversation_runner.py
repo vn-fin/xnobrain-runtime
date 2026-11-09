@@ -338,6 +338,7 @@ class ConversationRunnerMixin:
             "_mcp_grant": body.get("_mcp_grant"),
             "_custom_page_principal": body.get("_custom_page_principal"),
             "_agent_maker_principal": body.get("_agent_maker_principal"),
+            "_channel_host_authority": body.get("_channel_host_authority"),
             "_ui_assistance": body.get("_ui_assistance"),
             "_reasoning_snapshot": body.get("_reasoning_snapshot"),
         }
@@ -1460,7 +1461,10 @@ class ConversationRunnerMixin:
                 from .agent_maker_tools import install_tools as install_maker_tools
 
                 install_maker_tools(agent, conversation_id)
-                if name == BIG_BROTHER_AGENT_ID and prepared.get("_agent_maker_principal"):
+                if name == BIG_BROTHER_AGENT_ID and (
+                    prepared.get("_agent_maker_principal")
+                    or prepared.get("_channel_host_authority")
+                ):
                     from .integration_connect_tools import install_tools as install_connect_tools
 
                     install_connect_tools(agent, conversation_id, profile_dir)
@@ -1617,7 +1621,7 @@ class ConversationRunnerMixin:
                 )
             )
         if (
-            prepared.get("_agent_maker_principal")
+            (prepared.get("_agent_maker_principal") or prepared.get("_channel_host_authority"))
             and str(prepared["name"]) == BIG_BROTHER_AGENT_ID
             and getattr(manager, "extensions", None)
         ):
@@ -1627,7 +1631,9 @@ class ConversationRunnerMixin:
                 bind_connect_run(
                     manager.extensions,
                     conversation_id,
-                    prepared["_agent_maker_principal"],
+                    prepared.get("_agent_maker_principal"),
+                    channels_service=getattr(manager, "channels_service", None),
+                    host_authority=prepared.get("_channel_host_authority"),
                 )
             )
         profile_token = _api_request_profile.set(str(prepared["name"]))
@@ -1698,7 +1704,9 @@ class ConversationRunnerMixin:
                 "A loaded image is only inspected after you actually examine its pixels."
             )
             connect_guidance = None
-            if name == BIG_BROTHER_AGENT_ID and prepared.get("_agent_maker_principal"):
+            if name == BIG_BROTHER_AGENT_ID and (
+                prepared.get("_agent_maker_principal") or prepared.get("_channel_host_authority")
+            ):
                 from .integration_connect_tools import CONNECT_GUIDANCE as connect_guidance
             feature_prompt = "\n\n".join(
                 filter(None, (feature_prompt, image_guidance, connect_guidance))

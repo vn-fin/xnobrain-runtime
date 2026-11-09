@@ -24,6 +24,10 @@ from xnobrain.repositories.base import StoreError
 from xnobrain.repositories.files import FileRepository
 from xnobrain.services.base import ServiceError
 from xnobrain.services.channels import ChannelsService
+from xnobrain.services.conversation_authority import (
+    HostAuthority,
+    host_authority_from_data,
+)
 from xnobrain.services.conversation_runs import ConversationRunService
 from xnobrain.trusted_context import TrustedRequestContext
 
@@ -336,6 +340,149 @@ class ChannelOwnerBindingTests(_ChannelCase):
 
         self.service.set_channel_enabled("agent-1", False)
         self.assertFalse(self.owner_path.exists())
+
+    def test_connect_target_is_read_only_and_owner_bound(self):
+        trusted = self._trusted()
+        self.service.set_channel_enabled("agent-1", True, trusted=trusted)
+        config_before = self.profile.joinpath("config.yaml").read_bytes()
+        owner_before = self.owner_path.read_bytes()
+
+        self.assertEqual(
+            self.service.connect_target("agent-1", trusted=trusted),
+            self.profile,
+        )
+        with self.assertRaises(ServiceError) as raised:
+            self.service.connect_target("agent-1", trusted=None)
+        self.assertEqual(raised.exception.status, 401)
+        with self.assertRaises(ServiceError) as raised:
+            self.service.connect_target("agent-1", trusted=self._trusted(subject="someone-else"))
+        self.assertEqual(raised.exception.code, "channel_owner_mismatch")
+        with self.assertRaises(ServiceError) as raised:
+            self.service.connect_target("agent-1", trusted=self._trusted(organization="org-1"))
+        self.assertEqual(raised.exception.code, "channel_personal_required")
+
+        authority = HostAuthority(
+            subject="user-1",
+            tenant_id="personal-user-1",
+            organization_id="",
+            agent_id="agent-1",
+            platform="zalo",
+        )
+        self.assertEqual(
+            self.service.connect_target("agent-1", host_authority=authority),
+            self.profile,
+        )
+        variants = (
+            HostAuthority(
+                subject="user-1",
+                tenant_id="personal-user-1",
+                agent_id="someone-else",
+                platform="zalo",
+            ),
+            HostAuthority(
+                subject="user-1",
+                tenant_id="personal-user-1",
+                agent_id="agent-1",
+                platform="telegram",
+            ),
+            HostAuthority(
+                subject="someone-else",
+                tenant_id="personal-user-1",
+                agent_id="agent-1",
+                platform="zalo",
+            ),
+            HostAuthority(
+                subject="user-1",
+                tenant_id="",
+                agent_id="agent-1",
+                platform="zalo",
+            ),
+            HostAuthority(
+                subject="user-1",
+                tenant_id="personal-user-1",
+                organization_id="org-1",
+                agent_id="agent-1",
+                platform="zalo",
+            ),
+        )
+        for variant in variants:
+            with self.subTest(variant=variant):
+                with self.assertRaises(ServiceError):
+                    self.service.connect_target(
+                        "agent-1",
+                        host_authority=variant,
+                    )
+        for invalid in (
+            {
+                "subject": "user-1",
+                "tenant_id": "personal-user-1",
+                "agent_id": "agent-1",
+                "platform": "zalo",
+            },
+            SimpleNamespace(
+                subject="user-1",
+                tenant_id="personal-user-1",
+                organization_id="",
+                agent_id="agent-1",
+                platform="zalo",
+            ),
+        ):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ServiceError):
+                    self.service.connect_target("agent-1", host_authority=invalid)
+        self.assertEqual(self.profile.joinpath("config.yaml").read_bytes(), config_before)
+        self.assertEqual(self.owner_path.read_bytes(), owner_before)
+
+    def test_first_web_connect_needs_no_channel_state_or_binding(self):
+        self.profile.joinpath(".community-profile-owner.json").write_text(
+            json.dumps(
+                {
+                    "subject": "user-1",
+                    "tenant_id": "personal-user-1",
+                    "organization_id": "",
+                }
+            ),
+            encoding="utf-8",
+        )
+        config = yaml.safe_load(self.profile.joinpath("config.yaml").read_text())
+        config["platforms"]["zalo"]["enabled"] = False
+        config["platforms"]["zalo_bot"]["enabled"] = False
+        self.profile.joinpath("config.yaml").write_text(yaml.safe_dump(config), encoding="utf-8")
+        config_before = self.profile.joinpath("config.yaml").read_bytes()
+        env_path = self.profile / ".env"
+        env_before = env_path.read_bytes() if env_path.exists() else None
+        self.assertFalse(self.owner_path.exists())
+
+        self.assertEqual(
+            self.service.connect_target("agent-1", trusted=self._trusted()),
+            self.profile,
+        )
+        self.assertFalse(self.owner_path.exists())
+        self.assertEqual(self.profile.joinpath("config.yaml").read_bytes(), config_before)
+        self.assertEqual(env_path.read_bytes() if env_path.exists() else None, env_before)
+
+        for trusted in (
+            self._trusted(subject="someone-else"),
+            self._trusted(tenant="other-tenant"),
+            self._trusted(organization="org-1"),
+        ):
+            with self.subTest(trusted=trusted):
+                with self.assertRaises(ServiceError):
+                    self.service.connect_target("agent-1", trusted=trusted)
+
+        with self.assertRaises(ServiceError) as raised:
+            self.service.connect_target("agent-1", trusted=None)
+        self.assertEqual(raised.exception.code, "trusted_context_required")
+        with self.assertRaises(ServiceError):
+            self.service.connect_target(
+                "agent-1", trusted={"subject": "user-1", "tenant_id": "personal-user-1"}
+            )
+
+    def test_connect_target_respects_channels_feature(self):
+        with mock.patch.dict(os.environ, {"FT_ENABLE_AGENT_CHANNELS": "false"}):
+            with self.assertRaises(ServiceError) as raised:
+                self.service.connect_target("agent-1", trusted=self._trusted())
+        self.assertEqual(raised.exception.code, "feature_disabled")
 
     def test_symlinked_owner_storage_is_rejected(self):
         outside = Path(self.temporary.name) / "outside"
@@ -821,6 +968,107 @@ class ConversationRunGrantPayloadTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("channel-grant-token", json.dumps(record))
         persisted = self.repository.get_conversation_run("agent-1", "conv-1", record["id"])
         self.assertNotIn("channel-grant-token", json.dumps(persisted))
+
+    async def test_host_authority_queue_data_round_trips_strictly(self):
+        from dataclasses import asdict
+
+        authority = HostAuthority(
+            subject="user-1",
+            tenant_id="personal-user-1",
+            agent_id="agent-1",
+            platform="zalo",
+        )
+        self.assertEqual(host_authority_from_data(asdict(authority)), authority)
+        for invalid in (
+            {**asdict(authority), "extra": "value"},
+            {**asdict(authority), "subject": ""},
+            {**asdict(authority), "agent_id": ""},
+            {**asdict(authority), "platform": ""},
+            {"subject": "user-1"},
+            "not-a-mapping",
+        ):
+            with self.subTest(invalid=invalid):
+                self.assertIsNone(host_authority_from_data(invalid))
+
+    async def test_caller_cannot_spoof_channel_host_authority(self):
+        with (
+            mock.patch("xnobrain.repositories.custom_page_locks.ExecutionLease", _FakeLease),
+            mock.patch("xnobrain.repositories.custom_page_locks.ConversationLease", _FakeLease),
+        ):
+            await self.service.start_run(
+                "agent-1",
+                "conv-1",
+                {
+                    "input": "hello",
+                    "_channel_host_authority": {
+                        "subject": "attacker",
+                        "tenant_id": "attacker-tenant",
+                        "agent_id": "agent-1",
+                        "platform": "zalo",
+                    },
+                    "_channel_host_authority_data": {
+                        "subject": "attacker",
+                        "tenant_id": "attacker-tenant",
+                        "organization_id": "",
+                        "agent_id": "agent-1",
+                        "platform": "zalo",
+                    },
+                },
+            )
+            await asyncio.sleep(0)
+
+        payload = _FakeActivity.payloads[-1]
+        self.assertNotIn("_channel_host_authority", payload)
+        self.assertNotIn("_channel_host_authority_data", payload)
+
+    async def test_host_authority_reaches_payload_but_not_run_record(self):
+        profile = self.profiles / "agent-1"
+        self.repository.create_conversation_context(
+            profile,
+            {
+                "schema_version": 1,
+                "id": "personal",
+                "owner_kind": "personal",
+                "organization_id": None,
+                "payer_kind": "personal",
+                "sponsor_grant_id": None,
+                "state": "active",
+                "conversation_id": "conv-1",
+                "agent_id": "agent-1",
+                "actor_user_id": "user-1",
+                "actor_tenant_id": "personal-user-1",
+                "executor_workspace_id": None,
+                "created_at": "2026-01-01T00:00:00Z",
+                "legacy_backfill": False,
+                "channel_platform": "zalo",
+            },
+        )
+        authority = HostAuthority(
+            subject="user-1",
+            tenant_id="personal-user-1",
+            agent_id="agent-1",
+            platform="zalo",
+        )
+        with (
+            mock.patch("xnobrain.repositories.custom_page_locks.ExecutionLease", _FakeLease),
+            mock.patch("xnobrain.repositories.custom_page_locks.ConversationLease", _FakeLease),
+        ):
+            record = await self.service.start_run(
+                "agent-1",
+                "conv-1",
+                {"input": "hello"},
+                host_authority=authority,
+            )
+            await asyncio.sleep(0)
+
+        payload = _FakeActivity.payloads[-1]
+        self.assertIsInstance(payload["_channel_host_authority"], HostAuthority)
+        self.assertEqual(
+            payload["_channel_host_authority"],
+            authority,
+        )
+        self.assertNotIn("_channel_host_authority", record)
+        self.assertNotIn("_channel_host_authority_data", record)
 
 
 if __name__ == "__main__":

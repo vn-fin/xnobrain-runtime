@@ -54,6 +54,9 @@ class RunAdmissionService:
         private = dict(payload)
         for name in ("_agent_maker_principal", "_custom_page_principal"):
             private.pop(name, None)
+        host_authority = private.pop("_channel_host_authority", None)
+        if host_authority is not None:
+            private["_channel_host_authority_data"] = asdict(host_authority)
         private["principal"] = (
             asdict(trusted) if isinstance(trusted, TrustedRequestContext) else None
         )
@@ -368,6 +371,13 @@ class RunAdmissionService:
         from .conversation_runs import _ActiveConversationRun
 
         payload = dict(row["payload"])
+        host_data = payload.pop("_channel_host_authority_data", None)
+        if host_data is not None:
+            from .conversation_authority import host_authority_from_data
+
+            host_authority = host_authority_from_data(host_data)
+            if host_authority is not None:
+                payload["_channel_host_authority"] = host_authority
         payload["_xno_data_grant"] = self.xno_data_grants.get(record["id"])
         payload["_mcp_grant"] = self.mcp_grants.get(record["id"])
         payload.pop("_record", None)

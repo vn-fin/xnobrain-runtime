@@ -6,10 +6,12 @@ import json
 import unittest
 import uuid
 from types import SimpleNamespace
+from unittest import mock
 
 from xnobrain.integrations import integration_connect_tools as connect
 from xnobrain.integrations.hermes_support import _integration_connect_event
 from xnobrain.services.base import ServiceError
+from xnobrain.services.conversation_authority import HostAuthority
 from xnobrain.trusted_context import TrustedRequestContext
 
 
@@ -66,14 +68,33 @@ class FakeExtensionsService:
         return self.inventory
 
 
+class FakeChannelsService:
+    def __init__(self):
+        self.calls = []
+        self.error = None
+
+    def connect_target(self, agent_id, *, trusted=None, host_authority=None):
+        self.calls.append((agent_id, trusted, host_authority))
+        if self.error is not None:
+            raise self.error
+        return object()
+
+
 class IntegrationConnectToolTests(unittest.TestCase):
     def setUp(self):
         self.service = FakeExtensionsService()
+        self.channels = FakeChannelsService()
         self.trusted = TrustedRequestContext(subject="person-1", tenant_id="tenant-1")
         self.session = uuid.uuid4().hex
 
-    def _call(self, args):
-        with connect.bind_run(self.service, self.session, self.trusted):
+    def _call(self, args, *, host_authority=None):
+        with connect.bind_run(
+            self.service,
+            self.session,
+            self.trusted,
+            channels_service=self.channels,
+            host_authority=host_authority,
+        ):
             return json.loads(connect.call(connect.TOOL_NAME, args, session_id=self.session))
 
     def test_arguments_reject_headers_and_api_key(self):
@@ -174,6 +195,145 @@ class IntegrationConnectToolTests(unittest.TestCase):
         self.assertEqual(request["auth_kind"], "none")
         self.assertEqual(request["url"], "https://mcp.example.com/mcp")
 
+    def test_channel_platform_is_server_derived_and_secret_free(self):
+        for platform, display_name, auth_kind in (
+            ("zalo", "Zalo", "qr"),
+            ("zalo_bot", "Zalo Bot", "api_key"),
+        ):
+            with self.subTest(platform=platform):
+                self.channels.calls.clear()
+                result = self._call(
+                    {
+                        "kind": "channel",
+                        "platform": platform,
+                        "reason": "Connect this channel.",
+                    }
+                )
+                self.assertTrue(result["success"])
+                request = result["connect_request"]
+                self.assertEqual(
+                    set(request),
+                    {
+                        "id",
+                        "kind",
+                        "agent_id",
+                        "display_name",
+                        "auth_kind",
+                        "platform",
+                        "reason",
+                    },
+                )
+                self.assertEqual(request["kind"], "channel")
+                self.assertEqual(request["agent_id"], "big-brother")
+                self.assertEqual(request["display_name"], display_name)
+                self.assertEqual(request["auth_kind"], auth_kind)
+                self.assertEqual(request["platform"], platform)
+                self.assertEqual(self.channels.calls[0][0], "big-brother")
+                self.assertEqual(self.service.list_plugins_calls, [])
+
+    def test_channel_rejects_mcp_fields_extra_secrets_and_bad_platform(self):
+        for args in (
+            {"kind": "channel", "platform": "zalo", "url": "https://mcp.example.com"},
+            {
+                "kind": "channel",
+                "platform": "zalo",
+                "catalog_id": "notion",
+            },
+            {"kind": "channel", "platform": "zalo", "api_key": "secret"},
+            {"kind": "channel", "platform": "telegram"},
+            {"kind": "channel"},
+        ):
+            with self.subTest(args=args):
+                result = self._call(args)
+                self.assertFalse(result["success"])
+                self.assertEqual(result["error"]["code"], "invalid_integration_connect_request")
+
+    def test_channel_path_does_not_require_extension_feature(self):
+        with mock.patch.object(
+            self.service,
+            "connect_target",
+            side_effect=ServiceError("Agent extensions are disabled", status=404, code="not_found"),
+        ):
+            result = self._call({"kind": "channel", "platform": "zalo"})
+        self.assertTrue(result["success"])
+        self.assertEqual(result["connect_request"]["kind"], "channel")
+
+    def test_host_authority_mapping_or_duck_object_is_rejected(self):
+        for authority in (
+            {
+                "subject": "person-1",
+                "tenant_id": "tenant-1",
+                "agent_id": "big-brother",
+                "platform": "zalo",
+            },
+            SimpleNamespace(
+                subject="person-1",
+                tenant_id="tenant-1",
+                organization_id="",
+                agent_id="big-brother",
+                platform="zalo",
+            ),
+        ):
+            with self.subTest(authority=authority):
+                with connect.bind_run(
+                    self.service,
+                    self.session,
+                    None,
+                    channels_service=self.channels,
+                    host_authority=authority,
+                ) as bound:
+                    self.assertFalse(bound)
+                result = json.loads(
+                    connect.call(
+                        connect.TOOL_NAME,
+                        {"kind": "channel", "platform": "zalo"},
+                        session_id=self.session,
+                    )
+                )
+                self.assertFalse(result["success"])
+                self.assertEqual(result["error"]["code"], "integration_connect_authority_required")
+
+    def test_channel_target_rejects_mismatched_agent(self):
+        self.channels.error = ServiceError(
+            "owner mismatch", status=403, code="channel_owner_mismatch"
+        )
+        result = self._call({"kind": "channel", "platform": "zalo", "agent_id": "other-agent"})
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error"]["code"], "channel_owner_mismatch")
+
+    def test_host_authority_allows_channel_only_and_not_mcp(self):
+        authority = HostAuthority(
+            subject="person-1",
+            tenant_id="tenant-1",
+            organization_id="",
+            agent_id="big-brother",
+            platform="zalo",
+        )
+        with connect.bind_run(
+            self.service,
+            self.session,
+            None,
+            channels_service=self.channels,
+            host_authority=authority,
+        ):
+            channel = json.loads(
+                connect.call(
+                    connect.TOOL_NAME,
+                    {"kind": "channel", "platform": "zalo_bot"},
+                    session_id=self.session,
+                )
+            )
+            mcp = json.loads(
+                connect.call(
+                    connect.TOOL_NAME,
+                    {"kind": "catalog_mcp", "catalog_id": "notion"},
+                    session_id=self.session,
+                )
+            )
+        self.assertTrue(channel["success"])
+        self.assertFalse(mcp["success"])
+        self.assertEqual(mcp["error"]["code"], "trusted_context_required")
+
     def test_install_tools_requires_binding_and_skips_delegated_children(self):
         profile = "/tmp/connect-test-profile"
         unbound = SimpleNamespace(tools=[], valid_tool_names=set())
@@ -238,6 +398,94 @@ class IntegrationConnectEventTests(unittest.TestCase):
         self.assertNotIn("headers", json.dumps(event))
         self.assertNotIn("secret", json.dumps(event))
 
+    def test_channel_event_accepts_exact_contract(self):
+        event = _integration_connect_event(
+            json.dumps(
+                {
+                    "success": True,
+                    "connect_request": {
+                        "id": "b" * 32,
+                        "kind": "channel",
+                        "agent_id": "big-brother",
+                        "display_name": "Zalo Bot",
+                        "auth_kind": "api_key",
+                        "platform": "zalo_bot",
+                        "reason": "Connect it.",
+                    },
+                }
+            )
+        )
+        self.assertEqual(event["event"], "integration.connect_requested")
+        self.assertEqual(
+            set(event["request"]),
+            {
+                "id",
+                "kind",
+                "agent_id",
+                "display_name",
+                "auth_kind",
+                "platform",
+                "reason",
+            },
+        )
+        self.assertNotIn("secret", json.dumps(event))
+
+    def test_channel_event_rejects_extra_secret_or_mcp_fields(self):
+        for extra in (
+            {"url": "https://mcp.example.com"},
+            {"catalog_id": "notion"},
+            {"api_key": "secret"},
+            {"token": "secret"},
+            {"unknown": "value"},
+        ):
+            with self.subTest(extra=extra):
+                self.assertIsNone(
+                    _integration_connect_event(
+                        json.dumps(
+                            {
+                                "success": True,
+                                "connect_request": {
+                                    "id": "b" * 32,
+                                    "kind": "channel",
+                                    "agent_id": "big-brother",
+                                    "display_name": "Zalo Bot",
+                                    "auth_kind": "api_key",
+                                    "platform": "zalo_bot",
+                                    **extra,
+                                },
+                            }
+                        )
+                    )
+                )
+
+    def test_channel_event_rejects_bad_platform_auth_or_display(self):
+        for platform, auth_kind, display_name in (
+            ("telegram", "qr", "Zalo"),
+            ("zalo", "oauth", "Zalo"),
+            ("zalo_bot", "none", "Zalo Bot"),
+            ("zalo", "api_key", "Zalo"),
+            ("zalo_bot", "qr", "Zalo Bot"),
+            ("zalo", "qr", "Untrusted Label"),
+        ):
+            with self.subTest(platform=platform, auth_kind=auth_kind):
+                self.assertIsNone(
+                    _integration_connect_event(
+                        json.dumps(
+                            {
+                                "success": True,
+                                "connect_request": {
+                                    "id": "c" * 32,
+                                    "kind": "channel",
+                                    "agent_id": "big-brother",
+                                    "display_name": display_name,
+                                    "auth_kind": auth_kind,
+                                    "platform": platform,
+                                },
+                            }
+                        )
+                    )
+                )
+
     def test_failed_or_malformed_results_emit_nothing(self):
         self.assertIsNone(_integration_connect_event(json.dumps({"success": False})))
         self.assertIsNone(_integration_connect_event("not json"))
@@ -255,6 +503,9 @@ class ConnectGuidanceTests(unittest.TestCase):
         self.assertIn(tools.TOOL_NAME, tools.CONNECT_GUIDANCE)
         self.assertIn("agent mcp add", tools.CONNECT_GUIDANCE)
         self.assertIn("never ask", tools.CONNECT_GUIDANCE)
+        self.assertIn("kind='channel'", tools.CONNECT_GUIDANCE)
+        self.assertIn("platform='zalo'", tools.CONNECT_GUIDANCE)
+        self.assertIn("platform='zalo_bot'", tools.CONNECT_GUIDANCE)
 
 
 if __name__ == "__main__":

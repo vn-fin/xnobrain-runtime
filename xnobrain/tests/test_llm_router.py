@@ -2015,6 +2015,10 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn(b'"catalog_id":"notion"', payload)
             self.assertNotIn(b"Authorization", payload)
             self.assertNotIn(b"secret", payload)
+            self.assertLess(
+                payload.index(b'"event":"integration.connect_requested"'),
+                payload.index(b'"event":"run.completed"'),
+            )
 
     async def _run_big_brother_stream(self, root: Path, manager: AgentManager):
         async def run_session_agent(

@@ -10,10 +10,11 @@ from difflib import get_close_matches
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from ..defaults import BIG_BROTHER_AGENT_ID
 from ..services.base import ServiceError
+from ..services.conversation_authority import HostAuthority
 from ..trusted_context import TrustedRequestContext
 
 _LOCK = threading.RLock()
@@ -23,17 +24,21 @@ _SCHEMAS = {}
 TOOL_NAME = "xnobrain_integration_connect"
 TOOLSET = "xnobrain_integration_connect"
 CONNECT_KINDS = {"catalog_mcp", "plugin_mcp", "custom_mcp"}
+CHANNEL_KIND = "channel"
+CHANNEL_PLATFORMS = {"zalo", "zalo_bot"}
 AUTH_KINDS = {"oauth", "api_key", "none"}
 MAX_CATALOG_CANDIDATES = 5
 CONNECT_GUIDANCE = (
     "When the user asks to add, connect or sign in to an MCP server, integration, "
-    "connector or app (for example Notion or Todoist), call xnobrain_integration_connect "
-    "first. It shows a connect card where the user enters credentials or signs in. "
-    "Do not use `agent mcp add`, the terminal or config edits for this, and never ask "
-    "for API keys or tokens in chat."
+    "connector or app (for example Notion or Todoist), or to connect Zalo Personal "
+    "or Zalo Bot, call xnobrain_integration_connect first. Use kind='channel' with "
+    "platform='zalo' for Zalo Personal or platform='zalo_bot' for Zalo Bot. It shows "
+    "a connect card where the user enters credentials or signs in. Do not use "
+    "`agent mcp add`, the terminal or config edits for this, and never ask for API "
+    "keys, tokens or QR callback values in chat."
 )
 INSTRUCTION = (
-    "A connect card is shown in the chat. Ask the user to finish there. "
+    "A connect card is shown in the web chat. Ask the user to finish there. "
     "Never ask for credentials in chat."
 )
 
@@ -43,13 +48,34 @@ class IntegrationConnectArguments(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    kind: Literal["catalog_mcp", "plugin_mcp", "custom_mcp"]
+    kind: Literal["catalog_mcp", "plugin_mcp", "custom_mcp", "channel"]
     agent_id: str | None = Field(default=BIG_BROTHER_AGENT_ID)
+    platform: Literal["zalo", "zalo_bot"] | None = None
     catalog_id: str | None = None
     plugin_id: str | None = None
     server_name: str | None = None
     url: str | None = None
     reason: str | None = Field(default=None, max_length=200)
+
+    @model_validator(mode="after")
+    def validate_kind_fields(self) -> "IntegrationConnectArguments":
+        if self.kind == CHANNEL_KIND:
+            if self.platform not in CHANNEL_PLATFORMS:
+                raise ValueError("channel connect requires a supported platform")
+            if any(
+                value is not None
+                for value in (
+                    self.catalog_id,
+                    self.plugin_id,
+                    self.server_name,
+                    self.url,
+                )
+            ):
+                raise ValueError("channel connect accepts no MCP fields")
+            return self
+        if self.platform is not None:
+            raise ValueError("platform is only valid for channel connect")
+        return self
 
 
 class _ConnectError(Exception):
@@ -72,10 +98,16 @@ def call(name, args, **kwargs):
         binding = _BINDINGS.get(session)
         if binding is None:
             return _error("integration_connect_authority_required")
-        service, trusted = binding
+        service, channels_service, trusted, host_authority = binding
     try:
         request = IntegrationConnectArguments.model_validate(args or {})
-        payload = _connect_request(service, request, trusted)
+        payload = _connect_request(
+            service,
+            channels_service,
+            request,
+            trusted,
+            host_authority,
+        )
     except ValidationError:
         return _error("invalid_integration_connect_request")
     except _ConnectError as error:
@@ -91,28 +123,67 @@ def call(name, args, **kwargs):
     )
 
 
-def _connect_request(service, request: IntegrationConnectArguments, trusted) -> dict:
+def _connect_request(
+    service,
+    channels_service,
+    request: IntegrationConnectArguments,
+    trusted,
+    host_authority,
+) -> dict:
     target = str(request.agent_id or BIG_BROTHER_AGENT_ID).strip()
     if not target:
         raise _ConnectError("agent_not_found")
-    try:
-        service.connect_target(target, trusted)
-    except ServiceError as error:
-        if error.code in {"not_found", "agent_not_found"}:
-            raise _ConnectError("agent_not_found") from error
-        raise
+    if request.kind != CHANNEL_KIND and not (
+        isinstance(trusted, TrustedRequestContext) and trusted.subject
+    ):
+        raise _ConnectError("trusted_context_required")
 
-    if request.kind == "catalog_mcp":
-        payload = _catalog_request(service, request, target)
-    elif request.kind == "plugin_mcp":
-        payload = _plugin_request(service, request, target, trusted)
+    if request.kind == CHANNEL_KIND:
+        if channels_service is None:
+            raise _ConnectError("channel_connect_unavailable")
+        try:
+            channels_service.connect_target(
+                target,
+                trusted=trusted,
+                host_authority=host_authority,
+            )
+        except ServiceError as error:
+            if error.code in {"not_found", "agent_not_found"}:
+                raise _ConnectError("agent_not_found") from error
+            raise
+        payload = _channel_request(request, target)
     else:
-        payload = _custom_request(request, target)
+        try:
+            service.connect_target(target, trusted)
+        except ServiceError as error:
+            if error.code in {"not_found", "agent_not_found"}:
+                raise _ConnectError("agent_not_found") from error
+            raise
+        if request.kind == "catalog_mcp":
+            payload = _catalog_request(service, request, target)
+        elif request.kind == "plugin_mcp":
+            payload = _plugin_request(service, request, target, trusted)
+        else:
+            payload = _custom_request(request, target)
 
     reason = str(request.reason or "").strip()[:200]
     if reason:
         payload["reason"] = reason
     return payload
+
+
+def _channel_request(request: IntegrationConnectArguments, target: str) -> dict:
+    platform = str(request.platform or "")
+    if platform not in CHANNEL_PLATFORMS:
+        raise _ConnectError("invalid_channel_platform")
+    return {
+        "id": uuid.uuid4().hex,
+        "kind": CHANNEL_KIND,
+        "agent_id": target,
+        "display_name": "Zalo" if platform == "zalo" else "Zalo Bot",
+        "auth_kind": "qr" if platform == "zalo" else "api_key",
+        "platform": platform,
+    }
 
 
 def _catalog_request(service, request: IntegrationConnectArguments, target: str) -> dict:
@@ -285,9 +356,11 @@ def _function_schema() -> dict:
         "name": TOOL_NAME,
         "description": (
             "Use this FIRST whenever the user asks to add, connect or sign in to an MCP "
-            "server, integration, connector or app. It shows a connect card in the chat "
-            "where the user enters credentials or signs in themselves, so never use "
-            "`agent mcp add` or ask for keys in chat. Read-only: it never installs, "
+            "server, integration, connector or app, or to connect Zalo Personal or Zalo "
+            "Bot. For a channel, pass kind='channel' and platform='zalo' or 'zalo_bot'. "
+            "It shows a connect card in the web chat where the user enters credentials "
+            "or signs in themselves, so never use `agent mcp add`, the terminal, config "
+            "edits, or ask for keys or tokens in chat. Read-only: it never installs, "
             "never changes settings, and never accepts credentials."
         ),
         "parameters": IntegrationConnectArguments.model_json_schema(),
@@ -321,8 +394,18 @@ def register_tools(profile_dir):
 
 
 @contextmanager
-def bind_run(service, session, trusted):
-    if not isinstance(trusted, TrustedRequestContext) or not trusted.subject:
+def bind_run(
+    service,
+    session,
+    trusted=None,
+    *,
+    channels_service=None,
+    host_authority=None,
+):
+    verified = (isinstance(trusted, TrustedRequestContext) and bool(trusted.subject)) or (
+        isinstance(host_authority, HostAuthority) and bool(host_authority.subject)
+    )
+    if not verified:
         yield False
         return
     session = str(session or "")
@@ -331,7 +414,7 @@ def bind_run(service, session, trusted):
             raise ServiceError(
                 "Session already bound", status=409, code="integration_connect_session_busy"
             )
-        _BINDINGS[session] = (service, trusted)
+        _BINDINGS[session] = (service, channels_service, trusted, host_authority)
     try:
         yield True
     finally:

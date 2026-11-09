@@ -430,6 +430,37 @@ class ChannelTurnServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.platform.approvals), 1)
         self.assertEqual(self.platform.approvals[0][1], {"choice": "deny"})
 
+    async def test_connect_request_returns_web_only_instruction(self):
+        record = {
+            "id": "run_" + uuid.uuid4().hex,
+            "status": "completed",
+            "output": "A connect card is shown in the chat.",
+            "usage": {},
+        }
+
+        async def run_with_connect(agent_id, conversation_id, body, **kwargs):
+            self.platform.run_calls.append((agent_id, conversation_id, dict(body)))
+            self.platform.conversation_runs.records[record["id"]] = record
+            self.platform.conversation_runs.events_by_run[record["id"]] = [
+                {
+                    "event": "integration.connect_requested",
+                    "request": {"kind": "channel", "platform": "zalo"},
+                }
+            ]
+            return record
+
+        self.platform.start_conversation_run = run_with_connect
+        with mock.patch.dict(
+            os.environ,
+            {"RUNTIME_CONTROL_URL": "https://control.internal.example"},
+        ):
+            result = await self.service.run_internal_turn(_body(), TOKEN)
+
+        self.assertIn("web app", result["reply"])
+        self.assertIn("Do not send", result["reply"])
+        self.assertNotIn("connect card", result["reply"].lower())
+        self.assertNotIn("control.internal", result["reply"])
+
     async def test_approval_denial_failure_log_is_redacted(self):
         self.platform.resolve_error = RuntimeError("secret command and message text")
         record = {

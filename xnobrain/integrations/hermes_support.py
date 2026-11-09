@@ -53,6 +53,9 @@ MAX_FILE_BYTES = 5 * 1024 * 1024
 TODO_STATUSES = {"pending", "in_progress", "completed", "cancelled"}
 CONNECT_KINDS = {"catalog_mcp", "plugin_mcp", "custom_mcp"}
 CONNECT_AUTH_KINDS = {"oauth", "api_key", "none"}
+CHANNEL_CONNECT_KIND = "channel"
+CHANNEL_CONNECT_PLATFORMS = {"zalo", "zalo_bot"}
+CHANNEL_CONNECT_AUTH_KINDS = {"qr", "api_key"}
 MAX_TODO_ITEMS = 256
 MAX_TODO_CONTENT_CHARS = 4000
 GENERATED_AGENT_ID_LENGTH = 6
@@ -184,16 +187,50 @@ def _integration_connect_event(result: Any) -> dict[str, Any] | None:
     agent_id = text("agent_id")
     display_name = text("display_name")
     auth_kind = text("auth_kind", 16)
-    if (
-        not request_id
-        or kind not in CONNECT_KINDS
-        or not agent_id
-        or not display_name
-        or auth_kind not in CONNECT_AUTH_KINDS
-    ):
+    if not request_id or not agent_id or not display_name:
         return None
 
-    request: dict[str, Any] = {
+    if kind == CHANNEL_CONNECT_KIND:
+        allowed = {
+            "id",
+            "kind",
+            "agent_id",
+            "display_name",
+            "auth_kind",
+            "platform",
+            "reason",
+        }
+        if set(raw) - allowed:
+            return None
+        platform = text("platform", 32)
+        expected = {
+            "zalo": ("Zalo", "qr"),
+            "zalo_bot": ("Zalo Bot", "api_key"),
+        }.get(platform)
+        if (
+            platform not in CHANNEL_CONNECT_PLATFORMS
+            or auth_kind not in CHANNEL_CONNECT_AUTH_KINDS
+            or expected is None
+            or display_name != expected[0]
+            or auth_kind != expected[1]
+        ):
+            return None
+        request = {
+            "id": request_id,
+            "kind": kind,
+            "agent_id": agent_id,
+            "display_name": display_name,
+            "auth_kind": auth_kind,
+            "platform": platform,
+        }
+        reason = text("reason")
+        if reason is not None:
+            request["reason"] = reason
+        return {"event": "integration.connect_requested", "request": request}
+
+    if kind not in CONNECT_KINDS or auth_kind not in CONNECT_AUTH_KINDS:
+        return None
+    request = {
         "id": request_id,
         "kind": kind,
         "agent_id": agent_id,

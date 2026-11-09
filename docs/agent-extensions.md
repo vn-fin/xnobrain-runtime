@@ -383,14 +383,34 @@ headers during sync. Stdio entries remain unchanged.
 
 Big Brother signed runs expose the read-only `xnobrain_integration_connect` tool
 (toolset `xnobrain_integration_connect`). It accepts `kind`
-(`catalog_mcp`, `plugin_mcp`, or `custom_mcp`), an optional target `agent_id`
-(default `big-brother`), the matching `catalog_id` or `plugin_id` +
+(`catalog_mcp`, `plugin_mcp`, `custom_mcp`, or `channel`), an optional target
+`agent_id` (default `big-brother`), the matching `catalog_id` or `plugin_id` +
 `server_name`, an optional public HTTPS `url` for `custom_mcp`, and an optional
-`reason`. It has no field for headers, keys, tokens, environment, or other
-secrets, and it never installs or changes settings. It validates the target
-agent, the catalog entry or installed plugin MCP server, and the custom URL,
-then returns the connect request plus an instruction to finish credentials in
-the card.
+`reason`. For `channel`, it also accepts `platform` (`zalo` or `zalo_bot`) and
+no MCP fields. It has no field for headers, keys, tokens, environment, QR
+callback values, or other secrets, and it never installs, enables a channel,
+reads or saves channel credentials, or changes settings. It validates the target
+agent, the catalog entry or installed plugin MCP server, the custom URL, or the
+owned Personal channel target, then returns the connect request plus an
+instruction to finish credentials in the card.
+
+The first web channel connect does not require an existing `owner.json` or an
+already-enabled channel. A verified signed Personal principal is checked
+read-only against the durable profile marker and any existing channel owner;
+Runtime returns the agent profile without creating an owner binding, enabling a
+channel, or writing config/`.env`. Foreign subject/tenant/org values fail
+closed. Later configuration still writes the verified owner on enable/patch.
+
+Zalo-hosted Big Brother runs use an explicit typed read-only `HostAuthority`
+tied to the persisted channel owner, exact agent, and source platform; it can
+request only the same owner's channel connect target and cannot authorize
+MCP/extension management. Arbitrary mappings, duck-typed objects, and
+caller-provided `_channel_host_authority` payloads are rejected; the internal
+authority is injected only by the verified channel-turn service and is not
+persisted in the run record. Verified web runs still require a genuine signed
+`TrustedRequestContext`. The channel payload derives display name and
+`auth_kind` on the server (`qr` for Zalo Personal, `api_key` for Zalo Bot);
+model-provided URLs and MCP fields are rejected.
 
 The tool result becomes a live event after a successful `tool.completed`:
 
@@ -413,8 +433,30 @@ The tool result becomes a live event after a successful `tool.completed`:
 }
 ```
 
+A channel request uses a reduced, secret-free shape:
+
+```json
+{
+  "event": "integration.connect_requested",
+  "request": {
+    "id": "6f1c...",
+    "kind": "channel",
+    "agent_id": "big-brother",
+    "display_name": "Zalo Bot",
+    "auth_kind": "api_key",
+    "platform": "zalo_bot",
+    "reason": "Connect this channel."
+  }
+}
+```
+
 The same JSON is in the stored tool message so history replay rebuilds the
-card without new persistence. Malformed or failed results emit nothing.
+card without new persistence. Malformed or failed results emit nothing. Gateway
+turns cannot render a React card: the Runtime drains this event and returns a
+plain instruction to finish in the owned web conversation. It never uses
+`RUNTIME_CONTROL_URL`, a model-provided URL, or an invented hostname, and it
+never asks for a token or QR callback value in Zalo. When no authoritative
+public UI origin is configured, no link is fabricated.
 
 After a completed Big Brother reply, Runtime makes one small side model call
 (bounded to 3 seconds) and may emit up to three suggested next user messages
