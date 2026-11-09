@@ -86,6 +86,15 @@ if [[ -d "$hermes_dir/plugins/platforms" && -d "$zalo_source" ]]; then
   chown -R "$service_user:$service_user" "$hermes_dir/plugins/platforms/zalo"
 fi
 
+# Bundled Zalo Bot platform plugin. It has no bridge dependencies, so only the
+# plugin tree is copied into the installed Hermes tree.
+zalo_bot_source="$install_root/runtime/hermes-plugins/platforms/zalo_bot"
+if [[ -d "$hermes_dir/plugins/platforms" && -d "$zalo_bot_source" ]]; then
+  rm -rf "$hermes_dir/plugins/platforms/zalo_bot"
+  cp -a "$zalo_bot_source" "$hermes_dir/plugins/platforms/zalo_bot"
+  chown -R "$service_user:$service_user" "$hermes_dir/plugins/platforms/zalo_bot"
+fi
+
 # Keep the Python interpreter inside the immutable application tree. The
 # service user's data home is cleared before publishing the reusable image.
 project_venv="$install_root/.tools/hermes-agent/venv"

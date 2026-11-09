@@ -107,6 +107,7 @@ RUN --mount=type=cache,target=/root/.npm \
 # Bundled Hermes platform plugins. Bridge dependencies are installed at build
 # time so a workspace never runs npm on startup.
 COPY runtime/hermes-plugins/platforms/zalo /usr/local/lib/hermes-agent/plugins/platforms/zalo
+COPY runtime/hermes-plugins/platforms/zalo_bot /usr/local/lib/hermes-agent/plugins/platforms/zalo_bot
 RUN --mount=type=cache,target=/root/.npm \
     cd /usr/local/lib/hermes-agent/plugins/platforms/zalo/bridge \
     && npm ci --omit=dev --no-audit --no-fund
