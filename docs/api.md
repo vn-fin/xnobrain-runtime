@@ -864,14 +864,30 @@ that conflicts with the durable
 `.community-profile-owner.json` marker, or with an existing binding for another
 user, is refused (`403 permission_denied` or `403 channel_owner_mismatch`).
 
-Before a turn whose profile has a matching binding, Runtime requests a grant
-from Control's internal
+Before a turn whose profile has a matching binding, Runtime reads its private
+Control workload identity, then requests a grant from Control's internal
 `POST /xnobrain/api/control/internal/v1/workspace-mcp-grants` endpoint using
-`Authorization: Bearer RUNTIME_INTERNAL_SERVICE_TOKEN` and
-`X-XNOBrain-Workspace-ID: RUNTIME_WORKSPACE_ID`, with body
-`{agent_id, platform}`. The returned `user_id` and `tenant_id` must equal the
-binding. The in-memory cache is keyed by profile, agent, and platform, so a
-`zalo` grant can never be reused for `zalo_bot` even when the owner is the same.
+that workload bearer and workspace ID, with body `{agent_id, platform}`. The
+source identity file defaults to
+`/run/xnobrain-runtime/workload-identity.json`; an absolute
+`RUNTIME_WORKLOAD_IDENTITY_FILE` is authoritative and missing/malformed content
+never falls back. Version-1 files must be regular, `0600`, owned by the Runtime
+effective UID, bounded, and match the verified channel owner/tenant. Non-regular
+paths (FIFO, directory, device) are opened non-blocking and rejected without
+blocking the request. Complete managed env (`RUNTIME_WORKSPACE_ID`,
+`RUNTIME_WORKLOAD_ID`, `RUNTIME_WORKLOAD_TOKEN`,
+`RUNTIME_WORKSPACE_OWNER_TENANT_ID`) takes precedence; values must be bounded
+printable opaque strings, and partial/malformed workload env fails closed. The
+container Runtime currently runs as root, so the mounted identity file must be
+root-owned `0600` there; deployments must keep it owned by the Runtime UID. The
+legacy installation bearer remains only with a managed workspace ID and is
+never used for the shared static token without one.
+
+The returned `user_id` and `tenant_id` must equal the binding. The in-memory
+cache is keyed by profile, agent, platform, and the full
+workspace/workload/owner/token-rotation identity fingerprint, so a `zalo` grant
+can never be reused for `zalo_bot`, and rotation, deletion, or malformed
+identity invalidates old grants before cache reuse.
 The grant is refreshed about two minutes before `expires_at`; an expired entry
 is discarded. It is passed to the run as a host-owned value that never enters
 the run record, persisted channel state, traces, or logs. The binding itself is

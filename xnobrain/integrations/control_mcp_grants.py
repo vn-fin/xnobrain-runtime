@@ -12,12 +12,14 @@ from datetime import datetime, timezone
 import httpx
 from opentelemetry import propagate
 
+from .workload_identity import WorkloadIdentity, WorkloadIdentityError, resolve_workload_identity
+
 _LOGGER = logging.getLogger(__name__)
 _PATH = "/xnobrain/api/control/internal/v1/workspace-mcp-grants"
 _REFRESH_MARGIN_SECONDS = 120.0
 _TIMEOUT_SECONDS = 10.0
 _LOCK = threading.RLock()
-_CACHE: dict[tuple[str, str, str], "_Grant"] = {}
+_CACHE: dict[tuple[str, ...], "_Grant"] = {}
 
 
 @dataclass(frozen=True)
@@ -80,9 +82,22 @@ class WorkspaceMcpGrantClient:
         now: float | None = None,
     ) -> str:
         """Return a fresh, binding-matching grant or an empty string."""
-        if not scope or not user_id:
+        if not scope or not user_id or not tenant_id:
             return ""
-        cache_key = (str(scope), str(agent_id), str(platform))
+        try:
+            identity = resolve_workload_identity(
+                expected_user_id=str(user_id),
+                expected_tenant_id=str(tenant_id),
+            )
+        except WorkloadIdentityError as error:
+            _failure(error.reason)
+            return ""
+        cache_key = (
+            str(scope),
+            str(agent_id),
+            str(platform),
+            *identity.cache_fingerprint,
+        )
         current = time.time() if now is None else float(now)
         with _LOCK:
             cached = _CACHE.get(cache_key)
@@ -96,7 +111,7 @@ class WorkspaceMcpGrantClient:
             and cached.expires_at - current > _REFRESH_MARGIN_SECONDS
         ):
             return cached.grant
-        fetched = await self._fetch(agent_id, platform)
+        fetched = await self._fetch(agent_id, platform, identity)
         if fetched is None:
             # A failed refresh may keep using an unexpired matching grant.
             if (
@@ -114,16 +129,19 @@ class WorkspaceMcpGrantClient:
             _CACHE[cache_key] = fetched
         return fetched.grant
 
-    async def _fetch(self, agent_id: str, platform: str) -> _Grant | None:
+    async def _fetch(
+        self,
+        agent_id: str,
+        platform: str,
+        identity: WorkloadIdentity,
+    ) -> _Grant | None:
         endpoint = os.getenv("RUNTIME_CONTROL_URL", "").rstrip("/")
-        workspace = os.getenv("RUNTIME_WORKSPACE_ID", "").strip()
-        secret = os.getenv("RUNTIME_INTERNAL_SERVICE_TOKEN", "").strip()
-        if not endpoint or not workspace or not secret:
+        if not endpoint:
             _failure("not_configured")
             return None
         headers = {
-            "Authorization": "Bearer " + secret,
-            "X-XNOBrain-Workspace-ID": workspace,
+            "Authorization": "Bearer " + identity.token,
+            "X-XNOBrain-Workspace-ID": identity.workspace_id,
         }
         propagate.inject(headers)
         payload = {"agent_id": str(agent_id), "platform": str(platform)}

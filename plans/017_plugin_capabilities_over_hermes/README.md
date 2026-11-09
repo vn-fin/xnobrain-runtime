@@ -142,7 +142,7 @@ marketplace for platform plugins, auto-update.
 5. Must proxy credentials share the existing MCP connection store, or get a
    separate table with a different retention policy?
 
-## Workload identity decision (2026-11-09, implementation pending)
+## Workload identity decision (2026-11-09; Runtime consumer implemented)
 
 Owner-bound background grants must work without a browser refresh and without
 Incus-shaped fixture rows in the Docker source stack. Control owns the identity.
@@ -176,6 +176,25 @@ new workload identities do not pretend that Docker runs on Incus. Runtime reads
 the private identity file, checks it against the verified channel owner, and
 keeps short-lived grants in memory. No secret enters run records, event payloads,
 logs, UI responses, or chat.
+
+Runtime consumer contract: the default private file is
+`/run/xnobrain-runtime/workload-identity.json`, or the absolute
+`RUNTIME_WORKLOAD_IDENTITY_FILE` override (authoritative; missing/malformed does
+not fall back). The file must be version 1, regular, `0600`, owned by the
+Runtime effective UID, bounded, and contain bounded printable string
+`workspace_id`, `workload_id`, `user_id`, `tenant_id`, and `token`; user/tenant
+must match the verified channel owner binding. Non-regular paths are opened
+non-blocking and rejected promptly. The dev container Runtime runs as root, so
+that deployment needs a root-owned `0600` file; other deployments must match
+their Runtime UID. Complete managed env
+`RUNTIME_WORKSPACE_ID`/`RUNTIME_WORKLOAD_ID`/`RUNTIME_WORKLOAD_TOKEN`/
+`RUNTIME_WORKSPACE_OWNER_TENANT_ID` takes precedence; values must be bounded
+printable opaque strings and any partial/malformed workload env fails closed.
+The legacy installation bearer is allowed only with a managed workspace ID,
+never the shared static dev token without one. Identity is read before
+grant-cache reuse; workspace/workload/owner/token-rotation fingerprints key the
+cache, so rotation, deletion, malformed identity, or a source-to-legacy
+transition cannot reuse an old grant after a failed refresh.
 
 Acceptance: real PostgreSQL tests for normal and source identity, restart/renewal,
 wrong owner/tenant/workload/token, failed publication and conflicting source

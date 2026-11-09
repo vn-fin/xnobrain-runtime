@@ -18,7 +18,7 @@ from unittest import mock
 import httpx
 import yaml
 
-from xnobrain.integrations import AgentAPIError, control_mcp_grants
+from xnobrain.integrations import AgentAPIError, control_mcp_grants, workload_identity
 from xnobrain.integrations.control_mcp_grants import WorkspaceMcpGrantClient
 from xnobrain.repositories.base import StoreError
 from xnobrain.repositories.files import FileRepository
@@ -516,6 +516,13 @@ class WorkspaceMcpGrantTests(unittest.IsolatedAsyncioTestCase):
         )
         self.environment.start()
         self.addCleanup(self.environment.stop)
+        self.identity_patch = mock.patch.object(
+            workload_identity,
+            "DEFAULT_IDENTITY_PATH",
+            str(Path(tempfile.gettempdir()) / "absent-workload-identity.json"),
+        )
+        self.identity_patch.start()
+        self.addCleanup(self.identity_patch.stop)
 
     def _client(self, responder):
         http = httpx.AsyncClient(transport=httpx.MockTransport(responder), follow_redirects=False)
@@ -598,23 +605,25 @@ class WorkspaceMcpGrantTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(calls), 2)
 
     async def test_identity_mismatch_is_never_used_or_cached(self):
-        calls = []
+        for wrong in ({"user_id": "other-user"}, {"tenant_id": "other-tenant"}):
+            with self.subTest(wrong=wrong):
+                calls = []
 
-        def respond(_request):
-            calls.append(1)
-            return self._response(user_id="other-user")
+                def respond(_request, _wrong=wrong):
+                    calls.append(1)
+                    return self._response(**_wrong)
 
-        client = self._client(respond)
-        kwargs = {
-            "agent_id": "agent-1",
-            "platform": "zalo",
-            "user_id": "user-1",
-            "tenant_id": "personal-user-1",
-        }
-        self.assertEqual(await client.grant("profile", **kwargs), "")
-        self.assertEqual(await client.grant("profile", **kwargs), "")
-        self.assertEqual(len(calls), 2)
-        self.assertEqual(control_mcp_grants._CACHE, {})
+                client = self._client(respond)
+                kwargs = {
+                    "agent_id": "agent-1",
+                    "platform": "zalo",
+                    "user_id": "user-1",
+                    "tenant_id": "personal-user-1",
+                }
+                self.assertEqual(await client.grant("profile", **kwargs), "")
+                self.assertEqual(await client.grant("profile", **kwargs), "")
+                self.assertEqual(len(calls), 2)
+                self.assertEqual(control_mcp_grants._CACHE, {})
 
     async def test_cache_is_bound_to_the_profile_identity(self):
         calls = []
