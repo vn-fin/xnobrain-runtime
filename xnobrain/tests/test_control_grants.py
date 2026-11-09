@@ -203,5 +203,34 @@ class ControlGrantRunScopeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(control_grants.get_for_server("server-empty", scope), "web-grant")
 
 
+class ControlGrantPoolThreadTests(unittest.TestCase):
+    """Hermes runs some tool calls in pool threads without the run's context."""
+
+    def _call_in_pool_thread(self, scope: str) -> list:
+        seen = []
+
+        def handler():
+            seen.append(control_grants.pending_server_grant(f"{scope}\0srv"))
+
+        bound = managed_mcp._grant_bound_handler(handler, f"{scope}\0srv")
+        worker = threading.Thread(target=bound)
+        worker.start()
+        worker.join()
+        return seen
+
+    def test_pool_thread_inherits_grant_of_active_run(self):
+        profile = Path("/tmp/pool-thread-profile")
+        scope = managed_mcp._profile_scope(profile)
+        with control_grants.bind_run(profile, "run-grant"):
+            self.assertEqual(self._call_in_pool_thread(scope), ["run-grant"])
+
+    def test_pool_thread_outside_a_run_gets_no_grant(self):
+        profile = Path("/tmp/pool-thread-profile-idle")
+        scope = managed_mcp._profile_scope(profile)
+        with control_grants.bind_run(profile, "old-grant"):
+            pass
+        self.assertEqual(self._call_in_pool_thread(scope), [""])
+
+
 if __name__ == "__main__":
     unittest.main()

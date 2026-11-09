@@ -104,9 +104,13 @@ def _grant_bound_handler(handler, server_key: str):
     """Carry the caller's run grant across Hermes' MCP-loop thread hop."""
 
     def bound(*args, **kwargs):
-        from .control_grants import current_run_grant, server_call_scope
+        from .control_grants import active_profile_grant, current_run_grant, server_call_scope
 
         grant = current_run_grant()
+        if grant is None:
+            # Hermes runs some tool calls in pool threads without the run's
+            # context; fall back to the grant of a run active on this profile.
+            grant = active_profile_grant(server_key.partition("\0")[0])
         # A tool handler outside a run must not inherit a profile grant.
         with server_call_scope(server_key, "" if grant is None else grant):
             return handler(*args, **kwargs)

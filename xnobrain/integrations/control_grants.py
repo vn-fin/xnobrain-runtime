@@ -68,6 +68,18 @@ def current_run_grant() -> str | None:
     return _CURRENT_RUN_GRANT.get()
 
 
+def active_profile_grant(scope: str) -> str | None:
+    """Return the profile grant only while a run is bound to that profile.
+
+    shortcut: concurrent runs of one profile share the newest run grant, which is
+    already how the profile fallback behaves; upgrade if a profile ever serves
+    two owners at once.
+    """
+    with _LOCK:
+        runs = _RUN_GRANTS.get(scope)
+        return runs[-1][1] if runs else None
+
+
 def get_for_server(server_key: str, scope: str) -> str:
     """Prefer one run's server-local scope, then the profile fallback."""
     if server_key:
