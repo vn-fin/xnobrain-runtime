@@ -731,6 +731,62 @@ class ManagedMCPTests(unittest.TestCase):
         self.assertTrue(managed_mcp._is_unauthorized(ExceptionGroup("connect", [unauthorized])))
         self.assertFalse(managed_mcp._is_unauthorized(ExceptionGroup("connect", [failed])))
 
+    def test_toolset_key_builds_readable_catalog_keys(self):
+        server_id = "xnb-424df6590c46efbf126024c43041189d"
+        self.assertEqual(
+            managed_mcp._toolset_key("xnobrain-context7", server_id),
+            f"mcp-context7-{server_id}",
+        )
+        self.assertEqual(
+            managed_mcp._toolset_key("custom:dnse", server_id),
+            f"mcp-dnse-{server_id}",
+        )
+        self.assertEqual(
+            managed_mcp._toolset_key("plugin:agent-plugin-x__y", server_id),
+            f"mcp-agent-plugin-x-y-{server_id}",
+        )
+        self.assertEqual(
+            managed_mcp._toolset_key("xnobrain-Fancy  Server!!", server_id),
+            f"mcp-fancy-server-{server_id}",
+        )
+
+    def test_toolset_key_falls_back_and_caps_empty_or_odd_slugs(self):
+        server_id = "xnb-424df6590c46efbf126024c43041189d"
+        for logical_name in ("custom:", "plugin:", "xnobrain-", "!!!"):
+            self.assertEqual(
+                managed_mcp._toolset_key(logical_name, server_id), f"mcp-{server_id}"
+            )
+        capped = managed_mcp._toolset_key("xnobrain-" + "a" * 40, server_id)
+        self.assertEqual(capped, f"mcp-{'a' * 32}-{server_id}")
+        boundary = managed_mcp._toolset_key("xnobrain-" + "a" * 31 + "-tail", server_id)
+        self.assertEqual(boundary, f"mcp-{'a' * 31}-{server_id}")
+
+    def test_registered_toolset_agrees_with_profile_mcp_toolsets(self):
+        from tools.registry import registry
+
+        sessions, starts = {}, []
+        profile = self.profiles[0]
+        with self._custom_patches(sessions, starts):
+            managed_mcp.sync_profile_mcp(
+                profile,
+                self.generations[0],
+                {"xnobrain-context7": self._server("context7.example.test")},
+            )
+            (task,) = [
+                task
+                for key, task in managed_mcp._MANAGED_TASKS.items()
+                if key[2] == "xnobrain-context7"
+            ]
+            expected = f"mcp-context7-{task.name}"
+            self.assertEqual(
+                managed_mcp.profile_mcp_toolsets(profile, self.generations[0]),
+                {expected},
+            )
+            self.assertTrue(task._registered_tool_names)
+            with profile_context(profile):
+                for name in task._registered_tool_names:
+                    self.assertEqual(registry.get_toolset_for_tool(name), expected)
+
 
 if __name__ == "__main__":
     unittest.main()

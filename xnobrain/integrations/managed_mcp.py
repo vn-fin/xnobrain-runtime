@@ -40,6 +40,8 @@ _MANAGER_LOCK = threading.RLock()
 CUSTOM_PREFIX = "custom:"
 # MCP servers declared by enabled portable plugins, keyed by the engine name.
 PLUGIN_PREFIX = "plugin:"
+_TOOLSET_SLUG_PREFIXES = ("xnobrain-", "custom:", "plugin:")
+_TOOLSET_SLUG_MAX = 32
 _CUSTOM_STATUS: dict[tuple[str, str, str], dict[str, Any]] = {}
 _RETRY_BASE_SECONDS = 30.0
 _RETRY_MAX_SECONDS = 600.0
@@ -132,6 +134,18 @@ def _server_id(profile: Path, generation: str, logical_name: str) -> str:
     key = hashlib.sha256(b"xnobrain-managed-mcp-v1\0" + material).digest()
     digest = hmac.new(key, logical_name.encode(), hashlib.sha256).hexdigest()[:32]
     return f"xnb-{digest}"
+
+
+def _toolset_key(logical_name: str, server_id: str) -> str:
+    """Build ``mcp-<logical slug>-<server id>`` so catalog headings stay readable."""
+    slug = logical_name or ""
+    for prefix in _TOOLSET_SLUG_PREFIXES:
+        if slug.startswith(prefix):
+            slug = slug[len(prefix) :]
+            break
+    slug = re.sub(r"[^a-z0-9-]+", "-", slug.lower())
+    slug = re.sub(r"-{2,}", "-", slug).strip("-")[:_TOOLSET_SLUG_MAX].strip("-")
+    return f"mcp-{slug}-{server_id}" if slug else f"mcp-{server_id}"
 
 
 def _profile_lock(scope: str) -> threading.RLock:
@@ -345,7 +359,7 @@ class ManagedMCPServerTask(_PinnedHTTPSMCPServerTask, MCPServerTask):
         from tools.registry import registry
 
         config = self._config
-        toolset = f"mcp-{self.name}"
+        toolset = _toolset_key(self.logical_name, self.name)
         filter_config = config.get("tools") or {}
         include = mcp_tool._normalize_name_filter(
             filter_config.get("include"), "managed_mcp.tools.include"
@@ -872,7 +886,7 @@ def profile_mcp_toolsets(profile: Path, generation: str) -> set[str]:
     scope = _profile_scope(profile)
     with _MANAGER_LOCK:
         return {
-            f"mcp-{task.name}"
+            _toolset_key(task.logical_name, task.name)
             for key, task in _MANAGED_TASKS.items()
             if key[0] == scope and key[1] == generation and task._registered_tool_names
         }
