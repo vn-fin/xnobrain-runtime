@@ -16,6 +16,13 @@ grouped by feature:
 JSON responses use `{success,data,message,status_code}`. SSE sends structured
 Hermes lifecycle objects and terminates with `data: [DONE]`.
 
+Agent creation rejects a display name already used by an agent in the same
+workspace with HTTP 409 and `error.code=agent_exists`, including profiles with
+a different internal ID (for example an imported or renamed profile). Comparison
+ignores letter case and collapses whitespace. Concurrent creation requests are
+serialized within that workspace. Names in other workspaces or shared directory
+entries do not reserve a local name. Existing agents are not renamed or deleted.
+
 During a Control-managed VM rebalance, new mutations return that envelope with
 HTTP/status_code 503, `data.code=workspace_rebalance_maintenance`,
 `Retry-After: 5`, `Cache-Control: no-store` and
@@ -1856,3 +1863,10 @@ At the limit, new writes/uploads/imports and independent task dispatch return
 maintenance. Reads, existing downloads, deletion, stop/cancel, approvals for
 existing runs and update recovery remain available. Running writers are not
 killed; this is sampled admission, not an atomic filesystem quota.
+
+### Vietnamese agent identifiers
+
+New agent identifiers transliterate Vietnamese accents and `đ` before slugging
+(e.g. `Chuyên viên Định giá` becomes `chuyen-vien-dinh-gia`). Existing identifiers
+and URLs are not renamed. Display names retain their original spelling; duplicate
+name validation remains scoped to the workspace.

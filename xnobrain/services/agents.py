@@ -9,6 +9,7 @@ import logging
 import os
 import re
 import time
+import unicodedata
 import uuid
 from datetime import timedelta
 from pathlib import Path
@@ -326,7 +327,9 @@ class AgentsServiceMixin:
     def _agent_id_from_display_name(display_name: str) -> str:
         """Create the stable profile ID from the normalized display name."""
         normalized = " ".join(display_name.split())
-        identifier = re.sub(r"[^a-z0-9]+", "-", normalized.casefold()).strip("-")
+        folded = unicodedata.normalize("NFD", normalized.casefold()).replace("đ", "d")
+        folded = "".join(char for char in folded if not unicodedata.combining(char))
+        identifier = re.sub(r"[^a-z0-9]+", "-", folded).strip("-")
         if not identifier:
             raise ServiceError(
                 "display_name must contain letters or numbers",

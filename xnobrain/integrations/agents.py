@@ -1,5 +1,6 @@
 """Agent operations methods for the Hermes runtime adapter."""
 
+from ..repositories.custom_page_locks import acquire, release
 from .hermes_support import (
     _SAFE_ID_RE,
     BIG_BROTHER_AGENT_ID,
@@ -76,6 +77,14 @@ class AgentOperationsMixin:
         return self._require_profile(self._agent_name(raw_name)).resolve()
 
     def create_agent(self, body: Mapping[str, Any]) -> tuple[dict[str, Any], int]:
+        self.profiles_root.mkdir(parents=True, exist_ok=True)
+        descriptor = acquire(self.profiles_root, ".agent-create.lock", shared=False, timeout=30)
+        try:
+            return self._create_agent_locked(body)
+        finally:
+            release(descriptor)
+
+    def _create_agent_locked(self, body: Mapping[str, Any]) -> tuple[dict[str, Any], int]:
         name = self._agent_name(body.get("name") or self._new_agent_name())
         store = getattr(self, "portability_task_store", None)
         if store is not None and not store.resource_visible("PROFILE", name):
@@ -83,6 +92,31 @@ class AgentOperationsMixin:
         existed = self._existing_profile_dir(name) is not None
         if existed and not bool(body.get("idempotent", False)):
             raise AgentAPIError(f"Agent already exists: {name}", code="agent_exists", status=409)
+
+        display_name = body.get("display_name") or body.get("title") or name
+        name_key = " ".join(str(display_name).split()).casefold()
+        for existing_name in self.list_agent_names():
+            if existed and existing_name == name:
+                continue
+            profile = self._existing_profile_dir(existing_name)
+            if profile is None:
+                continue
+            metadata = self._read_metadata(profile)
+            registry = self._registry_profile(existing_name) or {}
+            existing_display = (
+                BIG_BROTHER_DISPLAY_NAME
+                if existing_name == BIG_BROTHER_AGENT_ID
+                else registry.get("display_name")
+                or metadata.get("display_name")
+                or metadata.get("title")
+                or existing_name
+            )
+            if " ".join(str(existing_display).split()).casefold() == name_key:
+                raise AgentAPIError(
+                    "An agent with this name already exists in this workspace",
+                    code="agent_exists",
+                    status=409,
+                )
 
         profile_dir = self._profile_dir(name)
         workspace_dir = self._workspace_dir(name)
