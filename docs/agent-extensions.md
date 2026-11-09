@@ -97,9 +97,9 @@ OAuth entries. Catalog tools are absent there, not leaked. Catalog API keys are
 stored by Control and never copied to Runtime profile files; shareable exports
 and imports therefore contain no catalog key.
 
-Fifteen OAuth recipes are installable alongside six non-OAuth remote recipes.
-Trello and Cobrain remain unsupported, four desktop integrations are
-unsupported, and four unreviewed/unpinned stdio recipes remain `needs_review`.
+Eighteen OAuth recipes are installable alongside seven non-OAuth remote recipes.
+Cobrain remains unsupported, four desktop integrations are unsupported, and the
+unpinned Brave Search stdio recipe remains `needs_review`.
 
 Catalog OAuth credentials live in Control. The UI creates a pending Control
 connection, installs its proxy URL in Runtime with an empty `fields` object,

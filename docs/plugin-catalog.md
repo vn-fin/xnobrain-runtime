@@ -32,9 +32,9 @@ query string, like the other links. The UI shows it on a white tile and falls
 back to the name's first letter when the image fails to load. Logos remain
 the trademarks of their owners.
 
-Catalog availability is advisory metadata. Only six remote HTTP integrations
-are marked `installable`; the four stdio package candidates remain
-`needs_review` until their versions and package provenance can be pinned and
-reviewed. OAuth-dependent integrations and integrations requiring a desktop
-application are listed for coverage but are unsupported by the current
+Catalog availability is advisory metadata. Twenty-five remote HTTP integrations
+are marked `installable`; the unpinned Brave Search stdio package remains
+`needs_review` until its version and package provenance can be pinned and
+reviewed. Integrations requiring a desktop application and the Cobrain OAuth
+integration are listed for coverage but are unsupported by the current
 installer. Runtime validates every install request and its server endpoint.

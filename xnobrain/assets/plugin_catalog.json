@@ -377,15 +377,17 @@
       "homepage": "https://trello.com",
       "documentation": "https://developer.atlassian.com/cloud/trello/",
       "iconUrl": "https://trello.com/favicon.ico",
-      "installability": "unsupported",
-      "reason_code": "oauth_not_supported",
+      "installability": "installable",
+      "reason_code": "compatible",
       "mcp": {
         "transport": "http",
+        "endpoint_mode": "static",
+        "url": "https://mcp.trello.com/v1",
         "auth": {
           "kind": "oauth"
         }
       },
-      "recipe_revision": 1
+      "recipe_revision": 2
     },
     {
       "id": "cobrain",
@@ -1192,8 +1194,8 @@
     {
       "id": "airtable",
       "name": "Airtable",
-      "publisher": "Airtable ecosystem",
-      "publisher_kind": "community",
+      "publisher": "Airtable",
+      "publisher_kind": "official",
       "category": "productivity",
       "summary": {
         "en": "Read and update records in Airtable bases.",
@@ -1224,28 +1226,23 @@
       "homepage": "https://airtable.com",
       "documentation": "https://airtable.com/developers/web/api/introduction",
       "iconUrl": "https://www.airtable.com/favicon.ico",
-      "installability": "needs_review",
-      "reason_code": "package_version_unpinned",
+      "installability": "installable",
+      "reason_code": "compatible",
       "mcp": {
-        "transport": "stdio",
-        "package": {
-          "name": "airtable-mcp-server",
-          "version": null
-        },
+        "transport": "http",
+        "endpoint_mode": "static",
+        "url": "https://mcp.airtable.com/mcp",
         "auth": {
-          "kind": "api_key",
-          "field": "token",
-          "delivery": "env",
-          "environment_name": "AIRTABLE_API_KEY"
+          "kind": "oauth"
         }
       },
-      "recipe_revision": 1
+      "recipe_revision": 2
     },
     {
       "id": "firecrawl",
       "name": "Firecrawl",
       "publisher": "Firecrawl",
-      "publisher_kind": "unverified",
+      "publisher_kind": "official",
       "category": "research",
       "summary": {
         "en": "Extract structured information from web pages and search results.",
@@ -1276,22 +1273,21 @@
       "homepage": "https://www.firecrawl.dev",
       "documentation": "https://docs.firecrawl.dev",
       "iconUrl": "https://www.firecrawl.dev/apple-touch-icon.png",
-      "installability": "needs_review",
-      "reason_code": "package_version_unpinned",
+      "installability": "installable",
+      "reason_code": "compatible",
       "mcp": {
-        "transport": "stdio",
-        "package": {
-          "name": "firecrawl-mcp",
-          "version": null
-        },
+        "transport": "http",
+        "endpoint_mode": "static",
+        "url": "https://mcp.firecrawl.dev/v2/mcp",
         "auth": {
           "kind": "api_key",
           "field": "token",
-          "delivery": "env",
-          "environment_name": "FIRECRAWL_API_KEY"
+          "delivery": "header",
+          "header": "Authorization",
+          "prefix": "Bearer "
         }
       },
-      "recipe_revision": 1
+      "recipe_revision": 2
     },
     {
       "id": "brave-search",
@@ -1349,7 +1345,7 @@
       "id": "resend",
       "name": "Resend",
       "publisher": "Resend",
-      "publisher_kind": "unverified",
+      "publisher_kind": "official",
       "category": "communications",
       "summary": {
         "en": "Send transactional email and inspect delivery status.",
@@ -1380,22 +1376,17 @@
       "homepage": "https://resend.com",
       "documentation": "https://resend.com/docs",
       "iconUrl": "https://resend.com/static/favicons/favicon-marketing@180x180.png",
-      "installability": "needs_review",
-      "reason_code": "package_version_unpinned",
+      "installability": "installable",
+      "reason_code": "compatible",
       "mcp": {
-        "transport": "stdio",
-        "package": {
-          "name": "resend-mcp",
-          "version": null
-        },
+        "transport": "http",
+        "endpoint_mode": "static",
+        "url": "https://mcp.resend.com/mcp",
         "auth": {
-          "kind": "api_key",
-          "field": "token",
-          "delivery": "env",
-          "environment_name": "RESEND_API_KEY"
+          "kind": "oauth"
         }
       },
-      "recipe_revision": 1
+      "recipe_revision": 2
     },
     {
       "id": "composio",

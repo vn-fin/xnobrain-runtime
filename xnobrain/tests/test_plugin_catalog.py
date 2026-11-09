@@ -44,6 +44,10 @@ class PluginCatalogTests(unittest.TestCase):
                 "netlify",
                 "prisma",
                 "railway",
+                "trello",
+                "airtable",
+                "resend",
+                "firecrawl",
             },
         )
         self.assertEqual(
@@ -52,7 +56,7 @@ class PluginCatalogTests(unittest.TestCase):
                 for entry_id, entry in by_id.items()
                 if entry["installability"] == "needs_review"
             },
-            {"airtable", "firecrawl", "brave-search", "resend"},
+            {"brave-search"},
         )
         for entry in entries:
             self.assertEqual(set(entry["summary"]), SUMMARY_LOCALES)
@@ -77,14 +81,17 @@ class PluginCatalogTests(unittest.TestCase):
                     "netlify",
                     "prisma",
                     "railway",
+                    "trello",
+                    "airtable",
+                    "resend",
+                    "firecrawl",
                 }
                 else 1,
             )
             self.assertIn(entry["publisher_kind"], {"official", "community", "unverified"})
             self.assertEqual(set(entry["examples"]), {"en", "vi", "zh"})
             self.assertTrue(all(len(prompts) == 3 for prompts in entry["examples"].values()))
-        for entry_id in {"airtable", "firecrawl", "brave-search", "resend"}:
-            self.assertNotEqual(by_id[entry_id]["publisher_kind"], "official")
+        self.assertNotEqual(by_id["brave-search"]["publisher_kind"], "official")
         validate_plugin_catalog(catalog)
 
     def test_rejects_invalid_example_prompts(self) -> None:
@@ -135,7 +142,7 @@ class PluginCatalogTests(unittest.TestCase):
         cases.append(oauth_install)
 
         unpinned_stdio_install = copy.deepcopy(catalog)
-        unpinned_stdio_install["entries"][25]["installability"] = "installable"
+        unpinned_stdio_install["entries"][27]["installability"] = "installable"
         cases.append(unpinned_stdio_install)
 
         unsafe_composio = copy.deepcopy(catalog)
@@ -189,6 +196,9 @@ class PluginCatalogTests(unittest.TestCase):
             "netlify",
             "prisma",
             "railway",
+            "trello",
+            "airtable",
+            "resend",
         }
         by_id = {entry["id"]: entry for entry in catalog["entries"]}
         for entry_id in ids:
@@ -197,13 +207,12 @@ class PluginCatalogTests(unittest.TestCase):
             self.assertEqual(entry["recipe_revision"], 2)
             self.assertEqual(entry["mcp"]["auth"]["kind"], "oauth")
             self.assertTrue(entry["mcp"]["url"].startswith("https://"))
-        for entry_id in {"trello", "cobrain"}:
-            self.assertEqual(by_id[entry_id]["installability"], "unsupported")
+        self.assertEqual(by_id["cobrain"]["installability"], "unsupported")
 
     def test_unreviewed_stdio_package_publishers_cannot_be_official(self) -> None:
         catalog = load_plugin_catalog()
         by_id = {entry["id"]: entry for entry in catalog["entries"]}
-        for entry_id in {"airtable", "firecrawl", "brave-search", "resend"}:
+        for entry_id in {"brave-search"}:
             with self.subTest(entry=entry_id):
                 by_id[entry_id]["publisher_kind"] = "official"
                 with self.assertRaises(ValueError):

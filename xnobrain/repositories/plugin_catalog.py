@@ -60,6 +60,9 @@ OAUTH_INSTALLABLE_IDS = {
     "netlify",
     "prisma",
     "railway",
+    "trello",
+    "airtable",
+    "resend",
 }
 INSTALLABLE_IDS = {
     "aave",
@@ -68,9 +71,10 @@ INSTALLABLE_IDS = {
     "render",
     "posthog",
     "composio",
+    "firecrawl",
     *OAUTH_INSTALLABLE_IDS,
 }
-NEEDS_REVIEW_IDS = {"airtable", "firecrawl", "brave-search", "resend"}
+NEEDS_REVIEW_IDS = {"brave-search"}
 SUMMARY_LOCALES = {"en", "vi", "es", "fr", "de", "ja", "zh"}
 # Example prompts follow the UI languages.
 EXAMPLE_LOCALES = {"en", "vi", "zh"}
@@ -82,6 +86,8 @@ OAUTH_IDS = {
     "atlassian",
     "todoist",
     "trello",
+    "airtable",
+    "resend",
     "cobrain",
     "sentry",
     "vercel",
