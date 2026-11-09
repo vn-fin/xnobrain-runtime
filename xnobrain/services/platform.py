@@ -160,6 +160,9 @@ class PlatformService(
         self.time_control = TimeControlService(self)
         self.channels = ChannelsService(self)
         self.agents.channels_service = self.channels
+        from .source_owner import SourceOwnerService
+
+        self.source_owner = SourceOwnerService(self)
         self.cron.default_timezone = self.time_control.default_timezone
         self.conversation_runs.runtime_updates = self.runtime_updates
         from ..integrations.run_admission import managed

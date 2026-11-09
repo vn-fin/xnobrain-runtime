@@ -922,6 +922,47 @@ execution. After a request is sent, any HTTP, timeout, or unexpected-shape
 failure returns one sanitized retry message and never starts a second turn.
 Failure logging names only the error class and never the message text or token.
 
+### Private source-owner probe
+
+`POST /xnobrain/api/runtime/v1/internal/source-owner/probe` is a private,
+Control-owned enrollment probe. It is excluded from public OpenAPI, accepts only
+`{environment, runtime_source_key}` with extra fields forbidden, and requires a
+verified Control-signed Personal `TrustedRequestContext` with subject and
+tenant. User/tenant/organization values in the body or a UI flag are never
+authority.
+
+The data envelope contains only
+`{status: "match"|"fresh"|"mismatch"|"legacy_unproven"}`. No owner, path,
+content, or token is returned, and the route never writes a claim, identity,
+owner file, config, or credential.
+
+- A matching version-1 workload identity file is authoritative after the same
+  strict file validation used for grants. Owner mismatch/malformed/unreadable
+  content is `mismatch`; it never falls through to attestation.
+- A configured future identity path may still be absent during first enrollment.
+  That absence alone is `legacy_unproven`; it can become `match` only with the
+  exact validated operator attestation below. The grant reader remains
+  fail-closed for the same missing explicit path.
+- Owner inspection covers the configured root profile, direct profiles, and
+  supported legacy `<legacy-agents>/<name>/.profile` records. The root profile
+  uses the logical Big Brother agent ID regardless of its directory basename;
+  named and legacy records use their logical profile name, not `.profile`.
+  Enumeration is bounded before sorting.
+- Any conflicting, malformed, symlinked, or mixed profile owner marker or
+  channel owner binding is `mismatch`, even with operator attestation.
+- `RUNTIME_SOURCE_OWNER_USER_ID` and `RUNTIME_SOURCE_OWNER_TENANT_ID` are a
+  paired, validated operator deployment attestation for unproven legacy data.
+  Both must match the signed actor exactly; partial or absent attestation leaves
+  the result `legacy_unproven`.
+- Matching per-agent markers alone never prove all unmarked workspace data, and
+  missing markers, the startup Big Brother profile, or a volume-initialized
+  marker never prove freshness. `fresh` therefore remains reserved for a real
+  future authoritative proof; this implementation does not invent it.
+
+Deployments must inject the two operator attestation values only for the initial
+legacy bootstrap, then remove them after Control publishes the authoritative
+identity. Control-side relays must deny this path publicly.
+
 ## Personal Agent Custom Page v1 (FT0015, in progress)
 
 > Release exposure is controlled by the coordinated root flags `FT_ENABLE_UI_CUSTOMIZATION` and `FT_ENABLE_AGENT_CUSTOM_PAGE`; both default off. Disabled backend paths fail closed and retained data is not deleted.

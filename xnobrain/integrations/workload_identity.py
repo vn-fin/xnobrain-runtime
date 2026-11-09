@@ -130,6 +130,50 @@ def _source_identity(
     )
 
 
+def read_source_owner_attestation(
+    environ: dict[str, str] | None = None,
+) -> tuple[str, str] | None:
+    """Return the explicit operator source-owner pair, or ``None``."""
+    env = os.environ if environ is None else environ
+    user_id = str(env.get("RUNTIME_SOURCE_OWNER_USER_ID") or "").strip()
+    tenant_id = str(env.get("RUNTIME_SOURCE_OWNER_TENANT_ID") or "").strip()
+    if not user_id and not tenant_id:
+        return None
+    if not user_id or not tenant_id:
+        raise WorkloadIdentityError("source_owner_attestation_partial")
+    return (
+        _text(user_id, "source_owner_attestation_malformed"),
+        _text(tenant_id, "source_owner_attestation_malformed"),
+    )
+
+
+def read_source_identity_file(
+    *,
+    expected_user_id: str,
+    expected_tenant_id: str,
+    environ: dict[str, str] | None = None,
+) -> WorkloadIdentity | None:
+    """Read only the version-1 source file; never fall back to legacy token."""
+    env = os.environ if environ is None else environ
+    expected_user_id = str(expected_user_id or "").strip()
+    expected_tenant_id = str(expected_tenant_id or "").strip()
+    if not expected_user_id or not expected_tenant_id:
+        raise WorkloadIdentityError("channel_owner_unavailable")
+    configured = str(env.get(IDENTITY_FILE_ENV) or "").strip()
+    if configured:
+        path = Path(configured)
+        if not path.is_absolute() or ".." in path.parts:
+            raise WorkloadIdentityError("identity_path_invalid")
+        value = _read_file(path)
+        if value is None:
+            raise WorkloadIdentityError("identity_unavailable")
+        return _source_identity(value, expected_user_id, expected_tenant_id)
+    value = _read_file(Path(DEFAULT_IDENTITY_PATH))
+    if value is None:
+        return None
+    return _source_identity(value, expected_user_id, expected_tenant_id)
+
+
 def resolve_workload_identity(
     *,
     expected_user_id: str,

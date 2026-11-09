@@ -169,6 +169,24 @@ unchanged until organization channels are supported. The identity survives
 process restarts. DB commit precedes file publication; retries reuse the stable
 ID, and a failed publication cannot silently reassign the mount.
 
+Source-owner proof is one-time private enrollment, not renewal. Runtime exposes
+`POST /xnobrain/api/runtime/v1/internal/source-owner/probe` only to a
+Control-signed Personal actor and returns status only. An existing strict
+version-1 identity file is authoritative; owner mismatch/malformed content
+never falls through. A configured future identity path may be absent during
+first enrollment, in which case only the paired exact operator attestation
+`RUNTIME_SOURCE_OWNER_USER_ID` + `RUNTIME_SOURCE_OWNER_TENANT_ID` can bootstrap
+already-existing data. No identity file, no attestation, or only matching
+per-agent markers returns `legacy_unproven`; missing markers, the default Big
+Brother profile, and volume-initialized markers are not freshness proof. The
+probe inspects the configured root profile, direct profiles, and supported
+legacy `<legacy-agents>/<name>/.profile` records with bounded pre-sort
+enumeration and no-symlink reads. The root profile uses logical agent ID
+`big-brother` regardless of directory basename; legacy records use their logical
+name, not `.profile`. It never writes or claims state and returns no
+owner/path/content/token. Control must deny this path at public relays. Remove
+the bootstrap attestation after authoritative identity publication.
+
 Grant renewal resolves current workspace ownership/status from Control's durable
 record, validates the workload bearer, and rejects stopped/deleted/reassigned
 workspaces. Cluster/provisioning guards remain for legacy managed identities;
