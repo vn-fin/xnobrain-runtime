@@ -47,8 +47,14 @@ def pairing_lock_path_for_directory(directory: str | Path) -> Path:
     if directory.is_symlink():
         raise ValueError("pairing store directory is unsafe")
     root = get_default_hermes_root().resolve()
+    bases = [root]
+    # Managed layouts symlink <root>/profiles to the shared profiles root, so
+    # named-profile stores resolve beside <root> rather than beneath it.
+    profiles = root / "profiles"
+    if profiles.exists():
+        bases.append(profiles.resolve())
     resolved = directory.resolve()
-    if not resolved.is_relative_to(root):
+    if not any(resolved.is_relative_to(base) for base in bases):
         raise ValueError("pairing store directory escapes the Hermes root")
     return resolved / ".xnobrain-pairing.lock"
 

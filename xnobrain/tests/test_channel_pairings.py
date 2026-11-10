@@ -20,7 +20,9 @@ from pydantic import ValidationError
 
 from xnobrain.integrations.hermes_pairings import (
     get_channel_pairing_store,
+    install_pairing_constructor_locking,
     pairing_lock_path,
+    pairing_lock_path_for_directory,
 )
 from xnobrain.models.channels import (
     ChannelPairingRequest,
@@ -612,6 +614,50 @@ class ChannelPairingLockTests(_ChannelPairingFixtureMixin, unittest.IsolatedAsyn
             [item["user_id"] for item in self._store().list_pending("zalo")],
             ["789"],
         )
+
+
+class ChannelPairingLinkedProfilesTests(unittest.TestCase):
+    """Managed layouts link ``<root>/profiles`` to the shared profiles root."""
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.agents = Path(self.temporary.name) / "agents"
+        self.root = self.agents / "big-brother"
+        self.root.mkdir(parents=True)
+        self.profile = self.agents / "plugin-qa"
+        self.profile.mkdir()
+        self.linked_profiles = self.root / "profiles"
+        self.linked_profiles.symlink_to(self.agents, target_is_directory=True)
+        self.environment = mock.patch.dict(
+            os.environ,
+            {
+                "HERMES_HOME": str(self.root),
+                "HERMES_ROOT_PROFILE": str(self.root),
+                "HERMES_PROFILES_ROOT": str(self.agents),
+            },
+        )
+        self.environment.start()
+        self.addCleanup(self.environment.stop)
+
+    def test_linked_profile_pairing_dir_lock_is_under_profiles_root(self):
+        directory = self.linked_profiles / "plugin-qa" / "platforms" / "pairing"
+        lock = pairing_lock_path_for_directory(directory)
+        self.assertEqual(
+            lock,
+            self.profile.resolve() / "platforms" / "pairing" / ".xnobrain-pairing.lock",
+        )
+
+    def test_directory_outside_both_bases_is_rejected(self):
+        outside = Path(self.temporary.name) / "elsewhere" / "pairing"
+        outside.mkdir(parents=True)
+        with self.assertRaises(ValueError):
+            pairing_lock_path_for_directory(outside)
+
+    def test_linked_profile_store_constructs_under_profiles_root(self):
+        install_pairing_constructor_locking()
+        store = PairingStore(profile="plugin-qa")
+        self.assertTrue(store._dir.resolve().is_relative_to(self.profile.resolve()))
 
 
 class ChannelPairingModelTests(unittest.TestCase):
