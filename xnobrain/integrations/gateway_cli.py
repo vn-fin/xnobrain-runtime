@@ -47,6 +47,9 @@ PAIRING_LIMIT_REPLY = (
     "Too many requests are waiting for approval. Please try again later."
 )
 
+# Pinned upstream home-channel setup notice (gateway/run.py) starts with this.
+HOME_CHANNEL_NOTICE_PREFIX = "📬 No home channel is set for"
+
 
 class _DelegationAttempted(Exception):
     """The request may have reached Runtime; native execution is unsafe."""
@@ -145,6 +148,38 @@ def install_gateway_pairing_messages() -> None:
 
     GatewayRunner._adapter_for_source = adapter_for_source
     GatewayRunner._xnobrain_pairing_messages = True
+
+
+def _is_home_channel_notice(text) -> bool:
+    return isinstance(text, str) and text.startswith(HOME_CHANNEL_NOTICE_PREFIX)
+
+
+def install_gateway_operator_notice_filter() -> None:
+    """Drop the pinned gateway's operator-only home-channel setup notice.
+
+    The notice is operator UX for configuring Hermes; channel bot users are
+    end users, so it must not reach them. Every other notice is delivered
+    unchanged with its original arguments.
+    """
+    try:
+        from gateway.run import GatewayRunner
+    except Exception:
+        _LOGGER.warning("gateway operator notice filter unavailable: gateway import failed")
+        return
+    if getattr(GatewayRunner, "_xnobrain_operator_notice_filter", False):
+        return
+    original = GatewayRunner._deliver_platform_notice
+
+    async def deliver_platform_notice(runner, *args, **kwargs):
+        text = kwargs.get("content")
+        if text is None and len(args) >= 2:
+            text = args[1]
+        if _is_home_channel_notice(text):
+            return None
+        return await original(runner, *args, **kwargs)
+
+    GatewayRunner._deliver_platform_notice = deliver_platform_notice
+    GatewayRunner._xnobrain_operator_notice_filter = True
 
 
 def _current_profile():
@@ -473,6 +508,7 @@ def main():
         install_workspace_router_key_scope()
         install_gateway_log_redaction()
         install_gateway_pairing_messages()
+        install_gateway_operator_notice_filter()
         from .hermes_pairings import install_gateway_pairing_locking
 
         install_gateway_pairing_locking()

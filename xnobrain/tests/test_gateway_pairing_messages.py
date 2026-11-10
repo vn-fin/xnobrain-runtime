@@ -1,4 +1,4 @@
-"""Gateway launcher pairing-reply rewriting tests."""
+"""Gateway launcher pairing-reply and operator-notice filtering tests."""
 
 from __future__ import annotations
 
@@ -41,6 +41,23 @@ def _gateway_module(adapter):
     module = types.ModuleType("gateway.run")
     module.GatewayRunner = FakeGatewayRunner
     return module, FakeGatewayRunner
+
+
+def _notice_gateway_module():
+    delivered = []
+
+    class FakeGatewayRunner:
+        _xnobrain_operator_notice_filter = False
+
+        def _adapter_for_source(self, source):
+            return None
+
+        async def _deliver_platform_notice(self, source, content: str) -> None:
+            delivered.append((source, content))
+
+    module = types.ModuleType("gateway.run")
+    module.GatewayRunner = FakeGatewayRunner
+    return module, FakeGatewayRunner, delivered
 
 
 class GatewayPairingMessageTests(unittest.IsolatedAsyncioTestCase):
@@ -90,6 +107,60 @@ class GatewayPairingMessageTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(runner_class._xnobrain_pairing_messages)
 
 
+class GatewayOperatorNoticeTests(unittest.IsolatedAsyncioTestCase):
+    _HOME_NOTICE = (
+        "📬 No home channel is set for Zalo Bot. A home channel is where Hermes "
+        "delivers cron job results and cross-platform messages.\n\n"
+        "Type /sethome to make this chat your home channel, or ignore to skip."
+    )
+
+    def install(self):
+        module, runner_class, delivered = _notice_gateway_module()
+        with mock.patch.dict(sys.modules, {"gateway.run": module}):
+            gateway_cli.install_gateway_operator_notice_filter()
+        return runner_class, delivered
+
+    async def test_home_channel_notice_is_dropped(self):
+        runner_class, delivered = self.install()
+
+        result = await runner_class()._deliver_platform_notice(object(), self._HOME_NOTICE)
+
+        self.assertIsNone(result)
+        self.assertEqual(delivered, [])
+
+    async def test_home_channel_notice_is_dropped_when_passed_by_keyword(self):
+        runner_class, delivered = self.install()
+
+        result = await runner_class()._deliver_platform_notice(
+            object(), content=self._HOME_NOTICE
+        )
+
+        self.assertIsNone(result)
+        self.assertEqual(delivered, [])
+
+    async def test_other_notice_passes_through_unchanged(self):
+        runner_class, delivered = self.install()
+        source = object()
+        notice = "⚠️ An unrelated operator notice."
+
+        await runner_class()._deliver_platform_notice(source, notice)
+
+        self.assertEqual(delivered, [(source, notice)])
+
+    async def test_install_is_idempotent(self):
+        module, runner_class, delivered = _notice_gateway_module()
+        with mock.patch.dict(sys.modules, {"gateway.run": module}):
+            gateway_cli.install_gateway_operator_notice_filter()
+            first = runner_class._deliver_platform_notice
+            gateway_cli.install_gateway_operator_notice_filter()
+            second = runner_class._deliver_platform_notice
+
+        self.assertIs(first, second)
+        self.assertTrue(runner_class._xnobrain_operator_notice_filter)
+        await runner_class()._deliver_platform_notice(object(), self._HOME_NOTICE)
+        self.assertEqual(delivered, [])
+
+
 class UpstreamGatewayPairingTextGuardTests(unittest.TestCase):
     def test_pinned_gateway_pairing_prefixes_still_exist(self):
         try:
@@ -102,6 +173,7 @@ class UpstreamGatewayPairingTextGuardTests(unittest.TestCase):
         source = Path(spec.origin).read_text(encoding="utf-8")
         self.assertIn(gateway_cli.PAIRING_REQUEST_TEXT_PREFIX, source)
         self.assertIn(gateway_cli.PAIRING_LIMIT_TEXT_PREFIX, source)
+        self.assertIn(gateway_cli.HOME_CHANNEL_NOTICE_PREFIX, source)
 
 
 if __name__ == "__main__":
