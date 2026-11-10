@@ -74,11 +74,9 @@ Security hardening applied on top of the vendored upstream code on 2026-11-09:
      `pairing`; any other value (including legacy `open`) is coerced to
      `disabled`. `_passes_allowlist()` denies under `allowlist` when no
      allowlist is configured and denies every DM under `disabled`.
-   - Pairing captcha state is keyed by sender user id instead of chat id,
-     wrong answers never echo the expected code, attempts are capped at
-     `PAIRING_MAX_ATTEMPTS` (5) followed by a 15-minute lockout, and
-     `_pending_approvals` is bounded to `MAX_PENDING_APPROVALS` (500) with the
-     oldest entry evicted.
+   - The upstream adapter-level 6-digit pairing captcha is removed: under
+     `pairing`, unknown DM senders go straight to Hermes core pairing, and
+     the owner approves them from the Runtime channel pairing API.
 4. M1 — Config type coercion.
    - `adapter.py`: `_coerce_bool()` treats `"false"`/`"0"`/`"no"`/`"off"` as
      false and `_coerce_allowed_users()` comma-splits a string allowlist

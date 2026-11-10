@@ -265,7 +265,7 @@ class ZaloBotHardeningTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(manager.kicked, [("group1", "victim", "spam")])
 
-    # ── H3: DM policy and pairing captcha ─────────────────────────────
+    # ── H3: DM policy and pairing ─────────────────────────────────────
 
     def test_unknown_dm_policy_fails_closed(self):
         for raw in ("open", "bogus", "OPEN"):
@@ -287,9 +287,9 @@ class ZaloBotHardeningTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(allowed._passes_allowlist("user1"))
         self.assertFalse(allowed._passes_allowlist("user2"))
 
-    async def test_correct_captcha_once_unlocks_next_message(self):
-        adapter = self._adapter(bot_token="1:secret", dm_policy="pairing", allow_all="true")
-        self._install_sender(adapter)
+    async def test_pairing_policy_dispatches_first_dm_immediately(self):
+        adapter = self._adapter(bot_token="1:secret", dm_policy="pairing")
+        sent = self._install_sender(adapter)
         dispatched = []
 
         async def handler(event):
@@ -297,54 +297,12 @@ class ZaloBotHardeningTests(unittest.IsolatedAsyncioTestCase):
 
         adapter._message_handler = handler
 
-        await adapter._handle_incoming("", self._dm_message())
-        code = adapter._pending_approvals["user1"]["code"]
-
-        await adapter._handle_incoming("", self._dm_message(text=code))
-        self.assertIn("user1", adapter._captcha_passed)
-        self.assertNotIn("user1", adapter._pending_approvals)
-        self.assertEqual(dispatched, [])
-
         await adapter._handle_incoming("", self._dm_message(text="hello"))
+
         self.assertEqual(len(dispatched), 1)
         self.assertEqual(dispatched[0].text, "hello")
-        # Hermes core pairing only answers chat_type "dm".
         self.assertEqual(dispatched[0].source.chat_type, "dm")
-
-    async def test_wrong_captcha_never_leaks_code_and_locks_after_max(self):
-        adapter = self._adapter(bot_token="1:secret", dm_policy="pairing", allow_all="true")
-        sent = self._install_sender(adapter)
-
-        await adapter._handle_incoming("", self._dm_message())
-        code = adapter._pending_approvals["user1"]["code"]
-        self.assertIn("user1", adapter._pending_approvals)
-        self.assertNotIn("chat1", adapter._pending_approvals)
-
-        for attempt in range(1, self.adapter_module.PAIRING_MAX_ATTEMPTS + 1):
-            sent.clear()
-            await adapter._handle_incoming("", self._dm_message(text=f"wrong-{attempt}"))
-            self.assertTrue(sent)
-            self.assertNotIn(code, sent[-1][1])
-            if attempt < self.adapter_module.PAIRING_MAX_ATTEMPTS:
-                self.assertEqual(adapter._pending_approvals["user1"]["attempts"], attempt)
-
-        self.assertNotIn("user1", adapter._pending_approvals)
-        self.assertGreater(adapter._pairing_blocks["user1"], 0)
-
-        sent.clear()
-        await adapter._handle_incoming("", self._dm_message(text="hello"))
         self.assertEqual(sent, [])
-        self.assertNotIn("user1", adapter._pending_approvals)
-
-    def test_pending_approvals_are_bounded(self):
-        adapter = self._adapter(bot_token="1:secret", dm_policy="pairing")
-        limit = self.adapter_module.MAX_PENDING_APPROVALS
-        for index in range(limit + 10):
-            adapter._add_pending_approval(f"user{index}", f"chat{index}", "User", "123456")
-
-        self.assertEqual(len(adapter._pending_approvals), limit)
-        self.assertNotIn("user0", adapter._pending_approvals)
-        self.assertIn(f"user{limit + 9}", adapter._pending_approvals)
 
     # ── M2/M3: group side effects and provider-ID dedupe ──────────────
 

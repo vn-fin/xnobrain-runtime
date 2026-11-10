@@ -33,7 +33,6 @@ import json
 import logging
 import os
 import re
-import secrets
 import time
 from collections import OrderedDict
 from datetime import datetime
@@ -86,13 +85,10 @@ HISTORY_DIR = os.environ.get(
 # build local file paths (defence against traversal / odd filenames).
 _SAFE_ID_RE = re.compile(r"[^A-Za-z0-9_-]")
 
-# ── Direct-message / pairing constants ────────────────────────────
+# ── Direct-message policy constants ───────────────────────────────
 # Only these dm_policy values are supported. Anything else (including the
 # legacy "open" value) is coerced to "disabled" so a typo can never open DMs.
 DM_POLICIES = ("disabled", "allowlist", "pairing")
-PAIRING_MAX_ATTEMPTS = 5
-PAIRING_LOCKOUT_SECONDS = 15 * 60
-MAX_PENDING_APPROVALS = 500
 # Bounded, ordered dedupe for real provider update/message IDs. Polling and
 # webhook delivery share this set.
 MAX_SEEN_MESSAGE_IDS = 4096
@@ -809,9 +805,6 @@ class ZaloAdapter(BasePlatformAdapter):
         self._bot_id: str = ""
         self._bot_name: str = ""
         self._bot_display_name: str = ""
-        self._pending_approvals: Dict[str, dict] = {}  # user_id -> captcha info
-        self._captcha_passed: set = set()  # user_ids that solved the captcha
-        self._pairing_blocks: Dict[str, float] = {}  # user_id -> blocked-until
         self._seen_message_ids: "OrderedDict[str, None]" = OrderedDict()
 
         # Moderation & group management instances. _GroupManager resolves
@@ -836,22 +829,6 @@ class ZaloAdapter(BasePlatformAdapter):
     def _redact(self, value: Any) -> Any:
         """Redact the bot token from API data before logging it."""
         return _redact_secret_data(value, self.bot_token)
-
-    def _add_pending_approval(
-        self, user_id: str, chat_id: str, user_name: str, code: str
-    ) -> None:
-        """Store a pending captcha, evicting the oldest entries past the cap."""
-        self._pending_approvals[user_id] = {
-            "code": code,
-            "chat_id": chat_id,
-            "user_id": user_id,
-            "user_name": user_name,
-            "attempts": 0,
-            "expires_at": time.time() + 3600,  # 1 hour
-        }
-        while len(self._pending_approvals) > MAX_PENDING_APPROVALS:
-            oldest = next(iter(self._pending_approvals))
-            self._pending_approvals.pop(oldest, None)
 
     def _is_duplicate_message(self, chat_id: str, message_id: str) -> bool:
         """Return True for a repeated real provider ID; never use timestamps.
@@ -1233,61 +1210,9 @@ class ZaloAdapter(BasePlatformAdapter):
             logger.debug("Zalo: DM policy disabled; ignoring message from %s", user_id)
             return
 
-        # DM pairing approval flow (only for PRIVATE chats).
-        # The real approval is Hermes core pairing (`hermes pairing approve
-        # zalo_bot <code>`). The adapter code below is only a self-served captcha:
-        # it proves the requester can read the chat and cuts drive-by spam,
-        # it never grants access on its own. Captcha state is keyed by sender
-        # user id (not chat id) and bounded to MAX_PENDING_APPROVALS entries.
-        if self.dm_policy == "pairing" and user_id not in self._captcha_passed:
-            now = time.time()
-            blocked_until = self._pairing_blocks.get(user_id, 0)
-            if blocked_until > now:
-                logger.debug("Zalo: pairing temporarily locked for %s", user_id)
-                return
-            if blocked_until:
-                self._pairing_blocks.pop(user_id, None)
-
-            if user_id not in self._pending_approvals:
-                # First contact — generate a random captcha code
-                code = f"{secrets.randbelow(10**6):06d}"
-                self._add_pending_approval(user_id, chat_id, user_name, code)
-                await self._send_captcha_code(chat_id, code, user_name)
-                return
-
-            # Check if the message is the captcha code
-            approval = self._pending_approvals[user_id]
-            text = (message.get("text") or "").strip()
-            if approval.get("expires_at", 0) < now:
-                self._pending_approvals.pop(user_id, None)
-                self._captcha_passed.discard(user_id)
-                await self._send_text(chat_id, "⚠️ Mã xác thực đã hết hạn. Gửi tin nhắn bất kỳ để nhận mã mới.")
-                return
-            if text == approval["code"]:
-                # Captcha passed — mark and let the next message through.
-                self._captcha_passed.add(user_id)
-                self._pending_approvals.pop(user_id, None)
-                await self._send_text(chat_id, "✅ Xác thực thành công! Bạn có thể trò chuyện với bot.")
-                return
-
-            # Wrong answer: never echo the expected code back to the sender.
-            attempts = int(approval.get("attempts", 0)) + 1
-            approval["attempts"] = attempts
-            if attempts >= PAIRING_MAX_ATTEMPTS:
-                self._pending_approvals.pop(user_id, None)
-                self._pairing_blocks[user_id] = now + PAIRING_LOCKOUT_SECONDS
-                await self._send_text(
-                    chat_id,
-                    "⛔ Quá nhiều lần nhập sai. Vui lòng thử lại sau 15 phút.",
-                )
-            else:
-                await self._send_text(
-                    chat_id,
-                    "⚠️ Mã xác thực không đúng. Vui lòng thử lại.",
-                )
-            return
-
-        # Auth check
+        # DM authorization. Under "pairing", unknown senders pass this
+        # pre-filter and Hermes core pairing sends the pairing request; the
+        # adapter never runs its own approval flow.
         if not self._passes_allowlist(user_id):
             logger.info("Zalo: ignoring DM from user %s (not allowed by dm_policy); add this ID to allowed users", user_id)
             return
@@ -1560,21 +1485,6 @@ class ZaloAdapter(BasePlatformAdapter):
         except Exception as e:
             logger.error("Zalo: slash command error: %s", e)
             await self._send_text(chat_id, f"❌ Lỗi xử lý lệnh: {str(e)[:100]}")
-
-    async def _send_captcha_code(self, chat_id: str, code: str, user_name: str) -> None:
-        """Send the self-served captcha code to a new DM user.
-
-        This is NOT an approval: real access is granted by Hermes core
-        pairing (`hermes pairing approve zalo_bot <code>`).
-        """
-        welcome = (
-            f"Xin chào {user_name}! 👋\n\n"
-            f"Để bắt đầu trò chuyện với bot, "
-            f"vui lòng gửi mã xác thực sau:\n\n"
-            f"**{code}**\n\n"
-            f"Mã có hiệu lực trong 1 giờ."
-        )
-        await self._send_text(chat_id, welcome)
 
     def _is_user_authorized(self, user_id: str) -> bool:
         """Check if a user may run adapter-handled commands (default deny)."""

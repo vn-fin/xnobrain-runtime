@@ -32,6 +32,21 @@ _TYPING_INTERVAL_SECONDS = 4.0
 _DELEGATION_TIMEOUT_GRACE_SECONDS = 60.0
 _DELEGATION_FAILURE_TEXT = "This message could not be completed right now. Please retry shortly."
 
+# Pinned upstream pairing replies (gateway/run.py) start with these prefixes.
+PAIRING_REQUEST_TEXT_PREFIX = "Hi~ I don't recognize you yet!"
+PAIRING_REQUEST_REPLY = (
+    "Xin chào! Bot chưa nhận ra bạn.\n"
+    "Yêu cầu trò chuyện của bạn đã được gửi tới chủ bot. "
+    "Bạn sẽ nhắn được ngay khi chủ bot duyệt.\n\n"
+    "Hello! Your request to chat has been sent to the bot owner. "
+    "You can chat as soon as it is approved."
+)
+PAIRING_LIMIT_TEXT_PREFIX = "Too many pairing requests right now"
+PAIRING_LIMIT_REPLY = (
+    "Hiện có quá nhiều yêu cầu đang chờ duyệt. Vui lòng thử lại sau.\n\n"
+    "Too many requests are waiting for approval. Please try again later."
+)
+
 
 class _DelegationAttempted(Exception):
     """The request may have reached Runtime; native execution is unsafe."""
@@ -70,6 +85,66 @@ def install_gateway_log_redaction() -> None:
         return
     logger.addFilter(_GatewayIngressRedaction())
     logger._xnobrain_ingress_redaction = True
+
+
+def _rewrite_pairing_message(text):
+    """Replace the pinned gateway's pairing replies, leaving other text alone."""
+    if not isinstance(text, str):
+        return text
+    if text.startswith(PAIRING_REQUEST_TEXT_PREFIX):
+        return PAIRING_REQUEST_REPLY
+    if text.startswith(PAIRING_LIMIT_TEXT_PREFIX):
+        return PAIRING_LIMIT_REPLY
+    return text
+
+
+def _install_pairing_message_rewrite(adapter):
+    """Wrap one adapter instance's ``send`` so plugin adapters are covered."""
+    if adapter is None or getattr(adapter, "_xnobrain_pairing_send_rewrite", False):
+        return adapter
+    original_send = getattr(adapter, "send", None)
+    if not callable(original_send):
+        return adapter
+
+    async def rewritten_send(*args, **kwargs):
+        if "text" in kwargs:
+            kwargs["text"] = _rewrite_pairing_message(kwargs["text"])
+        elif "content" in kwargs:
+            kwargs["content"] = _rewrite_pairing_message(kwargs["content"])
+        elif len(args) >= 2:
+            args = (args[0], _rewrite_pairing_message(args[1]), *args[2:])
+        return await original_send(*args, **kwargs)
+
+    try:
+        adapter.send = rewritten_send
+        adapter._xnobrain_pairing_send_rewrite = True
+    except Exception:
+        return adapter
+    return adapter
+
+
+def install_gateway_pairing_messages() -> None:
+    """Rewrite pinned gateway pairing replies without modifying upstream.
+
+    The pairing flow resolves its adapter through ``_adapter_for_source`` and
+    calls ``adapter.send``. Wrapping the resolved adapter instance covers
+    platform subclasses that override ``send`` (for example ``zalo_bot``),
+    which a ``BasePlatformAdapter.send`` patch would miss.
+    """
+    try:
+        from gateway.run import GatewayRunner
+    except Exception:
+        _LOGGER.warning("gateway pairing message rewrite unavailable: gateway import failed")
+        return
+    if getattr(GatewayRunner, "_xnobrain_pairing_messages", False):
+        return
+    original = GatewayRunner._adapter_for_source
+
+    def adapter_for_source(runner, source):
+        return _install_pairing_message_rewrite(original(runner, source))
+
+    GatewayRunner._adapter_for_source = adapter_for_source
+    GatewayRunner._xnobrain_pairing_messages = True
 
 
 def _current_profile():
@@ -397,6 +472,7 @@ def main():
         # every multiplexed per-turn scope see the workspace Router key.
         install_workspace_router_key_scope()
         install_gateway_log_redaction()
+        install_gateway_pairing_messages()
         from .hermes_pairings import install_gateway_pairing_locking
 
         install_gateway_pairing_locking()
