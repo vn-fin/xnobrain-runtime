@@ -187,18 +187,25 @@ class ExtensionAPITests(unittest.IsolatedAsyncioTestCase):
             "failures": 3,
         }
         self.addCleanup(managed_mcp._CUSTOM_STATUS.pop, key, None)
+        loop_thread = threading.get_ident()
+        refresh_threads = []
         with (
             patch.object(control_grants, "set") as set_grant,
-            patch.object(extension_engine, "refresh_profile_mcp") as refresh,
+            patch.object(
+                extension_engine,
+                "refresh_profile_mcp",
+                side_effect=lambda _profile: refresh_threads.append(threading.get_ident()),
+            ) as refresh,
         ):
             response = await self.client.post(
                 f"{API_PREFIX}/agents-plugins/research/mcp/reconnect",
                 headers={**self.headers(), "X-XNOBrain-MCP-Grant": "fresh-grant"},
             )
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 200, response.text)
         set_grant.assert_called_once()
         self.assertEqual(set_grant.call_args.args[1], "fresh-grant")
         refresh.assert_called_once()
+        self.assertNotEqual(refresh_threads, [loop_thread])
         self.assertNotIn("retry_after", managed_mcp._CUSTOM_STATUS[key])
         self.assertNotIn("failures", managed_mcp._CUSTOM_STATUS[key])
 
