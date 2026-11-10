@@ -727,7 +727,14 @@ def sync_profile_mcp(
             ]
             for key, task in existing_items:
                 target = desired.get(key)
-                if target is None or task._config_digest != target[0]:
+                # A control-proxied task parked after its run grant was unbound
+                # cannot authenticate this run, so rebuild it under the new grant.
+                parked_without_grant = (
+                    task._control_proxy
+                    and task.session is None
+                    and getattr(task, "_was_parked", False)
+                )
+                if target is None or task._config_digest != target[0] or parked_without_grant:
                     _MANAGED_TASKS.pop(key, None)
                     _stop_task(task)
             for key in [key for key in _CUSTOM_STATUS if key[0] == scope]:

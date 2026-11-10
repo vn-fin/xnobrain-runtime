@@ -328,6 +328,77 @@ class ManagedMCPTests(unittest.TestCase):
         status = managed_mcp.profile_mcp_status(profile, generation)
         self.assertEqual(status["xnobrain-linear"]["status"], "needs_sign_in")
 
+    def test_parked_control_proxy_task_is_rebuilt_for_a_new_run(self):
+        from xnobrain.integrations import control_grants
+
+        sessions, starts = {}, []
+        profile = self.profiles[0]
+        generation = self.generations[0]
+        connection_id = "8b1a8e93-748b-46b0-8d97-d4d2c7a6b221"
+        catalog = {
+            "xnobrain-notion": {
+                "url": f"http://control.internal/xnobrain/api/control/internal/v1/mcp/{connection_id}",
+                "xnobrain_connection_id": connection_id,
+            }
+        }
+        key = managed_mcp._task_key(
+            managed_mcp._profile_scope(profile), generation, "xnobrain-notion"
+        )
+        with (
+            patch.dict(os.environ, {"RUNTIME_CONTROL_URL": "http://control.internal"}),
+            self._custom_patches(sessions, starts),
+        ):
+            self.assertEqual(
+                managed_mcp.sync_profile_mcp(profile, generation, catalog),
+                {"connected": ["xnobrain-notion"]},
+            )
+            parked = managed_mcp._MANAGED_TASKS[key]
+            self.assertEqual(len(starts), 1)
+
+            # The parked self-probe reconnected without the run grant and lost
+            # its tools; the saved config digest is unchanged.
+            parked.session = None
+            parked._registered_tool_names = []
+            parked._was_parked = True
+
+            with control_grants.bind_run(profile, "short-lived-run-grant"):
+                result = managed_mcp.sync_profile_mcp(profile, generation, catalog)
+
+            self.assertEqual(result, {"connected": ["xnobrain-notion"]})
+            self.assertEqual(len(starts), 2)
+            self.assertIsNot(managed_mcp._MANAGED_TASKS[key], parked)
+
+    def test_reconnecting_control_proxy_task_is_not_replaced(self):
+        sessions, starts = {}, []
+        profile = self.profiles[0]
+        generation = self.generations[0]
+        connection_id = "8b1a8e93-748b-46b0-8d97-d4d2c7a6b221"
+        catalog = {
+            "xnobrain-notion": {
+                "url": f"http://control.internal/xnobrain/api/control/internal/v1/mcp/{connection_id}",
+                "xnobrain_connection_id": connection_id,
+            }
+        }
+        key = managed_mcp._task_key(
+            managed_mcp._profile_scope(profile), generation, "xnobrain-notion"
+        )
+        with (
+            patch.dict(os.environ, {"RUNTIME_CONTROL_URL": "http://control.internal"}),
+            self._custom_patches(sessions, starts),
+        ):
+            managed_mcp.sync_profile_mcp(profile, generation, catalog)
+            reconnecting = managed_mcp._MANAGED_TASKS[key]
+
+            # No live session yet, but the task is still reconnecting rather
+            # than parked after an auth failure.
+            reconnecting.session = None
+
+            result = managed_mcp.sync_profile_mcp(profile, generation, catalog)
+
+            self.assertEqual(result, {"connected": []})
+            self.assertEqual(len(starts), 1)
+            self.assertIs(managed_mcp._MANAGED_TASKS[key], reconnecting)
+
     def test_api_key_catalog_failure_still_raises(self):
         profile = self.profiles[0]
         generation = self.generations[0]
