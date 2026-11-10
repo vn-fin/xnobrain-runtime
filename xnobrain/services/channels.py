@@ -1028,7 +1028,10 @@ class ChannelsService:
         return True
 
     def _gateway_state(self) -> dict[str, Any]:
-        pid = self.repository.gateway_pid(self._root_profile())
+        root = self._root_profile()
+        pid = self.repository.gateway_pid(root)
+        if pid is None:
+            pid = self.repository.gateway_state_pid(root)
         running = self._pid_alive(pid)
         record = self.repository.gateway_restart()
         pending = bool(record and pid is not None and int(record["pid"]) == pid)

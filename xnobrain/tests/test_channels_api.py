@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import os
 import tempfile
 import unittest
@@ -352,6 +353,90 @@ class ChannelWriteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.service.repository.gateway_pid(self.root), 111)
         self.root.joinpath("gateway.pid").write_text("444\n", encoding="utf-8")
         self.assertEqual(self.service.repository.gateway_pid(self.root), 444)
+
+    def _write_gateway_state(self, **overrides):
+        record = {
+            "kind": "hermes-gateway",
+            "pid": 111,
+            "gateway_state": "running",
+        }
+        record.update(overrides)
+        self.root.joinpath("gateway_state.json").write_text(
+            json.dumps(record), encoding="utf-8"
+        )
+
+    @staticmethod
+    def _current_start_time():
+        stat = Path(f"/proc/{os.getpid()}/stat").read_text(encoding="utf-8")
+        return int(stat[stat.rindex(")") + 1 :].split()[19])
+
+    def test_gateway_pid_file_wins_over_gateway_state(self):
+        self._write_gateway_state(pid=222)
+
+        gateway = self.service._gateway_state()
+
+        self.assertTrue(gateway["running"])
+        self.assertEqual(gateway["pid"], 111)
+
+    def test_missing_pid_file_uses_a_running_gateway_state(self):
+        self.root.joinpath("gateway.pid").unlink()
+        self._write_gateway_state(pid=222, gateway_state="running")
+
+        gateway = self.service._gateway_state()
+
+        self.assertTrue(gateway["running"])
+        self.assertEqual(gateway["pid"], 222)
+
+    def test_gateway_state_stopped_is_not_running(self):
+        self.root.joinpath("gateway.pid").unlink()
+        self._write_gateway_state(pid=222, gateway_state="stopped")
+
+        gateway = self.service._gateway_state()
+
+        self.assertFalse(gateway["running"])
+        self.assertIsNone(gateway["pid"])
+
+    def test_gateway_state_wrong_kind_is_not_running(self):
+        self.root.joinpath("gateway.pid").unlink()
+        self._write_gateway_state(pid=222, kind="gateway")
+
+        gateway = self.service._gateway_state()
+
+        self.assertFalse(gateway["running"])
+        self.assertIsNone(gateway["pid"])
+
+    def test_gateway_state_start_time_mismatch_is_not_running(self):
+        pid = os.getpid()
+        self.root.joinpath("gateway.pid").unlink()
+        self._write_gateway_state(
+            pid=pid,
+            start_time=self._current_start_time() + 1,
+        )
+
+        gateway = self.service._gateway_state()
+
+        self.assertFalse(gateway["running"])
+        self.assertIsNone(gateway["pid"])
+
+    def test_symlinked_gateway_state_is_ignored(self):
+        target = self.root / "other-state.json"
+        target.write_text(
+            json.dumps(
+                {
+                    "kind": "hermes-gateway",
+                    "pid": 222,
+                    "gateway_state": "running",
+                }
+            ),
+            encoding="utf-8",
+        )
+        self.root.joinpath("gateway.pid").unlink()
+        os.symlink(target, self.root / "gateway_state.json")
+
+        gateway = self.service._gateway_state()
+
+        self.assertFalse(gateway["running"])
+        self.assertIsNone(gateway["pid"])
 
 
 if __name__ == "__main__":

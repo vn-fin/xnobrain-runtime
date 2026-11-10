@@ -248,6 +248,51 @@ class ChannelsRepository:
             return None
         return pid if 1 < pid < 2**31 else None
 
+    @staticmethod
+    def _process_start_time(pid: int) -> int | None:
+        """Return field 22 of ``/proc/<pid>/stat``, or None when unreadable."""
+        try:
+            stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
+            fields = stat[stat.rindex(")") + 1 :].split()
+            return int(fields[19])
+        except (OSError, ValueError, IndexError):
+            return None
+
+    @classmethod
+    def gateway_state_pid(cls, root: Any) -> int | None:
+        """Read a gateway PID from ``gateway_state.json`` as a conservative fallback.
+
+        ``gateway.pid`` is authoritative, but a service manager can leave a live
+        gateway with a fresh status record and no PID file. Accept the record
+        only when it still names this gateway, is not stopped or failed, and,
+        when available, its live ``start_time`` still matches.
+        """
+        path = Path(root) / GATEWAY_STATE_FILE
+        if path.is_symlink() or not path.is_file():
+            return None
+        try:
+            value = json.loads(cls._read_text(path))
+        except (ValueError, TypeError, StoreError):
+            return None
+        if not isinstance(value, dict):
+            return None
+        if value.get("kind") != "hermes-gateway":
+            return None
+        if value.get("gateway_state") in (None, "stopped", "startup_failed"):
+            return None
+        try:
+            pid = int(value.get("pid"))
+        except (TypeError, ValueError):
+            return None
+        if not 1 < pid < 2**31:
+            return None
+        recorded_start = value.get("start_time")
+        if recorded_start is not None:
+            current_start = cls._process_start_time(pid)
+            if current_start is not None and current_start != recorded_start:
+                return None
+        return pid
+
     def gateway_platform_state(self, root: Any, platform: str) -> str | None:
         """Read the last persisted per-platform state from ``gateway_state.json``."""
         path = Path(root) / GATEWAY_STATE_FILE
