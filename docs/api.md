@@ -749,6 +749,13 @@ removes it and disables the channel. Bot user IDs for `allowed_users` and
 only `disabled`, `allowlist`, and `pairing` are accepted, matching the adapter's
 safe subset.
 
+| Error | Condition |
+|---|---|
+| `409 bot_token_in_use` | The submitted `bot_token` is already stored by another agent profile in the workspace. |
+
+Re-submitting an agent's own token and clearing it with `null` remain valid.
+The `409` response never echoes the token value.
+
 Writes atomically update `platforms.zalo_bot.enabled`,
 `platforms.zalo_bot.extra.dm_policy`, and the `.env` keys
 `ZALO_BOT_ALLOWED_USERS` and `ZALO_BOT_HOME_CHANNEL`, snapshot `config.yaml`

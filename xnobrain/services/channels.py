@@ -990,6 +990,34 @@ class ChannelsService:
         value = str(self.repository.env(profile).get(_BOT_TOKEN_ENV) or "").strip()
         return value or None
 
+    def _bot_token_in_use(self, token: str, profile: Path) -> bool:
+        """Return whether another profile in this workspace polls this token."""
+        root = self._root_profile()
+        target = Path(profile).resolve()
+        candidates: list[Path] = [] if root == target else [root]
+        profiles_root = Path(self.platform.repository.profiles_root)
+        if profiles_root.is_dir():
+            for entry in sorted(profiles_root.iterdir(), key=lambda item: item.name):
+                if not entry.is_dir() or entry.is_symlink():
+                    continue
+                if entry.name in {root.name, "default"}:
+                    continue
+                try:
+                    resolved = entry.resolve()
+                except Exception:
+                    continue
+                if resolved == root or resolved == target:
+                    continue
+                candidates.append(entry)
+        for candidate in candidates:
+            try:
+                stored = self._read_bot_token(candidate)
+            except Exception:
+                continue
+            if stored and hmac.compare_digest(stored, token):
+                return True
+        return False
+
     def _write_bot_token(self, profile: Path, token: str | None) -> None:
         """Temporary profile-local token storage; a Control proxy replaces it."""
         self.repository.update_env(profile, {_BOT_TOKEN_ENV: token})
@@ -1403,6 +1431,12 @@ class ChannelsService:
                         "bot_token is invalid",
                         status=422,
                         code="invalid_bot_token",
+                    )
+                if self._bot_token_in_use(token, profile):
+                    raise ServiceError(
+                        "bot_token is already used by another agent",
+                        status=409,
+                        code="bot_token_in_use",
                     )
                 env_updates[_BOT_TOKEN_ENV] = token
         if "allowed_users" in body:

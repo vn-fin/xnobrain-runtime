@@ -216,6 +216,38 @@ class ZaloBotChannelTests(unittest.IsolatedAsyncioTestCase):
         env = (self.profile / ".env").read_text(encoding="utf-8")
         self.assertNotIn("ZALO_BOT_TOKEN", env)
 
+    def test_token_used_by_another_agent_is_rejected(self):
+        second = self.profiles / "agent-2"
+        second.mkdir()
+        self.service.patch_zalo_bot("agent-1", {"bot_token": TOKEN})
+
+        with self.assertRaises(ServiceError) as raised:
+            self.service.patch_zalo_bot("agent-2", {"bot_token": TOKEN})
+
+        self.assertEqual(raised.exception.status, 409)
+        self.assertEqual(raised.exception.code, "bot_token_in_use")
+        self.assertNotIn(TOKEN, str(raised.exception))
+        self.assertIsNone(self.service.repository.env(second).get("ZALO_BOT_TOKEN"))
+
+    def test_same_agent_may_resubmit_its_own_token(self):
+        self.service.patch_zalo_bot("agent-1", {"bot_token": TOKEN})
+
+        state = self.service.patch_zalo_bot("agent-1", {"bot_token": TOKEN})
+
+        self.assertTrue(state["token_set"])
+        env = (self.profile / ".env").read_text(encoding="utf-8")
+        self.assertIn(f"ZALO_BOT_TOKEN={TOKEN}", env)
+
+    def test_token_on_the_root_profile_blocks_another_agent(self):
+        self.service.patch_zalo_bot("big-brother", {"bot_token": TOKEN})
+
+        with self.assertRaises(ServiceError) as raised:
+            self.service.patch_zalo_bot("agent-1", {"bot_token": TOKEN})
+
+        self.assertEqual(raised.exception.status, 409)
+        self.assertEqual(raised.exception.code, "bot_token_in_use")
+        self.assertIsNone(self.service.repository.env(self.profile).get("ZALO_BOT_TOKEN"))
+
     def test_logout_clears_token_and_disables_the_channel(self):
         self.service.set_zalo_bot_enabled("agent-1", True)
         self.service.patch_zalo_bot("agent-1", {"bot_token": TOKEN})
@@ -364,6 +396,22 @@ class ZaloBotChannelTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(enabled_response.status_code, 200)
         self.assertEqual(valid_response.status_code, 200)
         self.assertTrue(valid_response.json()["data"]["token_set"])
+
+    async def test_duplicate_token_error_never_echoes_the_token(self):
+        second = self.profiles / "agent-2"
+        second.mkdir()
+        self.service.patch_zalo_bot("agent-1", {"bot_token": TOKEN})
+        app = FastAPI()
+        setup_routes(app, APIHandlers(mock.Mock(channels=self.service)))
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.patch(
+                f"{API_PREFIX}/agents/agent-2/channels/zalo_bot",
+                json={"bot_token": TOKEN},
+            )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["error"]["code"], "bot_token_in_use")
+        self.assertNotIn(TOKEN, response.text)
 
     async def test_open_dm_policy_is_rejected_by_the_api(self):
         app = FastAPI()
