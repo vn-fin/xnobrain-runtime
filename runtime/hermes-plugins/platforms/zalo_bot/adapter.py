@@ -1080,7 +1080,8 @@ class ZaloAdapter(BasePlatformAdapter):
         user_id = str(from_info.get("id", ""))
         user_name = from_info.get("display_name", user_id)
         chat_id = str(chat_info.get("id", user_id))
-        chat_type = chat_info.get("chat_type", "PRIVATE")
+        # Hermes only offers pairing codes for chat_type "dm"; Zalo sends "PRIVATE".
+        chat_type = "group" if chat_info.get("chat_type") == "GROUP" else "dm"
         raw_text = (message.get("text") or message.get("caption") or "").strip()
         message_id = str(message.get("message_id") or update_id or "").strip()
 
@@ -1127,7 +1128,7 @@ class ZaloAdapter(BasePlatformAdapter):
             text = "[Unsupported message type]"
 
         # ── Group message handling ──────────────────────────────────────
-        is_group = chat_type == "GROUP"
+        is_group = chat_type == "group"
         if is_group:
             settings = self._group_settings.get(chat_id)
 

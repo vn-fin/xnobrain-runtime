@@ -308,6 +308,8 @@ class ZaloBotHardeningTests(unittest.IsolatedAsyncioTestCase):
         await adapter._handle_incoming("", self._dm_message(text="hello"))
         self.assertEqual(len(dispatched), 1)
         self.assertEqual(dispatched[0].text, "hello")
+        # Hermes core pairing only answers chat_type "dm".
+        self.assertEqual(dispatched[0].source.chat_type, "dm")
 
     async def test_wrong_captcha_never_leaks_code_and_locks_after_max(self):
         adapter = self._adapter(bot_token="1:secret", dm_policy="pairing", allow_all="true")
