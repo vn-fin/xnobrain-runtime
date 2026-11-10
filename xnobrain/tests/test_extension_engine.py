@@ -694,6 +694,13 @@ class ExtensionEngineTests(unittest.TestCase):
             with patch.dict(os.environ, {"XNOBRAIN_REQUIRED_PLUGINS_DIR": str(packaged)}):
                 validate_profile_extensions(profile)
             self.assertFalse(cache.exists())
+            # A build can also copy caches into the read-only packaged source.
+            packaged_cache = source / "__pycache__"
+            packaged_cache.mkdir()
+            (packaged_cache / "__init__.cpython-311.pyc").write_bytes(b"build")
+            with patch.dict(os.environ, {"XNOBRAIN_REQUIRED_PLUGINS_DIR": str(packaged)}):
+                validate_profile_extensions(profile)
+            self.assertTrue(packaged_cache.exists())
 
     def test_approved_shell_hooks_fire_only_in_their_profile_and_stop_when_removed(self):
         from hermes_cli.plugins import get_plugin_manager

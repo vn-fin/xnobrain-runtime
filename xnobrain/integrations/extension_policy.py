@@ -312,7 +312,7 @@ def prune_plugin_artifact(path: Path) -> list[str]:
     return removed
 
 
-def tree_digest(path: Path) -> str:
+def tree_digest(path: Path, *, ignore_bytecode: bool = False) -> str:
     if not path.is_dir() or path.is_symlink():
         fail("Plugin artifact is unavailable", "plugin_not_found", 404)
     digest = hashlib.sha256()
@@ -320,7 +320,7 @@ def tree_digest(path: Path) -> str:
     files = 0
     for item in sorted(path.rglob("*")):
         relative = item.relative_to(path)
-        if ".git" in relative.parts:
+        if ".git" in relative.parts or (ignore_bytecode and "__pycache__" in relative.parts):
             continue
         info = item.lstat()
         if stat.S_ISLNK(info.st_mode):
@@ -359,7 +359,8 @@ def trusted_required(profile: Path, name: str) -> bool:
     for cache in list(actual.rglob("__pycache__")):
         if cache.is_dir() and not cache.is_symlink():
             shutil.rmtree(cache)
-    return tree_digest(actual) == tree_digest(expected)
+    # The packaged copy is read-only and may carry build-time caches.
+    return tree_digest(actual) == tree_digest(expected, ignore_bytecode=True)
 
 
 def read_config(profile: Path) -> dict[str, Any]:
