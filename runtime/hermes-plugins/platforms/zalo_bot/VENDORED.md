@@ -111,6 +111,12 @@ Security hardening applied on top of the vendored upstream code on 2026-11-09:
     - `adapter.py`: webhook mode reuses `_handle_incoming()` and the same
       bounded dedupe set as polling, including `update_id` when the message
       itself carries no ID.
+11. Group slash-command and empty-text handling.
+    - `adapter.py`: after the bot mention is stripped in a group, a remaining
+      adapter `SLASH_COMMANDS` command is still handled, but any other text
+      that starts with `/` is dropped because Hermes slash commands are
+      DM-only. Empty text after mention stripping is also dropped so a group
+      message can never fall back to the native gateway agent.
 
 Focused regression tests live in
 `xnobrain/tests/test_zalo_bot_plugin_hardening.py`.

@@ -14,6 +14,8 @@ from .base import StoreError
 ZALO_DIR = "zalo"
 LINKS_FILE = "links.json"
 THREADS_FILE = "threads.json"
+GROUPS_FILE = "groups.json"
+GROUP_USAGE_FILE = "group_usage.json"
 HISTORY_FILE = "history.jsonl"
 DIRECTORY_FILE = "channel_directory.json"
 SESSION_FILE = "session.json"
@@ -27,9 +29,42 @@ OWNER_CHANNEL_DIR = "channels"
 MAX_STATE_BYTES = 2 * 1024 * 1024
 MAX_QR_BYTES = 4 * 1024 * 1024
 MAX_HISTORY_LINES = 5000
+DEFAULT_GROUP_DAILY_LIMIT = 20
+MAX_GROUP_DAILY_LIMIT = 1000
+MAX_PENDING_GROUP_REQUESTS = 20
+MAX_GROUP_COUNTED_MESSAGE_IDS = 2000
+_GROUP_STATUSES = {"pending", "approved"}
 _ENV_LINE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$")
 _ENV_KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _OWNER_VALUE = re.compile(r"^[^\x00-\x1f/\\]{1,200}$")
+
+
+def _group_timestamp(value: Any) -> float:
+    """Return one non-negative persisted epoch timestamp, or ``0``."""
+    try:
+        timestamp = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if timestamp < 0 or timestamp != timestamp or timestamp == float("inf"):
+        return 0.0
+    return timestamp
+
+
+def _group_label(value: Any) -> str:
+    """Collapse an untrusted display name to one bounded single line."""
+    return " ".join(str(value or "").split())[:100]
+
+
+def _group_daily_limit(value: Any) -> int:
+    if isinstance(value, bool):
+        return DEFAULT_GROUP_DAILY_LIMIT
+    try:
+        limit = int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_GROUP_DAILY_LIMIT
+    if not 0 <= limit <= MAX_GROUP_DAILY_LIMIT:
+        return DEFAULT_GROUP_DAILY_LIMIT
+    return limit
 
 
 class ChannelsRepository:
@@ -625,6 +660,182 @@ class ChannelsRepository:
             mode=0o600,
         )
         return record
+
+    @classmethod
+    def _normalize_group_state(cls, value: Any) -> dict[str, Any]:
+        """Return the platform-keyed group approval state without bad rows."""
+        platforms: dict[str, Any] = {}
+        raw_platforms = value.get("platforms") if isinstance(value, dict) else None
+        if isinstance(raw_platforms, dict):
+            for platform, record in raw_platforms.items():
+                if not isinstance(platform, str) or not isinstance(record, dict):
+                    continue
+                raw_groups = record.get("groups")
+                groups: dict[str, Any] = {}
+                if isinstance(raw_groups, dict):
+                    for group_id, entry in raw_groups.items():
+                        if not isinstance(entry, dict):
+                            continue
+                        status = str(entry.get("status") or "").strip().lower()
+                        if status not in _GROUP_STATUSES:
+                            continue
+                        name = _group_label(entry.get("name"))
+                        groups[str(group_id)] = {
+                            "status": status,
+                            "name": name,
+                            "last_sender_name": _group_label(entry.get("last_sender_name")),
+                            "first_seen": _group_timestamp(entry.get("first_seen")),
+                            "last_seen": _group_timestamp(entry.get("last_seen")),
+                            "approved_at": (
+                                _group_timestamp(entry.get("approved_at"))
+                                if status == "approved"
+                                else None
+                            ),
+                        }
+                platforms[platform] = {
+                    "daily_limit": _group_daily_limit(record.get("daily_limit")),
+                    "groups": groups,
+                }
+        return {"schema_version": 1, "platforms": platforms}
+
+    def groups(self, profile: Any) -> dict[str, Any]:
+        """Read the persisted per-platform group approval state."""
+        _, directory = self._zalo_dir(profile)
+        if directory is None:
+            return {"schema_version": 1, "platforms": {}}
+        path = directory / GROUPS_FILE
+        if not path.exists():
+            return {"schema_version": 1, "platforms": {}}
+        try:
+            value = json.loads(self._read_text(path))
+        except (ValueError, TypeError) as error:
+            raise StoreError(
+                "agent channel groups are invalid",
+                status=500,
+                code="channel_groups_invalid",
+            ) from error
+        return self._normalize_group_state(value)
+
+    def write_groups(self, profile: Any, value: Mapping[str, Any]) -> None:
+        _, directory = self._zalo_dir(profile, create=True)
+        if directory is None:
+            raise StoreError(
+                "agent channel directory is unavailable",
+                status=500,
+                code="channel_state_unavailable",
+            )
+        path = directory / GROUPS_FILE
+        if path.is_symlink():
+            raise StoreError(
+                "agent channel groups are unsafe",
+                status=400,
+                code="channel_path_unsafe",
+            )
+        self.base.atomic_write(
+            path,
+            (
+                json.dumps(
+                    self._normalize_group_state(value),
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+                + "\n"
+            ).encode("utf-8"),
+            mode=0o600,
+        )
+
+    @classmethod
+    def _normalize_group_usage(cls, value: Any) -> dict[str, Any]:
+        """Return today's bounded per-platform group counters."""
+        platforms: dict[str, Any] = {}
+        raw_platforms = value.get("platforms") if isinstance(value, dict) else None
+        if isinstance(raw_platforms, dict):
+            for platform, record in raw_platforms.items():
+                if not isinstance(platform, str) or not isinstance(record, dict):
+                    continue
+                counts: dict[str, dict[str, int]] = {}
+                raw_counts = record.get("counts")
+                if isinstance(raw_counts, dict):
+                    for group_id, senders in raw_counts.items():
+                        if not isinstance(senders, dict):
+                            continue
+                        normalized: dict[str, int] = {}
+                        for sender_id, count in senders.items():
+                            if isinstance(count, bool):
+                                continue
+                            try:
+                                number = int(count)
+                            except (TypeError, ValueError):
+                                continue
+                            if number > 0:
+                                normalized[str(sender_id)] = number
+                        if normalized:
+                            counts[str(group_id)] = normalized
+                message_ids: dict[str, list[str]] = {}
+                raw_ids = record.get("message_ids")
+                if isinstance(raw_ids, dict):
+                    for key, values in raw_ids.items():
+                        if not isinstance(values, (list, tuple)):
+                            continue
+                        cleaned = [
+                            str(item)
+                            for item in values
+                            if isinstance(item, str) and item
+                        ][-MAX_GROUP_COUNTED_MESSAGE_IDS:]
+                        if cleaned:
+                            message_ids[str(key)] = cleaned
+                platforms[platform] = {
+                    "date": str(record.get("date") or ""),
+                    "counts": counts,
+                    "message_ids": message_ids,
+                }
+        return {"schema_version": 1, "platforms": platforms}
+
+    def group_usage(self, profile: Any) -> dict[str, Any]:
+        """Read the persisted per-platform daily group usage."""
+        _, directory = self._zalo_dir(profile)
+        if directory is None:
+            return {"schema_version": 1, "platforms": {}}
+        path = directory / GROUP_USAGE_FILE
+        if not path.exists():
+            return {"schema_version": 1, "platforms": {}}
+        try:
+            value = json.loads(self._read_text(path))
+        except (ValueError, TypeError) as error:
+            raise StoreError(
+                "agent channel group usage is invalid",
+                status=500,
+                code="channel_group_usage_invalid",
+            ) from error
+        return self._normalize_group_usage(value)
+
+    def write_group_usage(self, profile: Any, value: Mapping[str, Any]) -> None:
+        _, directory = self._zalo_dir(profile, create=True)
+        if directory is None:
+            raise StoreError(
+                "agent channel directory is unavailable",
+                status=500,
+                code="channel_state_unavailable",
+            )
+        path = directory / GROUP_USAGE_FILE
+        if path.is_symlink():
+            raise StoreError(
+                "agent channel group usage is unsafe",
+                status=400,
+                code="channel_path_unsafe",
+            )
+        self.base.atomic_write(
+            path,
+            (
+                json.dumps(
+                    self._normalize_group_usage(value),
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+                + "\n"
+            ).encode("utf-8"),
+            mode=0o600,
+        )
 
     def history(self, profile: Any) -> list[dict[str, Any]]:
         _, directory = self._zalo_dir(profile)

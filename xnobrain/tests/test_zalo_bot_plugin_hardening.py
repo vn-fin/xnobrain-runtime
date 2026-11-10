@@ -376,6 +376,75 @@ class ZaloBotHardeningTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(dispatched), 2)
         self.assertEqual(dispatched[0].message_id, "")
 
+    # ── Group slash commands and empty mentions ───────────────────────
+
+    @staticmethod
+    def _group_message(text, group_id="group-1", user_id="user1", message_id="group-msg-1"):
+        return {
+            "from": {"id": user_id, "display_name": "User"},
+            "chat": {"id": group_id, "chat_type": "GROUP"},
+            "text": text,
+            "message_id": message_id,
+        }
+
+    async def test_hermes_slash_command_is_dropped_after_mention(self):
+        adapter = self._adapter(bot_token="1:secret", dm_policy="pairing")
+        adapter._bot_name = "TestBot"
+        dispatched = []
+
+        async def handler(event):
+            dispatched.append(event)
+
+        adapter._message_handler = handler
+
+        await adapter._handle_incoming(
+            "", self._group_message("@TestBot /model x")
+        )
+        await adapter._handle_incoming(
+            "",
+            self._group_message(
+                "@TestBot /new", user_id="user2", message_id="group-msg-2"
+            ),
+        )
+
+        self.assertEqual(dispatched, [])
+
+    async def test_adapter_slash_command_is_still_handled_in_groups(self):
+        adapter = self._adapter(
+            bot_token="1:secret", dm_policy="pairing", allow_all="true"
+        )
+        adapter._bot_name = "TestBot"
+        dispatched = []
+        handled = []
+
+        async def handler(event):
+            dispatched.append(event)
+
+        async def slash(slash_command, *args):
+            handled.append(slash_command["command"])
+
+        adapter._message_handler = handler
+        adapter._handle_slash_command = slash
+
+        await adapter._handle_incoming("", self._group_message("@TestBot /menu"))
+
+        self.assertEqual(handled, ["/menu"])
+        self.assertEqual(dispatched, [])
+
+    async def test_empty_mention_is_not_dispatched(self):
+        adapter = self._adapter(bot_token="1:secret", dm_policy="pairing")
+        adapter._bot_name = "TestBot"
+        dispatched = []
+
+        async def handler(event):
+            dispatched.append(event)
+
+        adapter._message_handler = handler
+
+        await adapter._handle_incoming("", self._group_message("@TestBot   "))
+
+        self.assertEqual(dispatched, [])
+
     # ── M1: config type coercion ──────────────────────────────────────
 
     def test_string_config_is_coerced(self):

@@ -808,6 +808,57 @@ the same lock wrapper around `generate_code`, `approve_code`,
 constructor's split-directory migration before the pinned gateway starts; no
 vendor source is edited.
 
+### Zalo Bot group approval and daily limits
+
+Group approval is available only for the `zalo_bot` platform and is gated by
+the same feature flag, enabled-channel check, and verified same-agent Personal
+owner binding as pairing management. Group approval is always required: a
+sender who is DM-paired with this agent still cannot chat in an unapproved
+group. Once approved, every member of that group may chat with the bot.
+
+| Method and path | Body | Result |
+|---|---|---|
+| `GET /xnobrain/api/runtime/v1/agents/{agent_id}/channels/{platform}/groups` | — | `ChannelGroupListResult` |
+| `POST .../channels/{platform}/groups/approve` | `{group_id}` | `ChannelGroupApproveResult` |
+| `POST .../channels/{platform}/groups/deny` | `{group_id}` | `ChannelGroupDenyResult` |
+| `POST .../channels/{platform}/groups/revoke` | `{group_id}` | `ChannelGroupRevokeResult` |
+| `POST .../channels/{platform}/groups/settings` | `{daily_limit}` | `ChannelGroupSettingsResult` |
+
+`group_id` uses the Zalo Bot ID pattern `^[A-Za-z0-9_-]{1,64}$`. Group and
+sender names are collapsed to one line and truncated to 100 characters before
+they are stored or returned. `platform` other than `zalo_bot` returns
+`422 invalid_platform`. `approve` promotes an existing pending entry and
+returns `404 channel_group_not_found` when the group is not pending; `deny`
+removes only the pending entry with the same missing error; `revoke` removes
+an approved group and is idempotent, returning `status: "revoked"` or
+`"not_approved"`. Owner failures use the same `channel_owner_*` /
+`permission_denied` errors and disabled channels the same
+`403 channel_disabled` error as the rest of the channel surface.
+
+A group that mentions the bot while unapproved is recorded as pending, with
+the group ID, optional group name, last sender display name, and first/last
+seen timestamps. At most 20 pending groups are kept per agent; further new
+groups are ignored until the owner denies or approves an existing one.
+
+State lives beside the thread mapping in the profile channel directory:
+`<profile>/zalo/groups.json` stores `pending`/`approved` groups and the
+platform `daily_limit`, while `<profile>/zalo/group_usage.json` stores the
+current Asia/Ho_Chi_Minh calendar day, per-group/per-sender counts, and the
+message IDs counted that day. Both files are written atomically with mode
+`0600`, reject symlinks, and prune prior days. The limit applies to accepted
+group turns: a retried delivery of the same `message_id` does not count twice,
+and senders approved in this agent/platform's DM pairing store are exempt.
+
+The gateway reports an unapproved mention through the private route
+`POST /xnobrain/api/runtime/v1/internal/channels/groups/seen` with
+`{platform, agent_id, group_id, group_name?, sender_name?}` and the same
+`X-XNOBrain-Internal-Token` as private turns. It is de-duplicated in-process
+per profile/group. A group turn in `run_internal_turn` is refused with
+`403 channel_group_not_approved` while unapproved (and recorded as seen) and
+with `429 channel_group_limit_reached` when the per-member daily limit is
+reached. `daily_limit` is an integer `0..1000`, defaults to `20`, and `0`
+means unlimited.
+
 ### Private gateway turns
 
 `POST /xnobrain/api/runtime/v1/internal/channels/turn` runs one
@@ -846,6 +897,13 @@ principal checks.
 of starting a second turn. A different message while the thread's run is
 active returns `409 channel_turn_running`; a reused message ID with different
 input returns `409 channel_turn_conflict`.
+
+For `zalo_bot` with `thread_type: "group"`, the group must already be approved
+for this agent; otherwise the mention is recorded as pending and the turn is
+refused with `403 channel_group_not_approved`. Approved group turns are then
+counted against the sender's daily quota before the run starts, and a sender
+over the limit receives `429 channel_group_limit_reached` without starting a
+run. Personal `zalo` group turns keep their existing behavior.
 
 A successful response is
 `{conversation_id, run_id, reply, usage: {input_tokens, output_tokens, total_tokens}}`.

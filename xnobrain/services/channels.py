@@ -12,8 +12,16 @@ import re
 import signal
 import threading
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Mapping
+
+try:  # pragma: no cover - exercised only when the system tz database is absent
+    from zoneinfo import ZoneInfo
+
+    _GROUP_TIMEZONE = ZoneInfo("Asia/Ho_Chi_Minh")
+except Exception:  # pragma: no cover - fixed-offset fallback
+    _GROUP_TIMEZONE = timezone(timedelta(hours=7))
 
 from ..defaults import BIG_BROTHER_AGENT_ID
 from ..feature_flags import FEATURE_AGENT_CHANNELS
@@ -21,13 +29,19 @@ from ..feature_flags import enabled as feature_enabled
 from ..integrations import AgentAPIError, zalo_channels
 from ..integrations.control_mcp_grants import WorkspaceMcpGrantClient
 from ..integrations.plugin_artifacts import builtin_platform_metadata
-from ..repositories.channels import ChannelsRepository
+from ..repositories.channels import (
+    DEFAULT_GROUP_DAILY_LIMIT,
+    MAX_GROUP_DAILY_LIMIT,
+    MAX_PENDING_GROUP_REQUESTS,
+    ChannelsRepository,
+)
 from ..trusted_context import TrustedRequestContext
 from .base import ServiceError
 from .conversation_authority import HostAuthority, require_host_binding
 
 _APPEND_LOCK = threading.RLock()
 _THREAD_LOCK = threading.RLock()
+_GROUP_LOCK = threading.RLock()
 _LOGGER = logging.getLogger(__name__)
 _ZALO_ID = re.compile(r"^[0-9]{1,32}$")
 _ZALO_BOT_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -615,7 +629,30 @@ class ChannelsService:
         profile = self._profile(agent_id)
         self._require_enabled_channel(profile, request["platform"])
         binding = self._require_owner_binding(agent_id, profile)
-        self._require_safe_dm_policy(profile, request["platform"])
+        group_turn = (
+            request["platform"] == "zalo_bot" and request["thread_type"] == "group"
+        )
+        if not group_turn:
+            # dm_policy governs direct messages. An approved Zalo Bot group is
+            # authorized by owner approval instead, so it may run even when
+            # DMs are disabled; personal zalo turns keep the existing gate.
+            self._require_safe_dm_policy(profile, request["platform"])
+        if group_turn and not self._group_is_approved(
+            profile, request["platform"], request["thread_id"]
+        ):
+            # An unapproved group is always refused, even for a DM-paired
+            # sender, and the mention is recorded for owner approval.
+            self._record_group_seen(
+                profile,
+                request["platform"],
+                request["thread_id"],
+                sender_name=request["sender_name"],
+            )
+            raise ServiceError(
+                "channel group is not approved",
+                status=403,
+                code="channel_group_not_approved",
+            )
         authority = self._host_authority(agent_id, request["platform"], binding)
         mcp_grant = await self._channel_mcp_grant(agent_id, profile, request["platform"], binding)
         if not mcp_grant:
@@ -643,6 +680,15 @@ class ChannelsService:
             "run_mode": "background",
             "idempotency_key": f"{request['platform']}:{request['message_id']}",
         }
+        if group_turn:
+            await self._consume_group_turn(
+                agent_id,
+                profile,
+                request["platform"],
+                request["thread_id"],
+                request["sender_id"],
+                request["message_id"],
+            )
         try:
             run = await self.platform.start_conversation_run(
                 agent_id,
@@ -925,6 +971,314 @@ class ChannelsService:
             "status": "revoked" if revoked else "not_approved",
             "user_id": user_id,
         }
+
+    @staticmethod
+    def _group_platform(value: Any) -> str:
+        platform = str(value or "").strip().lower()
+        if platform != "zalo_bot":
+            raise ServiceError("unsupported channel platform", status=422, code="invalid_platform")
+        return platform
+
+    @staticmethod
+    def _group_id(value: Any) -> str:
+        group_id = str(value or "").strip()
+        if not _ZALO_BOT_ID.fullmatch(group_id):
+            raise ServiceError(
+                "channel group ID is invalid", status=422, code="invalid_group_id"
+            )
+        return group_id
+
+    @staticmethod
+    def _group_name(value: Any) -> str:
+        return " ".join(str(value or "").split())[:100]
+
+    @staticmethod
+    def _group_daily_limit(value: Any) -> int:
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ServiceError(
+                "channel group daily limit is invalid",
+                status=422,
+                code="invalid_daily_limit",
+            )
+        if not 0 <= value <= MAX_GROUP_DAILY_LIMIT:
+            raise ServiceError(
+                "channel group daily limit is invalid",
+                status=422,
+                code="invalid_daily_limit",
+            )
+        return value
+
+    @staticmethod
+    def _group_day(timestamp: float | None = None) -> str:
+        """Return the Asia/Ho_Chi_Minh calendar day for one epoch instant."""
+        moment = datetime.fromtimestamp(
+            float(timestamp if timestamp is not None else time.time()),
+            tz=timezone.utc,
+        )
+        return moment.astimezone(_GROUP_TIMEZONE).date().isoformat()
+
+    def _group_state(self, profile: Path, platform: str) -> tuple[dict[str, Any], dict[str, Any]]:
+        state = self.repository.groups(profile)
+        record = state["platforms"].get(platform)
+        if not isinstance(record, dict):
+            record = {"daily_limit": DEFAULT_GROUP_DAILY_LIMIT, "groups": {}}
+            state["platforms"][platform] = record
+        return state, record
+
+    def _record_group_seen(
+        self,
+        profile: Path,
+        platform: str,
+        group_id: str,
+        group_name: str = "",
+        sender_name: str = "",
+    ) -> str:
+        """Record one observed group; never grow pending beyond the cap."""
+        with _GROUP_LOCK:
+            state, record = self._group_state(profile, platform)
+            groups = record["groups"]
+            existing = groups.get(group_id)
+            timestamp = time.time()
+            if existing is None:
+                pending = sum(
+                    1 for item in groups.values() if item.get("status") == "pending"
+                )
+                if pending >= MAX_PENDING_GROUP_REQUESTS:
+                    return "ignored"
+                groups[group_id] = {
+                    "status": "pending",
+                    "name": group_name,
+                    "last_sender_name": sender_name,
+                    "first_seen": timestamp,
+                    "last_seen": timestamp,
+                    "approved_at": None,
+                }
+                status = "pending"
+            else:
+                status = str(existing.get("status") or "pending")
+                if group_name:
+                    existing["name"] = group_name
+                if sender_name:
+                    existing["last_sender_name"] = sender_name
+                existing["last_seen"] = timestamp
+            self.repository.write_groups(profile, state)
+        return status if status in {"pending", "approved"} else "pending"
+
+    def _group_is_approved(self, profile: Path, platform: str, group_id: str) -> bool:
+        _, record = self._group_state(profile, platform)
+        entry = record["groups"].get(group_id)
+        return bool(entry and entry.get("status") == "approved")
+
+    def _group_limit(self, profile: Path, platform: str) -> int:
+        _, record = self._group_state(profile, platform)
+        return int(record.get("daily_limit", DEFAULT_GROUP_DAILY_LIMIT))
+
+    async def _consume_group_turn(
+        self,
+        agent_id: str,
+        profile: Path,
+        platform: str,
+        group_id: str,
+        sender_id: str,
+        message_id: str,
+    ) -> None:
+        """Count one accepted group turn, or refuse it at the daily limit.
+
+        DM-paired senders are exempt. A retried provider message ID is counted
+        once, so a duplicate delivery neither increments nor hits the limit.
+        """
+        try:
+            exempt = await asyncio.to_thread(
+                self._pairing_store(agent_id).is_approved, platform, sender_id
+            )
+        except Exception as error:
+            _LOGGER.warning(
+                "channel group pairing exemption unavailable: %s", type(error).__name__
+            )
+            exempt = False
+        if exempt:
+            return
+        limit = self._group_limit(profile, platform)
+        if limit == 0:
+            return
+        day = self._group_day()
+        with _GROUP_LOCK:
+            state = self.repository.group_usage(profile)
+            record = state["platforms"].get(platform)
+            if not isinstance(record, dict) or str(record.get("date") or "") != day:
+                record = {"date": day, "counts": {}, "message_ids": {}}
+                state["platforms"][platform] = record
+            counts = record["counts"].setdefault(group_id, {})
+            sender_key = f"{group_id}:{sender_id}"
+            counted = record["message_ids"].setdefault(sender_key, [])
+            if message_id in counted:
+                return
+            current = int(counts.get(sender_id) or 0)
+            if current >= limit:
+                raise ServiceError(
+                    f"daily group limit of {limit} reached",
+                    status=429,
+                    code="channel_group_limit_reached",
+                )
+            counts[sender_id] = current + 1
+            counted.append(message_id)
+            record["message_ids"][sender_key] = counted
+            self.repository.write_group_usage(profile, state)
+
+    def record_group_seen(self, body: Mapping[str, Any], token: str | None) -> dict[str, Any]:
+        """Record one unapproved group mention forwarded by the gateway."""
+        self._authorize(token)
+        self._require_feature()
+        platform = self._group_platform(body.get("platform"))
+        agent_id = str(body.get("agent_id") or "")
+        if not _SAFE_IDENTITY.fullmatch(agent_id):
+            raise ServiceError("channel turn identifiers are invalid", status=422)
+        group_id = self._group_id(body.get("group_id"))
+        profile = self._profile(agent_id)
+        status = self._record_group_seen(
+            profile,
+            platform,
+            group_id,
+            self._group_name(body.get("group_name")),
+            self._group_name(body.get("sender_name")),
+        )
+        return {"group_id": group_id, "status": status}
+
+    async def list_groups(
+        self, agent_id: str, platform: str, trusted: Any = None
+    ) -> dict[str, Any]:
+        """List sanitized pending/approved zalo_bot group state."""
+        self._require_feature()
+        platform = self._group_platform(platform)
+        profile = self._profile(agent_id)
+        self._require_pairing_owner(agent_id, profile, trusted)
+        self._require_enabled_channel(profile, platform)
+        _, record = self._group_state(profile, platform)
+        pending: list[dict[str, Any]] = []
+        approved: list[dict[str, Any]] = []
+        for group_id, entry in record["groups"].items():
+            if not _ZALO_BOT_ID.fullmatch(str(group_id)):
+                continue
+            status = str(entry.get("status") or "")
+            if status == "pending":
+                pending.append(
+                    {
+                        "group_id": str(group_id),
+                        "group_name": self._group_name(entry.get("name")),
+                        "last_sender_name": self._group_name(entry.get("last_sender_name")),
+                        "first_seen": float(entry.get("first_seen") or 0),
+                        "last_seen": float(entry.get("last_seen") or 0),
+                    }
+                )
+            elif status == "approved":
+                approved.append(
+                    {
+                        "group_id": str(group_id),
+                        "group_name": self._group_name(entry.get("name")),
+                        "last_sender_name": self._group_name(entry.get("last_sender_name")),
+                        "first_seen": float(entry.get("first_seen") or 0),
+                        "last_seen": float(entry.get("last_seen") or 0),
+                        "approved_at": float(entry.get("approved_at") or 0) or None,
+                    }
+                )
+        pending.sort(key=lambda item: item["last_seen"], reverse=True)
+        approved.sort(key=lambda item: item.get("approved_at") or 0, reverse=True)
+        return {
+            "platform": platform,
+            "daily_limit": self._group_limit(profile, platform),
+            "pending": pending,
+            "approved": approved,
+        }
+
+    async def approve_group(
+        self, agent_id: str, platform: str, group_id: str, trusted: Any = None
+    ) -> dict[str, Any]:
+        self._require_feature()
+        platform = self._group_platform(platform)
+        group_id = self._group_id(group_id)
+        profile = self._profile(agent_id)
+        self._require_pairing_owner(agent_id, profile, trusted)
+        self._require_enabled_channel(profile, platform)
+        with _GROUP_LOCK:
+            state, record = self._group_state(profile, platform)
+            entry = record["groups"].get(group_id)
+            if not entry or entry.get("status") != "pending":
+                raise ServiceError(
+                    "channel group request is missing",
+                    status=404,
+                    code="channel_group_not_found",
+                )
+            entry["status"] = "approved"
+            entry["approved_at"] = time.time()
+            self.repository.write_groups(profile, state)
+        return {
+            "status": "approved",
+            "group_id": group_id,
+            "group_name": self._group_name(entry.get("name")),
+        }
+
+    async def deny_group(
+        self, agent_id: str, platform: str, group_id: str, trusted: Any = None
+    ) -> dict[str, Any]:
+        self._require_feature()
+        platform = self._group_platform(platform)
+        group_id = self._group_id(group_id)
+        profile = self._profile(agent_id)
+        self._require_pairing_owner(agent_id, profile, trusted)
+        self._require_enabled_channel(profile, platform)
+        with _GROUP_LOCK:
+            state, record = self._group_state(profile, platform)
+            entry = record["groups"].get(group_id)
+            if not entry or entry.get("status") != "pending":
+                raise ServiceError(
+                    "channel group request is missing",
+                    status=404,
+                    code="channel_group_not_found",
+                )
+            del record["groups"][group_id]
+            self.repository.write_groups(profile, state)
+        return {"status": "denied", "group_id": group_id}
+
+    async def revoke_group(
+        self, agent_id: str, platform: str, group_id: str, trusted: Any = None
+    ) -> dict[str, Any]:
+        self._require_feature()
+        platform = self._group_platform(platform)
+        group_id = self._group_id(group_id)
+        profile = self._profile(agent_id)
+        self._require_pairing_owner(agent_id, profile, trusted)
+        self._require_enabled_channel(profile, platform)
+        revoked = False
+        with _GROUP_LOCK:
+            state, record = self._group_state(profile, platform)
+            entry = record["groups"].get(group_id)
+            if entry and entry.get("status") == "approved":
+                del record["groups"][group_id]
+                self.repository.write_groups(profile, state)
+                revoked = True
+        return {
+            "status": "revoked" if revoked else "not_approved",
+            "group_id": group_id,
+        }
+
+    async def update_group_settings(
+        self,
+        agent_id: str,
+        platform: str,
+        daily_limit: Any,
+        trusted: Any = None,
+    ) -> dict[str, Any]:
+        self._require_feature()
+        platform = self._group_platform(platform)
+        limit = self._group_daily_limit(daily_limit)
+        profile = self._profile(agent_id)
+        self._require_pairing_owner(agent_id, profile, trusted)
+        self._require_enabled_channel(profile, platform)
+        with _GROUP_LOCK:
+            state, record = self._group_state(profile, platform)
+            record["daily_limit"] = limit
+            self.repository.write_groups(profile, state)
+        return {"daily_limit": limit}
 
     @staticmethod
     def _platform_config(config: Mapping[str, Any], platform: str) -> dict[str, Any]:

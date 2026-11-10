@@ -8,12 +8,23 @@ active profile's identity.
 """
 
 import asyncio
+import json
 import logging
 import os
 import sys
+import threading
 import time
 import uuid
 from contextlib import suppress
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+try:  # pragma: no cover - exercised only when the system tz database is absent
+    from zoneinfo import ZoneInfo
+
+    _GROUP_TIMEZONE = ZoneInfo("Asia/Ho_Chi_Minh")
+except Exception:  # pragma: no cover - fixed-offset fallback
+    _GROUP_TIMEZONE = timezone(timedelta(hours=7))
 
 from ..runtime_limits import session_timeout_seconds
 from .accounting_context import (
@@ -50,9 +61,43 @@ PAIRING_LIMIT_REPLY = (
 # Pinned upstream home-channel setup notice (gateway/run.py) starts with this.
 HOME_CHANNEL_NOTICE_PREFIX = "📬 No home channel is set for"
 
+# Zalo Bot group traffic is owner-approved per group and never falls back to
+# the native gateway agent. DM-only slash commands are stripped by the adapter.
+_GROUP_CHAT_TYPES = {"group", "forum", "channel", "thread"}
+_GROUP_LIMIT_TEXT = (
+    "Bạn đã dùng hết {limit} lượt hỏi bot hôm nay trong nhóm này. "
+    "Hãy quay lại vào ngày mai nhé.\n"
+    "You have used all {limit} bot turns for today in this group. "
+    "Please come back tomorrow."
+)
+_GROUP_DEFAULT_LIMIT = 20
+_GROUP_MAX_LIMIT = 1000
+_GROUP_SEEN_REPORT_SECONDS = 600.0
+_GROUP_SEEN_TIMEOUT_SECONDS = 5.0
+_GROUP_RECEIPT_TIMEOUT_SECONDS = 2.0
+# Exact pinned Hermes silence marker: the gateway suppresses delivery but keeps
+# normal user/assistant transcript alternation.
+_SILENT_REPLY = "NO_REPLY"
+
+_GROUP_CACHE_LOCK = threading.RLock()
+_GROUP_APPROVED_CACHE: dict[str, tuple[int, int, frozenset[str], int]] = {}
+_GROUP_SEEN_LOCK = threading.RLock()
+_GROUP_SEEN_STATE: dict[tuple[str, str], float] = {}
+_GROUP_LIMIT_NOTICE_LOCK = threading.RLock()
+_GROUP_LIMIT_NOTICE_STATE: dict[tuple[str, str, str, str], None] = {}
+
 
 class _DelegationAttempted(Exception):
     """The request may have reached Runtime; native execution is unsafe."""
+
+
+class _DelegationRefused(Exception):
+    """Runtime refused an accepted gateway turn with a known public code."""
+
+    def __init__(self, status_code: int, code: str):
+        super().__init__(f"runtime returned HTTP {status_code}")
+        self.status_code = status_code
+        self.code = code
 
 
 _REDACTED_INGRESS_PREFIXES = (
@@ -182,6 +227,41 @@ def install_gateway_operator_notice_filter() -> None:
     GatewayRunner._xnobrain_operator_notice_filter = True
 
 
+def install_gateway_group_approval() -> None:
+    """Authorize Zalo Bot groups by owner approval instead of DM pairing.
+
+    Group-level approval is always required: a DM-paired sender still cannot
+    chat in an unapproved group. Unapproved mentions are reported to Runtime
+    for owner approval, at most once per profile/group per interval, without
+    blocking or changing the message flow.
+    """
+    try:
+        from gateway.run import GatewayRunner
+    except Exception:
+        _LOGGER.warning("gateway group approval unavailable: gateway import failed")
+        return
+    if getattr(GatewayRunner, "_xnobrain_group_approval", False):
+        return
+    original = getattr(GatewayRunner, "_is_user_authorized", None)
+    if not callable(original):
+        _LOGGER.warning("gateway group approval unavailable: authorization hook missing")
+        return
+
+    def is_user_authorized(runner, source, *args, **kwargs):
+        if _is_group_source(source):
+            profile_home = _profile_home_for(runner, source)
+            group_id = str(getattr(source, "chat_id", "") or "")
+            if profile_home is not None and _group_is_approved(profile_home, group_id):
+                return True
+            if profile_home is not None and group_id:
+                _report_group_seen(runner, source, profile_home, group_id)
+            return False
+        return original(runner, source, *args, **kwargs)
+
+    GatewayRunner._is_user_authorized = is_user_authorized
+    GatewayRunner._xnobrain_group_approval = True
+
+
 def _current_profile():
     from hermes_constants import get_hermes_home
 
@@ -279,12 +359,239 @@ def _env_enabled(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _delegation_endpoint() -> str:
+def _internal_endpoint(path: str) -> str:
     base = os.environ.get("RUNTIME_INTERNAL_URL", "").strip().rstrip("/")
     if not base:
         port = os.environ.get("API_SERVER_PORT", "3000").strip() or "3000"
         base = f"http://127.0.0.1:{port}"
-    return base + "/xnobrain/api/runtime/v1/internal/channels/turn"
+    return base + "/xnobrain/api/runtime/v1/internal/channels/" + path.lstrip("/")
+
+
+def _delegation_endpoint() -> str:
+    return _internal_endpoint("turn")
+
+
+def _group_day(timestamp: float | None = None) -> str:
+    moment = datetime.fromtimestamp(
+        float(timestamp if timestamp is not None else time.time()),
+        tz=timezone.utc,
+    )
+    return moment.astimezone(_GROUP_TIMEZONE).date().isoformat()
+
+
+def _profile_home_for(runner, source) -> Path | None:
+    """Return the home of the profile Hermes resolves for this source.
+
+    A multiplex gateway authorizes a turn without the per-profile
+    ``HERMES_HOME`` override, so the ambient home can belong to another
+    profile. Resolve the source's profile explicitly and fail closed
+    (``None``) when its name is not a single safe path segment.
+    """
+    resolve = getattr(runner, "_adapter_profile_for_source", None)
+    if callable(resolve):
+        try:
+            profile = resolve(source)
+        except Exception:
+            return None
+    else:
+        profile = getattr(source, "profile", None)
+    if profile is None or str(profile).strip().casefold() == "default":
+        import hermes_constants
+
+        process_home = getattr(hermes_constants, "get_process_hermes_home", None)
+        if callable(process_home):
+            return Path(process_home())
+        return Path(hermes_constants.get_default_hermes_root())
+    name = str(profile).strip()
+    if not name or name in {".", ".."} or any(char in name for char in ("/", "\\", "\0")):
+        return None
+    from hermes_constants import get_default_hermes_root
+
+    profiles_root = (Path(get_default_hermes_root()) / "profiles").resolve()
+    home = (profiles_root / name).resolve()
+    try:
+        home.relative_to(profiles_root)
+    except ValueError:
+        return None
+    return home
+
+
+def _group_state_path(profile_home: Path) -> Path:
+    return Path(profile_home) / "zalo" / "groups.json"
+
+
+def _group_limit(value) -> int:
+    if isinstance(value, bool):
+        return _GROUP_DEFAULT_LIMIT
+    try:
+        limit = int(value)
+    except (TypeError, ValueError):
+        return _GROUP_DEFAULT_LIMIT
+    if not 0 <= limit <= _GROUP_MAX_LIMIT:
+        return _GROUP_DEFAULT_LIMIT
+    return limit
+
+
+def _read_group_state(profile_home: Path) -> tuple[frozenset[str], int]:
+    """Return (approved group IDs, daily limit) with an mtime-keyed cache.
+
+    Any read or parse failure fails closed: no group is approved and the
+    default limit is used.
+    """
+    path = _group_state_path(profile_home)
+    try:
+        if path.is_symlink():
+            return frozenset(), _GROUP_DEFAULT_LIMIT
+        stat = path.stat()
+    except FileNotFoundError:
+        return frozenset(), _GROUP_DEFAULT_LIMIT
+    except OSError:
+        return frozenset(), _GROUP_DEFAULT_LIMIT
+    key = str(path)
+    stamp = (int(stat.st_mtime_ns), int(stat.st_size))
+    with _GROUP_CACHE_LOCK:
+        cached = _GROUP_APPROVED_CACHE.get(key)
+        if cached is not None and cached[0] == stamp[0] and cached[1] == stamp[1]:
+            return cached[2], cached[3]
+    approved: frozenset[str] = frozenset()
+    limit = _GROUP_DEFAULT_LIMIT
+    try:
+        with path.open("r", encoding="utf-8") as file:
+            value = json.load(file)
+        platforms = value.get("platforms") if isinstance(value, dict) else None
+        record = platforms.get("zalo_bot") if isinstance(platforms, dict) else None
+        if isinstance(record, dict):
+            limit = _group_limit(record.get("daily_limit"))
+            groups = record.get("groups")
+            if isinstance(groups, dict):
+                approved = frozenset(
+                    str(group_id)
+                    for group_id, entry in groups.items()
+                    if isinstance(entry, dict) and entry.get("status") == "approved"
+                )
+    except Exception:
+        approved, limit = frozenset(), _GROUP_DEFAULT_LIMIT
+    with _GROUP_CACHE_LOCK:
+        _GROUP_APPROVED_CACHE[key] = (stamp[0], stamp[1], approved, limit)
+    return approved, limit
+
+
+def _group_is_approved(profile_home: Path, group_id: str) -> bool:
+    if not group_id:
+        return False
+    approved, _ = _read_group_state(profile_home)
+    return group_id in approved
+
+
+def _source_chat_type(source) -> str:
+    return str(getattr(source, "chat_type", "") or "").strip().lower()
+
+
+def _is_group_source(source) -> bool:
+    platform = str(getattr(getattr(source, "platform", None), "value", "") or "")
+    return platform == "zalo_bot" and _source_chat_type(source) in _GROUP_CHAT_TYPES
+
+
+def _response_error_code(envelope) -> str:
+    if not isinstance(envelope, dict):
+        return ""
+    error = envelope.get("error")
+    if not isinstance(error, dict):
+        return ""
+    return str(error.get("code") or "")
+
+
+async def _post_group_seen(runner, source, profile_home: Path, group_id: str) -> None:
+    """Report one unapproved group mention without blocking or leaking."""
+    try:
+        token = os.environ.get("RUNTIME_INTERNAL_SERVICE_TOKEN", "").strip()
+        if not token:
+            return
+        group_name = ""
+        try:
+            adapter = runner._adapter_for_source(source)
+            manager = getattr(adapter, "_group_manager", None)
+            info = getattr(manager, "get_group_info", None)
+            if callable(info):
+                receipt = await asyncio.wait_for(
+                    info(group_id), timeout=_GROUP_RECEIPT_TIMEOUT_SECONDS
+                )
+                if isinstance(receipt, dict):
+                    result = receipt.get("result")
+                    if isinstance(result, dict):
+                        group_name = str(result.get("name") or "")
+                    if not group_name:
+                        group_name = str(receipt.get("name") or "")
+        except Exception:
+            group_name = ""
+        payload = {
+            "platform": "zalo_bot",
+            "agent_id": Path(profile_home).name,
+            "group_id": group_id,
+        }
+        group_name = " ".join(group_name.split())[:100]
+        if group_name:
+            payload["group_name"] = group_name
+        sender_name = " ".join(
+            str(getattr(source, "user_name", "") or "").split()
+        )[:100]
+        if sender_name:
+            payload["sender_name"] = sender_name
+        import httpx
+
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(_GROUP_SEEN_TIMEOUT_SECONDS, connect=2.0)
+        ) as client:
+            await client.post(
+                _internal_endpoint("groups/seen"),
+                json=payload,
+                headers={"x-xnobrain-internal-token": token},
+            )
+    except Exception as error:
+        _LOGGER.debug("group seen report unavailable: %s", type(error).__name__)
+
+
+def _report_group_seen(runner, source, profile_home: Path, group_id: str) -> None:
+    """Schedule at most one group-seen report per profile/group per interval."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    key = (str(profile_home), group_id)
+    now = time.monotonic()
+    with _GROUP_SEEN_LOCK:
+        previous = _GROUP_SEEN_STATE.get(key)
+        if previous is not None and now - previous < _GROUP_SEEN_REPORT_SECONDS:
+            return
+        _GROUP_SEEN_STATE[key] = now
+    loop.create_task(_post_group_seen(runner, source, profile_home, group_id))
+
+
+def _group_limit_notice(profile_home: Path, group_id: str, sender_id: str) -> str:
+    """Return the bilingual limit notice at most once per group/sender/day."""
+    day = _group_day()
+    key = (str(profile_home), group_id, sender_id, day)
+    with _GROUP_LIMIT_NOTICE_LOCK:
+        for existing in [item for item in _GROUP_LIMIT_NOTICE_STATE if item[3] != day]:
+            _GROUP_LIMIT_NOTICE_STATE.pop(existing, None)
+        if key in _GROUP_LIMIT_NOTICE_STATE:
+            return ""
+        _GROUP_LIMIT_NOTICE_STATE[key] = None
+    _, limit = _read_group_state(profile_home)
+    return _GROUP_LIMIT_TEXT.format(limit=limit or _GROUP_DEFAULT_LIMIT)
+
+
+def _silent_turn_result(message, history, session_id):
+    """Return an exact Hermes silence marker so nothing is delivered."""
+    return {
+        "final_response": _SILENT_REPLY,
+        "messages": [],
+        "api_calls": 0,
+        "tools": [],
+        "history_offset": len(history or []),
+        "session_id": session_id,
+        "response_previewed": False,
+    }
 
 
 async def _typing_keepalive(runner, source) -> None:
@@ -336,7 +643,7 @@ def _delegation_payload(message, history, source, event_message_id):
         "platform": platform,
         "agent_id": agent_id,
         "thread_id": thread_id,
-        "thread_type": "group" if chat_type in {"group", "channel", "thread"} else "dm",
+        "thread_type": "group" if chat_type in _GROUP_CHAT_TYPES else "dm",
         "sender_id": sender_id,
         "sender_name": str(
             getattr(source, "user_name", "") or getattr(source, "chat_name", "") or ""
@@ -385,18 +692,23 @@ async def _run_delegated_turn(runner, message, history, source, session_id, even
                 json=payload,
                 headers={"x-xnobrain-internal-token": token},
             )
-        if response.status_code != 200:
-            raise _DelegationAttempted(f"runtime returned HTTP {response.status_code}")
         try:
             envelope = response.json()
-        except ValueError as error:
-            raise _DelegationAttempted("runtime returned invalid JSON") from error
+        except ValueError:
+            envelope = None
+        if response.status_code != 200:
+            code = _response_error_code(envelope)
+            if response.status_code == 403 and code == "channel_group_not_approved":
+                raise _DelegationRefused(response.status_code, code)
+            if response.status_code == 429 and code == "channel_group_limit_reached":
+                raise _DelegationRefused(response.status_code, code)
+            raise _DelegationAttempted(f"runtime returned HTTP {response.status_code}")
         if not isinstance(envelope, dict) or envelope.get("success") is not True:
             raise _DelegationAttempted("runtime returned an error envelope")
         data = envelope.get("data")
         if not isinstance(data, dict) or not isinstance(data.get("reply"), str):
             raise _DelegationAttempted("runtime returned an invalid reply")
-    except _DelegationAttempted:
+    except (_DelegationAttempted, _DelegationRefused):
         raise
     except Exception as error:
         if attempted:
@@ -444,8 +756,13 @@ def install_runtime_channel_delegation() -> None:
         platform = str(getattr(getattr(source, "platform", None), "value", "") or "")
         if platform not in _DELEGATED_PLATFORMS:
             return await original(runner, *args, **kwargs)
+        group_source = _is_group_source(source)
         message_identity = str(event_message_id or getattr(source, "message_id", "") or "").strip()
         if not message_identity:
+            if group_source:
+                # Groups must never run the native gateway agent, including an
+                # empty mention whose provider identity is unavailable.
+                return _silent_turn_result(message, history, session_id)
             # Without a stable provider ID a retry cannot replay one accepted
             # turn, so native execution is unsafe for a delegated platform.
             _LOGGER.warning(
@@ -462,6 +779,35 @@ def install_runtime_channel_delegation() -> None:
                 session_id,
                 event_message_id,
             )
+        except _DelegationRefused as error:
+            if error.code == "channel_group_not_approved":
+                return _silent_turn_result(message, history, session_id)
+            if error.code == "channel_group_limit_reached":
+                profile_home = _profile_home_for(runner, source)
+                notice = (
+                    _group_limit_notice(
+                        profile_home,
+                        str(getattr(source, "chat_id", "") or ""),
+                        str(getattr(source, "user_id", "") or getattr(source, "chat_id", "") or ""),
+                    )
+                    if profile_home is not None
+                    else ""
+                )
+                if notice:
+                    return {
+                        "final_response": notice,
+                        "messages": [
+                            {"role": "user", "content": str(message or "")},
+                            {"role": "assistant", "content": notice},
+                        ],
+                        "api_calls": 0,
+                        "tools": [],
+                        "history_offset": len(history or []),
+                        "session_id": session_id,
+                        "response_previewed": False,
+                    }
+                return _silent_turn_result(message, history, session_id)
+            return _failed_turn_result(message, history, session_id)
         except _DelegationAttempted as error:
             # Runtime may already have accepted (and persisted) this turn.
             # Running the native agent now would execute a second turn and could
@@ -474,12 +820,21 @@ def install_runtime_channel_delegation() -> None:
             )
             return _failed_turn_result(message, history, session_id)
         except Exception as error:
+            if group_source:
+                # A group source never falls back to the native gateway agent.
+                _LOGGER.warning(
+                    "channel delegation setup failed (%s); staying silent for group",
+                    type(error).__name__,
+                )
+                return _silent_turn_result(message, history, session_id)
             _LOGGER.warning(
                 "channel delegation setup failed (%s); using native gateway agent",
                 type(error).__name__,
             )
             return await original(runner, *args, **kwargs)
         if result is None:
+            if group_source:
+                return _silent_turn_result(message, history, session_id)
             _LOGGER.warning("channel delegation was not attempted; using native gateway agent")
             return await original(runner, *args, **kwargs)
         return result
@@ -508,6 +863,7 @@ def main():
         install_workspace_router_key_scope()
         install_gateway_log_redaction()
         install_gateway_pairing_messages()
+        install_gateway_group_approval()
         install_gateway_operator_notice_filter()
         from .hermes_pairings import install_gateway_pairing_locking
 

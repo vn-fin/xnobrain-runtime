@@ -79,6 +79,44 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
             "pairing approval reviewed",
             200,
         ),
+        "channels_groups_list": (
+            lambda: service.list_groups(path["agent_id"], path["platform"], trusted),
+            "channel groups retrieved successfully",
+            200,
+        ),
+        "channels_groups_approve": (
+            lambda: service.approve_group(
+                path["agent_id"], path["platform"], body["group_id"], trusted
+            ),
+            "channel group approved",
+            200,
+        ),
+        "channels_groups_deny": (
+            lambda: service.deny_group(
+                path["agent_id"], path["platform"], body["group_id"], trusted
+            ),
+            "channel group denied",
+            200,
+        ),
+        "channels_groups_revoke": (
+            lambda: service.revoke_group(
+                path["agent_id"], path["platform"], body["group_id"], trusted
+            ),
+            "channel group approval reviewed",
+            200,
+        ),
+        "channels_groups_settings": (
+            lambda: service.update_group_settings(
+                path["agent_id"], path["platform"], body["daily_limit"], trusted
+            ),
+            "channel group settings updated",
+            200,
+        ),
+        "channels_internal_groups_seen": (
+            lambda: service.record_group_seen(body, token),
+            "channel group seen recorded",
+            200,
+        ),
         "channels_internal_message": (
             lambda: service.append_internal(body, token),
             "channel message appended",

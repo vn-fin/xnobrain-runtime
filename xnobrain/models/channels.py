@@ -287,6 +287,96 @@ class ChannelPairingRevokeResult(BaseModel):
     user_id: str
 
 
+class ChannelGroupPending(BaseModel):
+    """One sanitized unapproved Zalo Bot group mention."""
+
+    group_id: str = Field(min_length=1, max_length=64, pattern=_ZALO_BOT_ID)
+    group_name: str = Field(default="", max_length=100)
+    last_sender_name: str = Field(default="", max_length=100)
+    first_seen: float = Field(default=0, ge=0)
+    last_seen: float = Field(default=0, ge=0)
+
+
+class ChannelGroupApproved(BaseModel):
+    """One owner-approved Zalo Bot group."""
+
+    group_id: str = Field(min_length=1, max_length=64, pattern=_ZALO_BOT_ID)
+    group_name: str = Field(default="", max_length=100)
+    last_sender_name: str = Field(default="", max_length=100)
+    first_seen: float = Field(default=0, ge=0)
+    last_seen: float = Field(default=0, ge=0)
+    approved_at: float | None = Field(default=None, ge=0)
+
+
+class ChannelGroupListResult(BaseModel):
+    """Sanitized group approval state for one agent's Zalo Bot channel."""
+
+    platform: Literal["zalo_bot"] = "zalo_bot"
+    daily_limit: int = Field(default=20, ge=0, le=1000)
+    pending: list[ChannelGroupPending] = Field(default_factory=list)
+    approved: list[ChannelGroupApproved] = Field(default_factory=list)
+
+
+class ChannelGroupRequest(BaseModel):
+    """Approve, deny, or revoke one group by its Zalo Bot ID."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    group_id: str = Field(min_length=1, max_length=64, pattern=_ZALO_BOT_ID)
+
+
+class ChannelGroupApproveResult(BaseModel):
+    status: Literal["approved"] = "approved"
+    group_id: str
+    group_name: str = ""
+
+
+class ChannelGroupDenyResult(BaseModel):
+    status: Literal["denied"] = "denied"
+    group_id: str
+
+
+class ChannelGroupRevokeResult(BaseModel):
+    status: Literal["revoked", "not_approved"]
+    group_id: str
+
+
+class ChannelGroupSettingsRequest(BaseModel):
+    """Set the per-member daily turn limit for approved groups."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    daily_limit: int = Field(ge=0, le=1000)
+
+    @field_validator("daily_limit", mode="before")
+    @classmethod
+    def reject_boolean_limit(cls, value: int) -> int:
+        if isinstance(value, bool):
+            raise ValueError("daily_limit must be an integer")
+        return value
+
+
+class ChannelGroupSettingsResult(BaseModel):
+    daily_limit: int = Field(ge=0, le=1000)
+
+
+class ChannelGroupSeenRequest(BaseModel):
+    """One unapproved group mention reported by the gateway."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    platform: str = Field(min_length=1, max_length=32)
+    agent_id: str = Field(min_length=1, max_length=200, pattern=_IDENTITY)
+    group_id: str = Field(min_length=1, max_length=64, pattern=_ZALO_BOT_ID)
+    group_name: str = Field(default="", max_length=100)
+    sender_name: str = Field(default="", max_length=100)
+
+
+class ChannelGroupSeenResult(BaseModel):
+    group_id: str
+    status: Literal["pending", "approved", "ignored"]
+
+
 class ChannelQrResult(BaseModel):
     """Current QR login state; the image is present only while ``status == "qr"``."""
 

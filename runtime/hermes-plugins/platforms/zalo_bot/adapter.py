@@ -1189,6 +1189,34 @@ class ZaloAdapter(BasePlatformAdapter):
             if self._bot_display_name:
                 text = text.replace(f"@{self._bot_display_name}", "").replace(f"{self._bot_display_name}", "").strip()
 
+            # Slash commands are recognized after mention stripping so
+            # "@bot /menu" still reaches the adapter. Any other leading-slash
+            # text is a Hermes command, which is DM-only; drop it in groups
+            # instead of forwarding it to the agent.
+            remaining_slash = parse_slash_command(text)
+            if remaining_slash is not None:
+                await self._handle_slash_command(
+                    remaining_slash,
+                    chat_id,
+                    user_id,
+                    user_name,
+                    message_type,
+                    media_url,
+                    chat_type,
+                )
+                return
+            if text.startswith("/"):
+                logger.debug(
+                    "Zalo: dropping Hermes slash command in group %s", chat_id
+                )
+                return
+
+            # An empty mention carries nothing the agent can answer. Staying
+            # silent also prevents a native fallback for empty group text.
+            if not text.strip():
+                logger.debug("Zalo: ignoring empty group message in %s", chat_id)
+                return
+
             # Dispatch group message. dm_policy is a direct-message policy, so
             # it must not gate group traffic.
             await self._dispatch_message(
