@@ -94,6 +94,7 @@ class _Platform:
         self.agents = _FakeAgents(self.conversations)
         self.conversation_runs = _FakeConversationRuns()
         self.create_calls: list[tuple] = []
+        self.create_errors: list[Exception] = []
         self.run_calls: list[tuple] = []
         self.approvals: list[tuple[str, dict]] = []
         self.resolve_error: Exception | None = None
@@ -113,8 +114,10 @@ class _Platform:
         return self.profile
 
     def create_conversation(self, agent_id, body, trusted_context=None, *, host_authority=None):
-        conversation_id = f"conv_{len(self.create_calls) + 1}"
         self.create_calls.append((agent_id, body, trusted_context))
+        if self.create_errors:
+            raise self.create_errors.pop(0)
+        conversation_id = f"conv_{len(self.create_calls)}"
         self.conversations.add(conversation_id)
         if host_authority is not None:
             self.repository.create_conversation_context(
@@ -376,6 +379,58 @@ class ChannelTurnServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first["conversation_id"], second["conversation_id"])
         self.assertEqual(len(self.platform.create_calls), 1)
         self.assertEqual(len(self.platform.run_calls), 2)
+
+    async def test_group_turn_uses_group_title(self):
+        await self.service.run_internal_turn(
+            _body(thread_type="group", thread_id="1234567890"), TOKEN
+        )
+
+        self.assertEqual(
+            self.platform.create_calls[0][1]["title"],
+            "Zalo · group 34567890",
+        )
+        mapping = json.loads((self.profile / "zalo" / "threads.json").read_text(encoding="utf-8"))
+        self.assertEqual(
+            mapping["platforms"]["zalo"]["1234567890"]["title"],
+            "Zalo · group 34567890",
+        )
+
+    async def test_name_conflict_retries_once_with_a_suffixed_title(self):
+        self.platform.create_errors.append(
+            ServiceError(
+                "conversation name already exists",
+                status=409,
+                code="conversation_name_exists",
+            )
+        )
+
+        result = await self.service.run_internal_turn(_body(thread_id="1234567890"), TOKEN)
+
+        self.assertEqual(result["conversation_id"], "conv_2")
+        self.assertEqual(
+            [call[1]["title"] for call in self.platform.create_calls],
+            ["Zalo · Nam", "Zalo · Nam (34567890)"],
+        )
+        mapping = json.loads((self.profile / "zalo" / "threads.json").read_text(encoding="utf-8"))
+        self.assertEqual(
+            mapping["platforms"]["zalo"]["1234567890"]["title"],
+            "Zalo · Nam (34567890)",
+        )
+
+    async def test_non_name_create_error_is_not_retried(self):
+        failure = ServiceError(
+            "conversation already exists",
+            status=409,
+            code="conversation_exists",
+        )
+        self.platform.create_errors.append(failure)
+
+        with self.assertRaises(ServiceError) as raised:
+            await self.service.run_internal_turn(_body(), TOKEN)
+
+        self.assertIs(raised.exception, failure)
+        self.assertEqual(len(self.platform.create_calls), 1)
+        self.assertEqual(self.platform.run_calls, [])
 
     async def test_idempotent_retry_reuses_the_same_run(self):
         first = await self.service.run_internal_turn(_body(), TOKEN)

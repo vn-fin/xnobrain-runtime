@@ -18,7 +18,7 @@ from typing import Any, Mapping
 from ..defaults import BIG_BROTHER_AGENT_ID
 from ..feature_flags import FEATURE_AGENT_CHANNELS
 from ..feature_flags import enabled as feature_enabled
-from ..integrations import zalo_channels
+from ..integrations import AgentAPIError, zalo_channels
 from ..integrations.control_mcp_grants import WorkspaceMcpGrantClient
 from ..integrations.plugin_artifacts import builtin_platform_metadata
 from ..repositories.channels import ChannelsRepository
@@ -513,12 +513,17 @@ class ChannelsService:
         profile: Path,
         platform: str,
         thread_id: str,
+        thread_type: str,
         sender_id: str,
         sender_name: str,
         authority: HostAuthority,
     ) -> dict[str, Any]:
         """Reuse or create the one conversation bound to a platform thread."""
-        title = f"{self._turn_label(platform)} · {sender_name or sender_id}"
+        label = self._turn_label(platform)
+        if thread_type == "group":
+            title = f"{label} · group {thread_id[-8:]}"
+        else:
+            title = f"{label} · {sender_name or sender_id}"
         with _THREAD_LOCK:
             records = self.repository.threads(profile).get(platform, {})
             record = records.get(thread_id)
@@ -541,9 +546,17 @@ class ChannelsService:
                         raise
                 else:
                     return {"id": conversation_id, "title": str(record.get("title") or title)}
-            conversation = self.platform.create_conversation(
-                agent_id, {"title": title}, host_authority=authority
-            )
+            try:
+                conversation = self.platform.create_conversation(
+                    agent_id, {"title": title}, host_authority=authority
+                )
+            except (ServiceError, AgentAPIError) as error:
+                if error.code != "conversation_name_exists":
+                    raise
+                title = f"{title} ({thread_id[-8:]})"
+                conversation = self.platform.create_conversation(
+                    agent_id, {"title": title}, host_authority=authority
+                )
             conversation_id = str(conversation.get("id") or "")
             if not conversation_id:
                 raise ServiceError(
@@ -619,6 +632,7 @@ class ChannelsService:
             profile,
             request["platform"],
             request["thread_id"],
+            request["thread_type"],
             request["sender_id"],
             request["sender_name"],
             authority,
