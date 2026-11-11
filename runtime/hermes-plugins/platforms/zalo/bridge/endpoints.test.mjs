@@ -444,12 +444,14 @@ test('safeImageFileName strips directories and forces the detected extension', (
   assert.equal(safeImageFileName(undefined, 'png'), 'image.png');
 });
 
-test('mentionsSelf matches the account id and @all mentions', () => {
+test('mentionsSelf matches the account id but not @all', () => {
   assert.equal(mentionsSelf([{ uid: '42', pos: 0, len: 3, type: 0 }], '42'), true);
   assert.equal(mentionsSelf([{ uid: 42 }], '42'), true);
   assert.equal(mentionsSelf([{ uid: '7' }], '42'), false);
-  assert.equal(mentionsSelf([{ uid: '', type: 1 }], '42'), true);
-  assert.equal(mentionsSelf([{ uid: '-1' }], '42'), true);
+  assert.equal(mentionsSelf([{ uid: '-1', type: 1 }], '42'), false);
+  assert.equal(mentionsSelf([{ uid: '-1' }], '42'), false);
+  assert.equal(mentionsSelf([{ uid: '42', type: 1 }], '42'), false);
+  assert.equal(mentionsSelf([{ uid: '-1', type: 1 }, { uid: '42', type: 0 }], '42'), true);
   assert.equal(mentionsSelf([], '42'), false);
   assert.equal(mentionsSelf(null, '42'), false);
   assert.equal(mentionsSelf([{ uid: '42' }], ''), false);

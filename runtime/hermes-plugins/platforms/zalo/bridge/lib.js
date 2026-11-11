@@ -827,22 +827,21 @@ export function mediaFromContent(content) {
   return [{ kind, name, sizeBytes: sizeBytesFromParams(content.params) }];
 }
 
-/** True when the inbound group mentions this account or @all. */
+/**
+ * True when the inbound group mentions this account by id.
+ * An @all mention (uid -1, type 1) does not count, so group-wide
+ * announcements in large groups do not trigger the agent.
+ */
 export function mentionsSelf(mentions, ownId) {
   const me = normalizeMessageId(ownId);
   if (!me || !Array.isArray(mentions)) {
     return false;
   }
   return mentions.some((mention) => {
-    if (!mention || typeof mention !== 'object') {
+    if (!mention || typeof mention !== 'object' || mention.type === 1) {
       return false;
     }
-    // zca-js marks an @all mention with uid -1 and type 1.
-    if (mention.type === 1) {
-      return true;
-    }
-    const uid = normalizeMessageId(mention.uid);
-    return (Boolean(uid) && uid === me) || uid === '-1';
+    return normalizeMessageId(mention.uid) === me;
   });
 }
 
