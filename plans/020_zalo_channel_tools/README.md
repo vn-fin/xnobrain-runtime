@@ -1,0 +1,286 @@
+# 020 — Zalo channel tools (personal account and Zalo Bot)
+
+Status: plan, not started.
+
+Builds on `plans/015_zalo_personal_channel/` (bridge, adapter, gateway hosting)
+and `plans/019_gateway_channel_turns/` (channel turns run in the main Runtime
+process). Today the agent has only `xnobrain_integration_connect` and
+`send_channel_message` (personal Zalo, DM, text). This plan gives the agent
+tools to read and act on Zalo conversations, so it can, for example, summarize
+a group chat or send a report into a group.
+
+Three tracks:
+
+| Track | Goal |
+|---|---|
+| **P-A** Personal, step 1 | Feature parity with OpenClaw's `zalouser` plugin |
+| **P-B** Personal, step 2 | Full toolset that zca-js can support, including history |
+| **B** Zalo Bot | Store conversations from connect time, plus tools on top of that store |
+
+## Verified facts (2026-11-11)
+
+| Fact | Where |
+|---|---|
+| Agent tools for Zalo: `xnobrain_integration_connect`, `send_channel_message` (platform `zalo` only, DM, text ≤ 2000, approval per send) | `xnobrain/integrations/channel_tools.py`, `integration_connect_tools.py` |
+| Personal bridge handles DMs only; group messages are dropped | `runtime/hermes-plugins/platforms/zalo/bridge/bridge.js` (header, `ThreadType.User` checks) |
+| Bridge endpoints: `/health`, `/login`, `/messages`, `/send`; inbound history `history.jsonl`, 30-day retention | `bridge.js`, `bridge/lib.js` |
+| Runtime reaches the bridge on `127.0.0.1` (gateway shares the Runtime network namespace) | `docker-compose.dev.yaml` `runtime-gateway.network_mode`, `zalo_channels.bridge_health` |
+| zca-js 2.2.0 exposes `getGroupChatHistory(groupId, count)` → `{groupMsgs, more, lastActionId}`, `listener.requestOldMessages`, `getAllGroups`, `getAllFriends`, `getGroupInfo`, `getGroupMembersInfo`, ~150 methods | `bridge/node_modules/zca-js/dist/apis/` |
+| Channel turns auto-deny every approval request | plan 019, "Approval-gated tools are non-interactive" |
+| Zalo Bot official API: `getMe`, `getUpdates`, `setWebhook`, `deleteWebhook`, `getWebhookInfo`, `testWebhook`, `sendMessage`, `sendPhoto`, `sendSticker`, `sendVoice` (DM only, `.aac` URL), `sendChatAction`. No history method, no group management | Zalo Bot Platform docs (context7 mirror) |
+| Vendored bot adapter calls ~17 group endpoints absent from the docs (`kickGroupMember`, `createPoll`, `pinGroupMessage`, …) | `runtime/hermes-plugins/platforms/zalo_bot/adapter.py`, `group_manager.py` |
+| Bot history `_ChatHistorySync` writes only after 500 buffered messages, only for `/follow` groups, only authorized senders; nothing reads it | `zalo_bot/adapter.py` (`_ChatHistorySync`, step 6 in group handling) |
+| Group approval with daily turn limit exists for `zalo_bot` only | `xnobrain/services/channels.py` (`_group_platform`, `approve_group`) |
+| `zalo_bot` registers a `standalone_sender_fn` | `zalo_bot/adapter.py` `register()` |
+
+OpenClaw `zalouser` (reference, docs only, not code-verified): agent tool
+`zalouser` with actions `send`, `image`, `link`, `friends`, `groups`, `me`,
+`status`; channel supports groups with mention gating, inbound/outbound media,
+reactions, typing and seen receipts, 2000-char chunking, multi-account. It has
+no history-reading tool.
+
+## Shared decisions
+
+### D1 — Tools live in Runtime, one module per platform
+
+- Add `xnobrain/integrations/zalo_tools.py` (personal) and
+  `xnobrain/integrations/zalo_bot_tools.py` (bot), registered in toolset
+  `xnobrain_channels` and bound per run the same way as
+  `channel_tools.bind_run` (feature flag `FEATURE_AGENT_CHANNELS`, plugin
+  registered, platform enabled in the profile).
+- One tool per action with a strict JSON schema
+  (`additionalProperties: false`). No generic "call any method" tool;
+  zca-js `custom` is never exposed.
+- Errors return the existing `{"success": false, "error": {"code": "channel_*"}}`
+  envelope with content-free codes.
+
+### D2 — Personal: bridge is the only zca-js caller
+
+- New bridge endpoints, one per tool family (below). Runtime calls them with
+  `urllib` like `bridge_health`.
+- New endpoints expose message content, so the bridge requires a bearer token:
+  random, generated at bridge start, written to `<HERMES_HOME>/zalo/bridge.token`
+  (`0600`), read by Runtime per request. `/health` stays open.
+- The bridge validates every argument (thread IDs `^[0-9]{1,32}$`, counts,
+  lengths) before calling zca-js.
+
+### D3 — Approval policy
+
+| Class | Examples | Web run | Channel-originated run |
+|---|---|---|---|
+| Read | list chats, read history, group info | no approval | **current thread only** |
+| Send / react | send text, image, link, react | approve every call | denied (019 auto-deny) |
+| Group utility | poll, note, reminder, pin | approve every call | denied |
+| Admin | add/remove member, roles, settings | approve every call, warning text | denied |
+| Never exposed | delete chat, disperse group, bank, profile, cookies | — | — |
+
+The channel-turn restriction matters: every channel turn runs with the
+owner's authority (019), so without it any paired Zalo user could ask the bot
+to read another chat's history.
+
+### D4 — External content is data
+
+- Every message returned to the model is wrapped as
+  `{"trust": "untrusted_external", "sender_id", "sender_name", "text", "ts", "type"}`
+  inside a tool result, never in the system prompt.
+- Caps: `limit` ≤ 200 messages per call, text truncated per message (2000
+  chars), total result ≤ 64 KB.
+- No message text or sender names in logs or traces (same rule as 019's log
+  filter).
+
+### D5 — Scope of readable chats
+
+- Personal: DMs from senders allowed by `dm_policy`, and groups the owner has
+  approved. Extend the existing group approval service from `zalo_bot` to
+  `zalo` (`_group_platform` accepts both). Unapproved groups are refused with
+  `channel_group_not_approved`.
+- Bot: same rule, using the existing `zalo_bot` group approval.
+
+### D6 — Rate limiting (personal account ban risk)
+
+- Bridge-side token bucket per account: reads 30/min, sends 20/min,
+  `getGroupChatHistory` 10/min. Over the limit → `channel_rate_limited`.
+- Cache list results (friends, groups) for 5 minutes.
+
+## Track P-A — Personal, OpenClaw parity
+
+Channel behavior:
+
+1. **Group turns**: bridge forwards group messages; adapter applies mention
+   gating (`requireMention` default true, quoting the bot counts) and the
+   group approval + daily limit (extend D5). Skipped group messages are kept
+   (max 50) and attached to the next processed message, like OpenClaw.
+2. **Inbound media**: images/files/videos downloaded after sender and mention
+   checks, size capped by `extra.media_max_mb` (default 10); failed download →
+   "attachment unavailable" note. Requires 019 to forward attachments; until
+   then, media is text-noted only.
+3. **Typing and seen**: `sendTypingEvent` before a reply, `sendSeenEvent` /
+   `sendDeliveredEvent` after processing (best effort).
+4. **Outbound chunking**: replies over 2000 chars split into chunks.
+
+Tools:
+
+| Tool | Bridge endpoint | zca-js |
+|---|---|---|
+| `zalo_status` | `GET /health` | — |
+| `zalo_me` | `GET /me` | `fetchAccountInfo`, `getOwnId` |
+| `zalo_list_friends` | `GET /friends` | `getAllFriends` |
+| `zalo_list_groups` | `GET /groups` | `getAllGroups`, `getGroupInfo` |
+| `send_channel_message` (+ `thread_type: dm\|group`) | `POST /send` | `sendMessage` |
+| `zalo_send_image` | `POST /send-media` | `uploadAttachment` + `sendMessage` |
+| `zalo_send_link` | `POST /send-link` | `sendLink` |
+| `zalo_react` | `POST /react` | `addReaction` |
+
+Done when: an approved group can talk to the agent with mention gating; the
+agent can list friends and groups and send text, image and link to a DM or an
+approved group after approval; unit tests and bridge tests cover each
+endpoint.
+
+## Track P-B — Personal, full toolset
+
+Read (the part needed for summaries and reports, ship first):
+
+| Tool | zca-js / source |
+|---|---|
+| `zalo_list_conversations` | `getAllGroups`, `getAllFriends`, `getPinConversations`, `getArchivedChatList` |
+| `zalo_read_history` (DM) | `history.jsonl` + `listener.requestOldMessages(User)` |
+| `zalo_read_group_history` | `getGroupChatHistory(groupId, count)`, paging via `more` |
+| `zalo_search_messages` | search over stored history (zca-js has no search) |
+| `zalo_group_info` | `getGroupInfo`, `getGroupMembersInfo` |
+| `zalo_user_info` | `getUserInfo`, `findUser`, `findUserByUsername` |
+| `zalo_unread` | `getUnreadMark` |
+| `zalo_list_reminders`, `zalo_list_notes` | `getListReminder`, `getListBoard` |
+| `zalo_poll_detail` | `getPollDetail` |
+
+Bridge also starts storing outbound and group messages in `history.jsonl`
+(per thread, 30-day retention, `0600`) so search covers both sides.
+
+Send:
+
+| Tool | zca-js |
+|---|---|
+| quote reply and @mention (fields on `send_channel_message`) | `sendMessage` with `quote`, `mentions` |
+| `zalo_send_file`, `zalo_send_video`, `zalo_send_voice` | `uploadAttachment`, `sendVideo`, `sendVoice` |
+| `zalo_send_sticker` | `searchSticker`, `sendSticker` |
+| `zalo_send_contact_card` | `sendCard` |
+| `zalo_forward` | `forwardMessage` |
+| `zalo_undo_message` (own messages only) | `undo` |
+
+Group utilities: `zalo_create_poll` (`createPoll`, `addPollOptions`,
+`lockPoll`), `zalo_create_note` (`createNote`, `editNote`),
+`zalo_create_reminder` (`createReminder`, `editReminder`, `removeReminder`),
+`zalo_pin_conversation`, `zalo_mute`, `zalo_labels`, `zalo_mark_unread`.
+
+Admin (approval with warning; only in groups where the account is admin):
+`zalo_group_members` (`addUserToGroup`, `removeUserFromGroup`),
+`zalo_group_settings` (`changeGroupName`, `changeGroupAvatar`,
+`updateGroupSettings`), `zalo_group_roles` (`addGroupDeputy`,
+`removeGroupDeputy`), `zalo_group_pending` (`getPendingGroupMembers`,
+`reviewPendingMemberRequest`), `zalo_group_link`, `zalo_create_group`,
+`zalo_friend_requests`, `zalo_friend_alias`, `zalo_quick_reply`.
+`changeGroupOwner` is left out (irreversible).
+
+Never exposed: `deleteChat`, `deleteMessage` (others'), `disperseGroup`,
+`leaveGroup`, `removeFriend`, `blockUser`, bank and catalog APIs, profile and
+account settings, `getCookie`, `getContext`, `getListDevice`,
+`setHiddenConversations`, `updateAutoDeleteChat`, `custom`.
+
+Order inside P-B: read tools → send extras → group utilities → admin. Each
+group is its own PR.
+
+Done when: the agent can summarize the last N messages of an approved group
+(including messages from before the bridge connected, as far as
+`getGroupChatHistory` reaches) and every tool above has a schema test, a
+bridge validation test and an approval test.
+
+## Track B — Zalo Bot
+
+### B1 — Store conversations from connect time
+
+Replace `_ChatHistorySync` in the vendored adapter:
+
+- Write each message as one JSONL line on receipt (no 500-message buffer) to
+  `<HERMES_HOME>/zalo_bot/history/<chat_id>.jsonl`, directory `0700`, files
+  `0600`, `chat_id` passed through `_safe_path_component`.
+- Store from the moment the bot connects: DMs from senders allowed by
+  `dm_policy`, and every message in approved groups (all members, not only
+  authorized senders, so a summary is complete). Unapproved groups are never
+  stored.
+- Store the bot's own replies too (`direction: out`).
+- Record fields: `message_id`, `chat_id`, `chat_type`, `direction`,
+  `sender_id`, `sender_name`, `type`, `text`, `ts`, `trust: untrusted_external`.
+  Media is stored as a type marker and URL, not downloaded.
+- Retention 30 days, trimmed at adapter start and daily; max 50 MB per
+  profile (oldest chats trimmed first).
+- `/follow` becomes a per-group opt-out (default on for approved groups);
+  revoking a group or disconnecting the channel deletes that history.
+- Document the change in `zalo_bot/VENDORED.md`.
+
+Runtime reads the files through the shared profile volume via a new
+`ChannelRepository.bot_history(profile, chat_id, since, limit)`; no adapter
+IPC.
+
+### B2 — Tools
+
+| Tool | Source | Approval |
+|---|---|---|
+| `zalo_bot_status` | `getMe`, `getWebhookInfo` | no |
+| `zalo_bot_list_chats` | stored history index + approved groups | no |
+| `zalo_bot_read_history` | stored history, `since` / `limit` | no |
+| `zalo_bot_search_messages` | stored history | no |
+| `zalo_bot_contacts` | `_CRMContacts` data | no |
+| `send_channel_message` (+ `platform: zalo_bot`) | `standalone_sender_fn` → `sendMessage` | every call |
+| `zalo_bot_send_photo` | `sendPhoto` | every call |
+| `zalo_bot_send_sticker` | `sendSticker` | every call |
+| `zalo_bot_send_voice` (DM only) | `sendVoice` | every call |
+| `zalo_bot_warn_user` | adapter warn store | every call |
+| `zalo_bot_group_settings` (follow, silent, welcome) | adapter group settings | every call |
+
+Sends go only to chat IDs that appear in the store or the approved group list.
+D3 and D4 apply unchanged.
+
+### B3 — Verify the undocumented group endpoints
+
+With a dev bot token, call each group endpoint the adapter uses. Keep those
+that respond; remove the slash commands and `group_manager.py` methods for the
+rest, and record the result in `VENDORED.md`.
+
+Done when: after connecting, messages in a DM and an approved group are on
+disk within one second of receipt; the agent in a web run can summarize the
+last day of an approved group; a channel-originated run can read only its own
+thread; tests cover storage, retention, revoke deletion, scope checks and each
+tool.
+
+## Consumers to update
+
+- UI: approval card already renders `command` / `description`; add i18n
+  labels for new `pattern_key`s. Extend the group approval screen to `zalo`
+  (P-A). Show the history retention note on the channel settings card (B1).
+- `docs/api.md`: group endpoints accept `zalo`.
+- Release notes: new tools are behind `FEATURE_AGENT_CHANNELS`.
+
+## Tests
+
+Run inside the Runtime dev container:
+
+- `pytest tests/ -k "zalo or channel"` for tools, scope, approval, storage.
+- `node --test runtime/hermes-plugins/platforms/zalo/bridge/*.test.mjs` for
+  bridge validation, token check and rate limits.
+- Manual: QR-connected dev account (P-A, P-B) and dev bot token (B), recorded
+  in `plans/VERIFICATION.md`.
+
+## Delivery order
+
+1. B1 + B2 read tools + B3 (no ban risk, unblocks the Zalo report demo).
+2. P-A.
+3. P-B read tools.
+4. P-B send extras, group utilities, admin.
+
+## Open questions
+
+1. Bot B1 stores messages from every member of an approved group. Is group
+   approval by the owner enough consent, or must the bot announce it in the
+   group when tracking starts?
+2. Retention: 30 days for both platforms?
+3. Should read tools in channel-originated runs be limited to the current
+   thread (proposed) or disabled entirely?
