@@ -6,6 +6,7 @@ import asyncio
 import json
 import sys
 import tempfile
+import time
 import types
 import unittest
 from pathlib import Path
@@ -384,7 +385,7 @@ class GatewayGroupDelegationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("7 lượt", result["final_response"])
         self.assertNotIn("2 lượt", result["final_response"])
 
-    async def test_limit_reply_once_then_silent(self):
+    async def test_limit_reply_is_silent_within_the_notice_window(self):
         self.write_groups(daily_limit=2)
         response = _Response(
             429,
@@ -418,8 +419,21 @@ class GatewayGroupDelegationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("2 lượt", first["final_response"])
         self.assertIn("You have used all 2", first["final_response"])
         self.assertEqual(second["final_response"], "NO_REPLY")
+
+        # After the notice window the sender is reminded again.
+        later = time.monotonic() + 31
+        with mock.patch("xnobrain.integrations.gateway_cli.time.monotonic", return_value=later):
+            third = await runner._run_agent_inner(
+                message="hello once more",
+                context_prompt="",
+                history=[],
+                source=_source(),
+                session_id="session-3",
+                event_message_id="message-3",
+            )
+        self.assertIn("You have used all 2", third["final_response"])
         self.assertEqual(runner_class.native_calls, [])
-        self.assertEqual(len(factory.calls), 2)
+        self.assertEqual(len(factory.calls), 3)
         self.assertEqual(factory.calls[0]["url"], TURN_ENDPOINT)
 
     async def test_unapproved_group_refusal_is_silent(self):

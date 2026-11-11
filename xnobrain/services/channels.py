@@ -686,7 +686,6 @@ class ChannelsService:
         }
         if group_turn:
             await self._consume_group_turn(
-                agent_id,
                 profile,
                 request["platform"],
                 request["thread_id"],
@@ -1079,7 +1078,6 @@ class ChannelsService:
 
     async def _consume_group_turn(
         self,
-        agent_id: str,
         profile: Path,
         platform: str,
         group_id: str,
@@ -1088,20 +1086,10 @@ class ChannelsService:
     ) -> None:
         """Count one accepted group turn, or refuse it at the daily limit.
 
-        DM-paired senders are exempt. A retried provider message ID is counted
-        once, so a duplicate delivery neither increments nor hits the limit.
+        Every sender counts, including DM-paired ones. A retried provider
+        message ID is counted once, so a duplicate delivery neither increments
+        nor hits the limit.
         """
-        try:
-            exempt = await asyncio.to_thread(
-                self._pairing_store(agent_id).is_approved, platform, sender_id
-            )
-        except Exception as error:
-            _LOGGER.warning(
-                "channel group pairing exemption unavailable: %s", type(error).__name__
-            )
-            exempt = False
-        if exempt:
-            return
         limit = self._group_limit(profile, platform)
         if limit == 0:
             return

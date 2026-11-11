@@ -469,7 +469,7 @@ class ChannelGroupTurnTests(ChannelGroupFixture):
         self.assertEqual(usage["counts"]["group_1"]["sender_1"], 1)
         self.assertEqual(usage["message_ids"]["group_1:sender_1"], ["message-1"])
 
-    async def test_dm_paired_sender_is_exempt(self):
+    async def test_dm_paired_sender_still_counts(self):
         await self._approve()
         await self.service.update_group_settings("agent-1", "zalo_bot", 1, self._trusted())
         from gateway.pairing import PairingStore
@@ -479,10 +479,12 @@ class ChannelGroupTurnTests(ChannelGroupFixture):
         self.assertIsNotNone(store.approve_code("zalo_bot", code))
 
         await self.service.run_internal_turn(_turn_body(), TOKEN)
-        await self.service.run_internal_turn(_turn_body(message_id="message-2"), TOKEN)
+        with self.assertRaises(ServiceError):
+            await self.service.run_internal_turn(_turn_body(message_id="message-2"), TOKEN)
 
-        self.assertEqual(len(self.platform.run_calls), 2)
-        self.assertFalse((self.profile / "zalo" / "group_usage.json").exists())
+        self.assertEqual(len(self.platform.run_calls), 1)
+        usage = self._usage_file()["platforms"]["zalo_bot"]
+        self.assertEqual(usage["counts"]["group_1"]["sender_1"], 1)
 
     async def test_day_rollover_resets_counts(self):
         await self._approve()

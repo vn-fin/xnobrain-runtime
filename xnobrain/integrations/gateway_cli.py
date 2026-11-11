@@ -16,15 +16,7 @@ import threading
 import time
 import uuid
 from contextlib import suppress
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
-
-try:  # pragma: no cover - exercised only when the system tz database is absent
-    from zoneinfo import ZoneInfo
-
-    _GROUP_TIMEZONE = ZoneInfo("Asia/Ho_Chi_Minh")
-except Exception:  # pragma: no cover - fixed-offset fallback
-    _GROUP_TIMEZONE = timezone(timedelta(hours=7))
 
 from ..runtime_limits import session_timeout_seconds
 from .accounting_context import (
@@ -84,7 +76,10 @@ _GROUP_APPROVED_CACHE: dict[str, tuple[int, int, frozenset[str], int]] = {}
 _GROUP_SEEN_LOCK = threading.RLock()
 _GROUP_SEEN_STATE: dict[tuple[str, str], float] = {}
 _GROUP_LIMIT_NOTICE_LOCK = threading.RLock()
-_GROUP_LIMIT_NOTICE_STATE: dict[tuple[str, str, str, str], None] = {}
+_GROUP_LIMIT_NOTICE_STATE: dict[tuple[str, str, str], float] = {}
+# Repeat the limit notice on every call, but at most once per sender per window
+# so a burst of mentions cannot make the bot flood the group.
+_GROUP_LIMIT_NOTICE_SECONDS = 30.0
 
 
 class _DelegationAttempted(Exception):
@@ -371,14 +366,6 @@ def _delegation_endpoint() -> str:
     return _internal_endpoint("turn")
 
 
-def _group_day(timestamp: float | None = None) -> str:
-    moment = datetime.fromtimestamp(
-        float(timestamp if timestamp is not None else time.time()),
-        tz=timezone.utc,
-    )
-    return moment.astimezone(_GROUP_TIMEZONE).date().isoformat()
-
-
 def _profile_home_for(runner, source) -> Path | None:
     """Return the home of the profile Hermes resolves for this source.
 
@@ -568,15 +555,16 @@ def _report_group_seen(runner, source, profile_home: Path, group_id: str) -> Non
 
 
 def _group_limit_notice(profile_home: Path, group_id: str, sender_id: str) -> str:
-    """Return the bilingual limit notice at most once per group/sender/day."""
-    day = _group_day()
-    key = (str(profile_home), group_id, sender_id, day)
+    """Return the bilingual limit notice, at most once per sender per window."""
+    key = (str(profile_home), group_id, sender_id)
+    now = time.monotonic()
     with _GROUP_LIMIT_NOTICE_LOCK:
-        for existing in [item for item in _GROUP_LIMIT_NOTICE_STATE if item[3] != day]:
-            _GROUP_LIMIT_NOTICE_STATE.pop(existing, None)
+        for existing, sent in list(_GROUP_LIMIT_NOTICE_STATE.items()):
+            if now - sent >= _GROUP_LIMIT_NOTICE_SECONDS:
+                _GROUP_LIMIT_NOTICE_STATE.pop(existing, None)
         if key in _GROUP_LIMIT_NOTICE_STATE:
             return ""
-        _GROUP_LIMIT_NOTICE_STATE[key] = None
+        _GROUP_LIMIT_NOTICE_STATE[key] = now
     _, limit = _read_group_state(profile_home)
     return _GROUP_LIMIT_TEXT.format(limit=limit or _GROUP_DEFAULT_LIMIT)
 

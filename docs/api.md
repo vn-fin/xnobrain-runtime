@@ -853,7 +853,7 @@ current Asia/Ho_Chi_Minh calendar day, per-group/per-sender counts, and the
 message IDs counted that day. Both files are written atomically with mode
 `0600`, reject symlinks, and prune prior days. The limit applies to accepted
 group turns: a retried delivery of the same `message_id` does not count twice,
-and senders approved in this agent/platform's DM pairing store are exempt.
+and every sender counts, including senders approved in the DM pairing store.
 
 The gateway reports an unapproved mention through the private route
 `POST /xnobrain/api/runtime/v1/internal/channels/groups/seen` with
