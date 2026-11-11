@@ -20,6 +20,9 @@ _BINDINGS: dict[str, tuple] = {}
 _PLATFORMS: dict[str, frozenset[str]] = {}
 _SCHEMA: dict = {}
 
+TOOL_NAME = "send_channel_message"
+TOOLSET = "xnobrain_channels"
+
 
 def _error(code: str, **extra) -> str:
     """Share the base envelope and keep the tool's legacy top-level extras."""
@@ -61,15 +64,21 @@ def _deliver(
     return future.result(timeout=60)
 
 
-def register_tools() -> None:
+def register_tools(profile_dir) -> None:
+    """Register the tool in the profile's registry scope.
+
+    The engine rebuilds ``agent.tools`` from the registry between turns and drops
+    tools appended by hand, so the tool must live in the registry. A profile scope
+    keeps it out of every other agent's tool list; unbound runs get an error result.
+    """
+    from hermes_constants import hermes_home_key
     from tools.registry import registry
 
+    scope = hermes_home_key(profile_dir)
     with _LOCK:
-        if _SCHEMA:
-            return
         limit = zalo_channels.max_message_length()
         function = {
-            "name": "send_channel_message",
+            "name": TOOL_NAME,
             "description": (
                 "Send plain text on a messaging channel after the user approves it. "
                 "Platforms: 'zalo' (personal account, direct messages only) and "
@@ -106,14 +115,17 @@ def register_tools() -> None:
                 "additionalProperties": False,
             },
         }
+        _SCHEMA.update({"type": "function", "function": function})
+        if registry.get_entry(TOOL_NAME, scope=scope) is not None:
+            return
         registry.register(
-            name="send_channel_message",
-            toolset="xnobrain_channels",
+            name=TOOL_NAME,
+            toolset=TOOLSET,
             schema=function,
             handler=call,
-            check_fn=lambda: False,
+            description=function["description"],
+            scope=scope,
         )
-        _SCHEMA.update({"type": "function", "function": function})
 
 
 @contextmanager
@@ -152,11 +164,6 @@ def bind_run(
     if not enabled:
         yield False
         return
-    try:
-        register_tools()
-    except Exception:
-        yield False
-        return
     binding = (
         service,
         str(agent_id),
@@ -180,19 +187,23 @@ def bind_run(
                 _PLATFORMS.pop(str(conversation_id), None)
 
 
-def install_tools(agent, session_id: str) -> None:
+def install_tools(agent, session_id: str, profile_dir) -> None:
     with _LOCK:
         if session_id not in _BINDINGS or int(getattr(agent, "_delegate_depth", 0) or 0):
             return
+    register_tools(profile_dir)
+    with _LOCK:
         schema = copy.deepcopy(_SCHEMA)
     if not schema:
         return
     existing = {tool.get("function", {}).get("name") for tool in getattr(agent, "tools", [])}
-    if "send_channel_message" not in existing:
+    if TOOL_NAME not in existing:
         agent.tools = list(getattr(agent, "tools", []) or []) + [schema]
-    agent.valid_tool_names = set(getattr(agent, "valid_tool_names", set())) | {
-        "send_channel_message"
-    }
+    agent.valid_tool_names = set(getattr(agent, "valid_tool_names", set())) | {TOOL_NAME}
+    # Without the toolset the between-turns refresh filters the registry tool out.
+    enabled = getattr(agent, "enabled_toolsets", None)
+    if enabled is not None and TOOLSET not in enabled:
+        agent.enabled_toolsets = sorted({*enabled, TOOLSET})
 
 
 def call(args, **kwargs):

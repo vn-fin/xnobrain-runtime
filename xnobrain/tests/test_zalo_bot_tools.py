@@ -156,8 +156,9 @@ class ZaloBotToolFixture(unittest.IsolatedAsyncioTestCase):
 
     def test_schemas_are_strict_and_registered(self):
         registry = mock.Mock()
+        registry.get_entry.return_value = None
         with mock.patch("tools.registry.registry", registry):
-            zalo_bot_tools.register_tools()
+            zalo_bot_tools.register_tools(self.profile)
 
         registered = {call.kwargs["name"] for call in registry.register.call_args_list}
         self.assertEqual(registered, TOOL_NAMES)
@@ -205,18 +206,47 @@ class ZaloBotToolFixture(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(enabled)
                 self.assertIn("conv-1", zalo_bot_tools._BINDINGS)
                 agent = SimpleNamespace(
-                    tools=[], valid_tool_names=set(), _delegate_depth=0
+                    tools=[],
+                    valid_tool_names=set(),
+                    enabled_toolsets=["web"],
+                    _delegate_depth=0,
                 )
                 child = SimpleNamespace(
                     tools=[], valid_tool_names=set(), _delegate_depth=1
                 )
-                zalo_bot_tools.install_tools(agent, "conv-1")
-                zalo_bot_tools.install_tools(child, "conv-1")
+                zalo_bot_tools.install_tools(agent, "conv-1", self.profile)
+                zalo_bot_tools.install_tools(child, "conv-1", self.profile)
         self.assertNotIn("conv-1", zalo_bot_tools._BINDINGS)
         self.assertEqual(
             {tool["function"]["name"] for tool in agent.tools}, TOOL_NAMES
         )
+        self.assertIn(zalo_bot_tools.TOOLSET, agent.enabled_toolsets)
         self.assertEqual(child.tools, [])
+
+    async def test_register_tools_is_scoped_and_unbound_calls_fail(self):
+        from hermes_constants import hermes_home_key
+        from tools.registry import registry
+
+        other = self.profile.parent / "agent-2"
+        other.mkdir()
+
+        zalo_bot_tools.register_tools(self.profile)
+        self.assertEqual(set(zalo_bot_tools._SCHEMAS), TOOL_NAMES)
+        scope = hermes_home_key(self.profile)
+        other_scope = hermes_home_key(other)
+        for name in TOOL_NAMES:
+            self.assertIsNotNone(registry.get_entry(name, scope=scope))
+            self.assertIsNone(registry.get_entry(name, scope=other_scope))
+
+        self._bind()
+        agent = SimpleNamespace(
+            tools=[], valid_tool_names=set(), enabled_toolsets=["web"]
+        )
+        zalo_bot_tools.install_tools(agent, "conv-1", self.profile)
+        self.assertIn(zalo_bot_tools.TOOLSET, agent.enabled_toolsets)
+
+        unbound = self._call("zalo_bot_status", conversation_id="conv-unbound")
+        self.assertEqual(unbound["error"]["code"], "channel_authority_required")
 
     # ── Reads ─────────────────────────────────────────────────────────
 

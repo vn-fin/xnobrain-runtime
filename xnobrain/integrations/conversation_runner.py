@@ -1473,10 +1473,10 @@ class ConversationRunnerMixin:
                 install_xno_data_tools(agent, conversation_id)
                 from .channel_tools import install_tools as install_channel_tools
 
-                install_channel_tools(agent, conversation_id)
+                install_channel_tools(agent, conversation_id, profile_dir)
                 from .zalo_bot_tools import install_tools as install_zalo_bot_tools
 
-                install_zalo_bot_tools(agent, conversation_id)
+                install_zalo_bot_tools(agent, conversation_id, profile_dir)
                 from .managed_mcp import install_tools as install_catalog_mcp_tools
 
                 install_catalog_mcp_tools(agent, profile_dir)

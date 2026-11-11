@@ -549,21 +549,59 @@ class ChannelToolCallTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn("conv-1", channel_tools._BINDINGS)
 
     async def test_install_adds_the_tool_only_for_the_bound_run(self):
-        channel_tools._SCHEMA.update(
-            {"type": "function", "function": {"name": "send_channel_message"}}
-        )
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        profile = Path(temporary.name) / "agent-1"
+        profile.mkdir()
         self._bind(_FakeService({"status": "ok"}))
-        agent = SimpleNamespace(tools=[], valid_tool_names=set(), _delegate_depth=0)
+        agent = SimpleNamespace(
+            tools=[], valid_tool_names=set(), enabled_toolsets=["web"], _delegate_depth=0
+        )
         child = SimpleNamespace(tools=[], valid_tool_names=set(), _delegate_depth=1)
 
-        channel_tools.install_tools(agent, "conv-1")
-        channel_tools.install_tools(child, "conv-1")
+        channel_tools.install_tools(agent, "conv-1", profile)
+        channel_tools.install_tools(child, "conv-1", profile)
 
         self.assertEqual(
             [tool["function"]["name"] for tool in agent.tools], ["send_channel_message"]
         )
         self.assertIn("send_channel_message", agent.valid_tool_names)
+        self.assertIn(channel_tools.TOOLSET, agent.enabled_toolsets)
         self.assertEqual(child.tools, [])
+
+    async def test_register_tools_is_scoped_and_unbound_calls_fail(self):
+        from hermes_constants import hermes_home_key
+        from tools.registry import registry
+
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        profile = Path(temporary.name) / "agent-1"
+        other = Path(temporary.name) / "agent-2"
+        profile.mkdir()
+        other.mkdir()
+
+        channel_tools.register_tools(profile)
+        self.assertEqual(
+            channel_tools._SCHEMA["function"]["name"], channel_tools.TOOL_NAME
+        )
+        self.assertIsNotNone(
+            registry.get_entry(channel_tools.TOOL_NAME, scope=hermes_home_key(profile))
+        )
+        self.assertIsNone(
+            registry.get_entry(channel_tools.TOOL_NAME, scope=hermes_home_key(other))
+        )
+
+        self._bind(_FakeService({"status": "ok"}))
+        agent = SimpleNamespace(
+            tools=[], valid_tool_names=set(), enabled_toolsets=["web"]
+        )
+        channel_tools.install_tools(agent, "conv-1", profile)
+        self.assertIn(channel_tools.TOOLSET, agent.enabled_toolsets)
+
+        unbound = json.loads(
+            channel_tools.call({"recipient": "Nam", "text": "hi"}, session_id="conv-2")
+        )
+        self.assertEqual(unbound["error"]["code"], "channel_authority_required")
 
 
 if __name__ == "__main__":

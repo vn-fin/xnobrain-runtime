@@ -35,6 +35,7 @@ _LOCK = threading.RLock()
 # (service, profile_dir, agent_id, conversation_id, run_id, notify_cb, loop)
 _BINDINGS: dict[str, tuple] = {}
 _SCHEMAS: dict[str, dict] = {}
+TOOLSET = "xnobrain_channels"
 _PLATFORM = zalo_channels.ZALO_BOT_PLATFORM
 _CHAT_ID = re.compile(r"[A-Za-z0-9_-]{1,128}")
 _SEARCH_SCAN_PER_CHAT = 5000
@@ -863,26 +864,35 @@ _HANDLERS: dict[str, Any] = {
 # ── Registration and run binding ──────────────────────────────────────────
 
 
-def register_tools() -> None:
+def register_tools(profile_dir) -> None:
+    """Register the tools in the profile's registry scope.
+
+    The engine rebuilds ``agent.tools`` from the registry between turns and drops
+    tools appended by hand, so the tools must live in the registry. A profile scope
+    keeps them out of every other agent's tool list; unbound runs get an error result.
+    """
+    from hermes_constants import hermes_home_key
     from tools.registry import registry
 
+    scope = hermes_home_key(profile_dir)
     with _LOCK:
-        if _SCHEMAS:
-            return
         for name, description, parameters in _TOOL_DEFINITIONS:
             function = {
                 "name": name,
                 "description": description,
                 "parameters": parameters,
             }
+            _SCHEMAS[name] = {"type": "function", "function": function}
+            if registry.get_entry(name, scope=scope) is not None:
+                continue
             registry.register(
                 name=name,
-                toolset="xnobrain_channels",
+                toolset=TOOLSET,
                 schema=function,
                 handler=lambda args, _name=name, **kw: call(_name, args, **kw),
-                check_fn=lambda: False,
+                description=description,
+                scope=scope,
             )
-            _SCHEMAS[name] = {"type": "function", "function": function}
 
 
 @contextmanager
@@ -910,11 +920,6 @@ def bind_run(
     if not enabled:
         yield False
         return
-    try:
-        register_tools()
-    except Exception:
-        yield False
-        return
     binding = (
         service,
         Path(profile_dir),
@@ -937,12 +942,14 @@ def bind_run(
                 _BINDINGS.pop(str(conversation_id), None)
 
 
-def install_tools(agent, session_id: str) -> None:
+def install_tools(agent, session_id: str, profile_dir) -> None:
     with _LOCK:
         if session_id not in _BINDINGS or int(
             getattr(agent, "_delegate_depth", 0) or 0
         ):
             return
+    register_tools(profile_dir)
+    with _LOCK:
         schemas = copy.deepcopy(list(_SCHEMAS.values()))
     if not schemas:
         return
@@ -956,6 +963,10 @@ def install_tools(agent, session_id: str) -> None:
     agent.valid_tool_names = set(getattr(agent, "valid_tool_names", set())) | set(
         _SCHEMAS
     )
+    # Without the toolset the between-turns refresh filters the registry tools out.
+    enabled = getattr(agent, "enabled_toolsets", None)
+    if enabled is not None and TOOLSET not in enabled:
+        agent.enabled_toolsets = sorted({*enabled, TOOLSET})
 
 
 def call(tool_name: str, args, **kwargs) -> str:
