@@ -14,9 +14,12 @@ ZALO_PLATFORM = "zalo"
 ZALO_BOT_PLATFORM = "zalo_bot"
 DEFAULT_MAX_MESSAGE_LENGTH = 2000
 BRIDGE_PORT_BASE = 3110
+BRIDGE_TOKEN_FILE = "bridge.token"
 MAX_KNOWN_NAMES = 20
+_MAX_BRIDGE_RESPONSE_BYTES = 65536
 _THREAD_ID = re.compile(r"^[0-9]{1,32}$")
 _ZALO_BOT_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+_BRIDGE_TOKEN = re.compile(r"^[0-9a-fA-F]{64}$")
 _THREAD_ID_PATTERNS = {
     ZALO_PLATFORM: _THREAD_ID,
     ZALO_BOT_PLATFORM: _ZALO_BOT_ID,
@@ -205,42 +208,213 @@ def bridge_status(value: Any) -> str:
     return BRIDGE_STATUS.get(str(value or "").strip().lower(), "closed")
 
 
+def bridge_token(session_dir: Path) -> str | None:
+    """Read the bridge bearer token, refusing an unsafe or malformed file.
+
+    The bridge regenerates this token at every start, so callers read it on
+    every request and never cache it.
+    """
+    path = Path(session_dir) / BRIDGE_TOKEN_FILE
+    try:
+        if path.is_symlink() or not path.is_file():
+            return None
+        value = path.read_text(encoding="utf-8", errors="replace")[:4096].strip()
+    except (OSError, ValueError):
+        return None
+    return value if _BRIDGE_TOKEN.fullmatch(value) else None
+
+
+def _bridge_error_name(value: Any) -> str:
+    if isinstance(value, dict):
+        code = str(value.get("error") or "").strip()
+        if code:
+            return code
+    return "http_error"
+
+
+def _bridge_http_error(status: Any, error: Any) -> dict[str, Any]:
+    payload = b""
+    try:
+        payload = error.read(65536)
+    except Exception:
+        pass
+    try:
+        value = json.loads(payload)
+    except (ValueError, TypeError):
+        value = None
+    result = {
+        "ok": False,
+        "status": int(status or 0),
+        "data": None,
+        "error": _bridge_error_name(value),
+    }
+    return result
+
+
 def _bridge_request(
     port: int,
     path: str,
     *,
     method: str = "GET",
     timeout: float = 1.0,
-) -> dict[str, Any] | None:
+    token: str | None = None,
+    body: Mapping[str, Any] | None = None,
+    max_bytes: int = _MAX_BRIDGE_RESPONSE_BYTES,
+) -> dict[str, Any]:
+    """Call one bridge endpoint and return a content-free structured result.
+
+    ``{"ok", "status", "data", "error"}`` lets callers map an HTTP failure to
+    a stable channel error without exposing the bridge body.
+    """
     if not isinstance(port, int) or port < 1 or port > 65535 or port == 3000:
-        return None
+        return {
+            "ok": False,
+            "status": 0,
+            "data": None,
+            "error": "bridge_unavailable",
+        }
+    payload_bytes: bytes | None = b"{}" if method == "POST" else None
+    headers = {"Content-Type": "application/json"} if method == "POST" else {}
+    if body is not None:
+        try:
+            payload_bytes = json.dumps(body, ensure_ascii=False).encode("utf-8")
+        except (TypeError, ValueError):
+            return {
+                "ok": False,
+                "status": 0,
+                "data": None,
+                "error": "invalid_request",
+            }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     request = urllib.request.Request(
         f"http://127.0.0.1:{port}{path}",
         method=method,
-        data=b"{}" if method == "POST" else None,
-        headers={"Content-Type": "application/json"} if method == "POST" else {},
+        data=payload_bytes,
+        headers=headers,
     )
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             status = int(getattr(response, "status", 0))
-            if not 200 <= status < 300:
-                return None
-            payload = response.read(65536)
+            payload = response.read(max(1, int(max_bytes)))
+    except urllib.error.HTTPError as error:
+        return _bridge_http_error(getattr(error, "code", 0), error)
     except (OSError, urllib.error.URLError, ValueError):
-        return None
+        return {
+            "ok": False,
+            "status": 0,
+            "data": None,
+            "error": "unreachable",
+        }
     try:
         value = json.loads(payload)
     except (ValueError, TypeError):
-        return None
-    return value if isinstance(value, dict) else None
+        value = None
+    if not 200 <= status < 300:
+        return {
+            "ok": False,
+            "status": status,
+            "data": None,
+            "error": _bridge_error_name(value),
+        }
+    if not isinstance(value, dict):
+        return {
+            "ok": False,
+            "status": status,
+            "data": None,
+            "error": "invalid_response",
+        }
+    return {"ok": True, "status": status, "data": value, "error": None}
+
+
+def bridge_request(
+    port: int,
+    path: str,
+    *,
+    method: str = "GET",
+    timeout: float = 1.0,
+    token: str | None = None,
+    body: Mapping[str, Any] | None = None,
+    max_bytes: int = _MAX_BRIDGE_RESPONSE_BYTES,
+) -> dict[str, Any]:
+    """Public structured bridge call used by Runtime services."""
+    return _bridge_request(
+        port,
+        path,
+        method=method,
+        timeout=timeout,
+        token=token,
+        body=body,
+        max_bytes=max_bytes,
+    )
+
+
+def bridge_error_code(result: Any) -> str:
+    """Map one bridge failure to the shared channel tool error contract."""
+    if not isinstance(result, Mapping) or result.get("ok"):
+        return ""
+    status = result.get("status")
+    code = status if isinstance(status, int) and not isinstance(status, bool) else 0
+    error = str(result.get("error") or "")
+    if error == "not_connected" or code == 503:
+        return "channel_not_connected"
+    if error in {"unauthorized", "no_token"}:
+        return "channel_bridge_unauthorized"
+    return {
+        401: "channel_bridge_unauthorized",
+        404: "channel_message_not_found",
+        429: "channel_rate_limited",
+    }.get(code, "channel_bridge_failed")
 
 
 def bridge_health(port: int, *, timeout: float = 1.0) -> dict[str, Any] | None:
-    return _bridge_request(port, "/health", timeout=timeout)
+    result = _bridge_request(port, "/health", timeout=timeout)
+    return result.get("data") if result.get("ok") else None
 
 
-def bridge_start_login(port: int, *, timeout: float = 2.0) -> dict[str, Any] | None:
-    return _bridge_request(port, "/login", method="POST", timeout=timeout)
+def bridge_start_login(
+    port: int,
+    *,
+    token: str | None = None,
+    timeout: float = 2.0,
+) -> dict[str, Any] | None:
+    result = _bridge_request(port, "/login", method="POST", token=token, timeout=timeout)
+    return result.get("data") if result.get("ok") else None
+
+
+def bridge_send_text(
+    port: int,
+    token: str,
+    thread_id: str,
+    text: str,
+    *,
+    thread_type: str = "group",
+    timeout: float = 30.0,
+) -> dict[str, Any]:
+    """Send text through the authenticated bridge with an explicit thread type."""
+    if not _THREAD_ID.fullmatch(str(thread_id or "")):
+        raise ChannelDeliveryError("channel_recipient_invalid")
+    if thread_type not in {"user", "group"}:
+        raise ChannelDeliveryError("channel_recipient_invalid")
+    result = _bridge_request(
+        port,
+        "/send",
+        method="POST",
+        token=token,
+        timeout=timeout,
+        body={
+            "chatId": str(thread_id),
+            "threadType": thread_type,
+            "message": text,
+        },
+    )
+    if not result.get("ok"):
+        raise ChannelDeliveryError(bridge_error_code(result))
+    data = result.get("data") or {}
+    message_id = data.get("messageId")
+    return {
+        "message_id": str(message_id) if message_id not in (None, "") else None,
+    }
 
 
 def profile_enables_platform(profile: Path, platform: str) -> bool:

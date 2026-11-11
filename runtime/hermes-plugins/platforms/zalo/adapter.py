@@ -3,11 +3,16 @@
 Zalo has no official bot API for personal accounts, so this adapter follows the
 WhatsApp pattern: a detached Node.js bridge (``bridge/bridge.js``, built on
 zca-js) owns the Zalo Web session and exposes a loopback-only HTTP API. The
-Python adapter spawns the bridge, polls ``GET /messages`` for inbound direct
-text messages, and sends replies through ``POST /send``.
+Python adapter spawns the bridge, polls ``GET /messages`` for inbound messages,
+and sends replies through ``POST /send``.
 
-Scope for the first slice: direct (1:1) text messages only. Groups, media,
-reactions and self-echoes are ignored by the bridge.
+Auto-reply is off by default (``extra.auto_reply``): inbound messages start no
+agent turn, so the personal account only acts through owner-approved tools.
+When it is on, the scope is direct (1:1) messages and owner-approved groups;
+group messages are mention-gated by default and skipped mentions are replayed
+with the next addressed message. Inbound media is announced as a text note; the adapter never
+downloads it. Every bridge request except ``GET /health`` carries the bearer
+token the bridge writes to ``<session dir>/bridge.token``.
 """
 
 import asyncio
@@ -36,6 +41,18 @@ _IS_WINDOWS = platform.system() == "Windows"
 
 BRIDGE_PORT_BASE = 3110
 DEFAULT_MAX_MESSAGE_LENGTH = 2000
+BRIDGE_TOKEN_FILENAME = "bridge.token"
+BRIDGE_TOKEN_HEADER = "Authorization"
+BRIDGE_SEND_TIMEOUT_SECONDS = 30
+BRIDGE_BEST_EFFORT_TIMEOUT_SECONDS = 5.0
+DEFAULT_MEDIA_MAX_MB = 10
+MAX_REMEMBERED_THREADS = 500
+MAX_GROUP_BACKLOG_MESSAGES = 50
+MAX_GROUP_BACKLOG_GROUPS = 50
+GROUP_BACKLOG_HEADER = "[Earlier messages in this group, not addressed to you]"
+GROUP_MESSAGE_HEADER = "[Message to you]"
+_MEDIA_KINDS = frozenset({"image", "file", "video", "other"})
+_GROUP_THREAD_TYPES = frozenset({"group"})
 LINKED_MESSAGE_PATH = "/xnobrain/api/runtime/v1/internal/channels/messages"
 LINKED_MAX_RETRY = 100
 LINKED_RETRY_INTERVAL_SECONDS = 5.0
@@ -132,6 +149,38 @@ def _coerce_port(value: Any, default: Optional[int] = None) -> int:
     if port < 1 or port > 65535 or port == 3000:
         return fallback
     return port
+
+
+def _read_bridge_token(session_path: Path) -> Optional[str]:
+    """Read the bridge bearer token from disk on every request.
+
+    The bridge regenerates the token at every start, so it is never cached.
+    A missing or empty file means the bridge is not usable yet.
+    """
+    try:
+        token = (
+            Path(session_path) / BRIDGE_TOKEN_FILENAME
+        ).read_text(encoding="utf-8").strip()
+    except (OSError, ValueError):
+        return None
+    return token or None
+
+
+def _bridge_auth_headers(token: str) -> Dict[str, str]:
+    """Return the one header authenticated bridge endpoints require."""
+    return {BRIDGE_TOKEN_HEADER: f"Bearer {token}"}
+
+
+def _bridge_session_path(pconfig) -> Path:
+    """Resolve the session directory that holds the bridge token file."""
+    extra = getattr(pconfig, "extra", {}) or {}
+    return Path(extra.get("session_path") or (get_hermes_home() / "zalo"))
+
+
+def _thread_type_value(value: Any) -> str:
+    """Map a bridge/gateway thread type to the bridge's ``user``/``group``."""
+    text = str(value or "").strip().lower()
+    return "group" if text in _GROUP_THREAD_TYPES else "user"
 
 
 def _bridge_is_current(health: Dict[str, Any], bridge_path: Path) -> bool:
@@ -367,6 +416,9 @@ class ZaloAdapter(BasePlatformAdapter):
         self._http_session: Optional["aiohttp.ClientSession"] = None
         self._own_id: str = ""
         self._chat_names: Dict[str, str] = {}
+        self._thread_types: Dict[str, str] = {}
+        self._group_backlog: Dict[str, list] = {}
+        self._bridge_token_warned: bool = False
         self._shutting_down: bool = False
         self._links_cache: Dict[str, Dict[str, Any]] = {}
         self._links_mtime: Optional[float] = None
@@ -624,6 +676,145 @@ class ZaloAdapter(BasePlatformAdapter):
         self._close_bridge_log()
         print(f"[{self.name}] Disconnected")
 
+    def _bridge_token(self) -> Optional[str]:
+        """Return the current bridge token; never cached across requests."""
+        return _read_bridge_token(self._session_path)
+
+    def _remember_thread(self, thread_id: str, thread_type: str) -> None:
+        """Remember a thread's kind so outbound sends can reuse it."""
+        thread_id = str(thread_id or "")
+        if not thread_id:
+            return
+        self._thread_types.pop(thread_id, None)
+        self._thread_types[thread_id] = thread_type
+        while len(self._thread_types) > MAX_REMEMBERED_THREADS:
+            self._thread_types.pop(next(iter(self._thread_types)), None)
+
+    def _thread_type_for(
+        self, chat_id: str, metadata: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """Resolve a destination kind from metadata, memory, then ``user``."""
+        if isinstance(metadata, dict):
+            for key in ("thread_type", "chat_type", "threadType", "chatType"):
+                value = metadata.get(key)
+                if str(value or "").strip():
+                    return _thread_type_value(value)
+        return self._thread_types.get(str(chat_id), "user")
+
+    def _extra_flag(self, key: str, default: bool) -> bool:
+        extra = getattr(self.config, "extra", {}) or {}
+        value = extra.get(key, default)
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return default
+        return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+    def _media_max_mb(self) -> float:
+        extra = getattr(self.config, "extra", {}) or {}
+        value = extra.get("media_max_mb", DEFAULT_MEDIA_MAX_MB)
+        if isinstance(value, bool):
+            return float(DEFAULT_MEDIA_MAX_MB)
+        try:
+            limit = float(value)
+        except (TypeError, ValueError):
+            return float(DEFAULT_MEDIA_MAX_MB)
+        return limit if limit >= 0 else float(DEFAULT_MEDIA_MAX_MB)
+
+    def _buffer_group_message(self, thread_id: str, sender_name: str, text: str) -> None:
+        """Keep skipped group messages for replay with the next addressed one."""
+        backlog = self._group_backlog.get(thread_id)
+        if backlog is None:
+            while len(self._group_backlog) >= MAX_GROUP_BACKLOG_GROUPS:
+                self._group_backlog.pop(next(iter(self._group_backlog)), None)
+            backlog = []
+            self._group_backlog[thread_id] = backlog
+        backlog.append((sender_name, text))
+        if len(backlog) > MAX_GROUP_BACKLOG_MESSAGES:
+            del backlog[: len(backlog) - MAX_GROUP_BACKLOG_MESSAGES]
+
+    def _attach_group_backlog(self, thread_id: str, text: str) -> str:
+        """Prefix one processed group message with its skipped backlog."""
+        backlog = self._group_backlog.pop(thread_id, None)
+        if not backlog:
+            return text
+        lines = [GROUP_BACKLOG_HEADER]
+        lines.extend(f"{sender}: {message}" for sender, message in backlog)
+        lines.append(GROUP_MESSAGE_HEADER)
+        lines.append(text)
+        return "\n".join(lines)
+
+    def _media_notes(self, media: Any) -> list:
+        """Return one text note per inbound media item; nothing is downloaded."""
+        if not isinstance(media, list):
+            return []
+        limit_mb = self._media_max_mb()
+        limit_text = f"{limit_mb:g}"
+        notes = []
+        for item in media:
+            if not isinstance(item, dict):
+                continue
+            kind = str(item.get("kind") or "").strip().lower()
+            if kind not in _MEDIA_KINDS:
+                kind = "other"
+            name = " ".join(str(item.get("name") or "").split()) or kind
+            size_bytes = item.get("sizeBytes")
+            try:
+                size_bytes = int(size_bytes) if size_bytes is not None else None
+            except (TypeError, ValueError):
+                size_bytes = None
+            if (
+                size_bytes is not None
+                and limit_mb > 0
+                and size_bytes > limit_mb * 1024 * 1024
+            ):
+                notes.append(
+                    f"[Zalo {kind} attachment: {name}, over the {limit_text} MB limit]"
+                )
+            else:
+                notes.append(
+                    f"[Zalo {kind} attachment: {name}, not available to the agent]"
+                )
+        return notes
+
+    @staticmethod
+    def _message_text(data: Dict[str, Any]) -> str:
+        """Read the bridge text, falling back to its content object labels."""
+        text = data.get("text")
+        if isinstance(text, str):
+            return text
+        content = data.get("content")
+        if isinstance(content, dict):
+            for key in ("title", "description"):
+                value = content.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value
+        return ""
+
+    async def _post_bridge(
+        self, path: str, payload: Dict[str, Any], timeout: float
+    ) -> Optional[Dict[str, Any]]:
+        """POST one best-effort bridge request; errors are swallowed."""
+        token = self._bridge_token()
+        if not token or not self._http_session:
+            return None
+        try:
+            import aiohttp
+
+            async with self._http_session.post(
+                f"http://127.0.0.1:{self._bridge_port}/{path.lstrip('/')}",
+                json=payload,
+                headers=_bridge_auth_headers(token),
+                timeout=aiohttp.ClientTimeout(total=timeout),
+            ) as resp:
+                if resp.status != 200:
+                    return None
+                return await resp.json()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            return None
+
     async def send(
         self,
         chat_id: str,
@@ -631,7 +822,11 @@ class ZaloAdapter(BasePlatformAdapter):
         reply_to: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
-        """Send a text message through the Zalo bridge."""
+        """Send a text message through the Zalo bridge.
+
+        The bridge owns chunking, so the whole reply is one authenticated
+        request; the returned message IDs preserve chunk order.
+        """
         if not self._running or not self._http_session:
             return SendResult(success=False, error="Not connected")
         bridge_exit = await self._check_managed_bridge_exit()
@@ -640,41 +835,66 @@ class ZaloAdapter(BasePlatformAdapter):
         if not content or not content.strip():
             return SendResult(success=True, message_id=None)
 
+        token = self._bridge_token()
+        if not token:
+            # Without the session token no request may leave; the bridge is
+            # treated exactly like an unavailable bridge.
+            return SendResult(success=False, error="Not connected")
+        thread_type = self._thread_type_for(chat_id, metadata)
+
         try:
             import aiohttp
 
-            chunks = self.truncate_message(content, DEFAULT_MAX_MESSAGE_LENGTH)
-            sent_message_ids: list[str] = []
-            last_message_id = None
-            for index, chunk in enumerate(chunks):
-                async with self._http_session.post(
-                    f"http://127.0.0.1:{self._bridge_port}/send",
-                    json={"chatId": str(chat_id), "message": chunk},
-                    timeout=aiohttp.ClientTimeout(total=30),
-                ) as resp:
-                    if resp.status != 200:
-                        error = await resp.text()
-                        return SendResult(success=False, error=error)
-                    data = await resp.json()
-                    last_message_id = data.get("messageId")
-                    if last_message_id:
-                        sent_message_ids.append(str(last_message_id))
-                if index < len(chunks) - 1:
-                    await asyncio.sleep(0.3)
+            await self._post_bridge(
+                "typing",
+                {"chatId": str(chat_id), "threadType": thread_type},
+                BRIDGE_BEST_EFFORT_TIMEOUT_SECONDS,
+            )
+            async with self._http_session.post(
+                f"http://127.0.0.1:{self._bridge_port}/send",
+                json={
+                    "chatId": str(chat_id),
+                    "threadType": thread_type,
+                    "message": content,
+                },
+                headers=_bridge_auth_headers(token),
+                timeout=aiohttp.ClientTimeout(total=BRIDGE_SEND_TIMEOUT_SECONDS),
+            ) as resp:
+                if resp.status != 200:
+                    error = await resp.text()
+                    return SendResult(success=False, error=error)
+                data = await resp.json()
 
+            raw_ids = data.get("messageIds")
+            sent_message_ids = (
+                [str(item) for item in raw_ids if item is not None]
+                if isinstance(raw_ids, list)
+                else []
+            )
+            last_message_id = data.get("messageId")
+            if last_message_id is None and sent_message_ids:
+                last_message_id = sent_message_ids[-1]
+            continuations = tuple(sent_message_ids)
+            if sent_message_ids and last_message_id == sent_message_ids[-1]:
+                continuations = tuple(sent_message_ids[:-1])
             return SendResult(
                 success=True,
                 message_id=last_message_id,
-                continuation_message_ids=tuple(sent_message_ids[:-1]),
+                continuation_message_ids=continuations,
                 raw_response={"message_ids": sent_message_ids},
             )
         except Exception as exc:
             return SendResult(success=False, error=str(exc))
 
     async def get_chat_info(self, chat_id: str) -> Dict[str, Any]:
-        """Return minimal information about a Zalo direct chat."""
-        name = self._chat_names.get(str(chat_id)) or str(chat_id)
-        return {"name": name, "type": "dm", "chat_id": str(chat_id)}
+        """Return minimal information about a Zalo direct chat or group."""
+        key = str(chat_id)
+        thread_type = self._thread_types.get(key, "user")
+        return {
+            "name": self._chat_names.get(key) or key,
+            "type": "group" if thread_type == "group" else "dm",
+            "chat_id": key,
+        }
 
     def _load_links(self) -> Dict[str, Dict[str, Any]]:
         """Read ``<session dir>/links.json`` when it changed on disk.
@@ -816,12 +1036,26 @@ class ZaloAdapter(BasePlatformAdapter):
             if link is not None:
                 await self._deliver_linked(data, link)
                 continue
+            if not self._extra_flag("auto_reply", False):
+                # Personal accounts do not answer on their own by default: no
+                # agent turn, no seen receipt. Remember the thread kind so
+                # owner-approved tool sends still reach groups.
+                self._remember_thread(
+                    thread_id, _thread_type_value(data.get("threadType"))
+                )
+                continue
             event = self._build_message_event(data)
             if event:
                 await self.handle_message(event)
+                if event.message_id:
+                    await self._post_bridge(
+                        "seen",
+                        {"messageId": str(event.message_id)},
+                        BRIDGE_BEST_EFFORT_TIMEOUT_SECONDS,
+                    )
 
     async def _poll_messages(self) -> None:
-        """Poll the bridge for incoming direct messages."""
+        """Poll the bridge for incoming messages."""
         import aiohttp
 
         while self._running:
@@ -831,14 +1065,27 @@ class ZaloAdapter(BasePlatformAdapter):
             if bridge_exit:
                 print(f"[{self.name}] {bridge_exit}")
                 break
+            token = self._bridge_token()
+            if not token:
+                # No token means no authenticated request may leave. Retry
+                # until the bridge has written its per-start token file.
+                await asyncio.sleep(5)
+                continue
             try:
                 async with self._http_session.get(
                     f"http://127.0.0.1:{self._bridge_port}/messages",
+                    headers=_bridge_auth_headers(token),
                     timeout=aiohttp.ClientTimeout(total=30),
                 ) as resp:
                     if resp.status == 200:
                         messages = await resp.json()
                         await self._route_messages(messages)
+                    elif resp.status == 401 and not self._bridge_token_warned:
+                        self._bridge_token_warned = True
+                        logger.warning(
+                            "[%s] Zalo bridge rejected the session token; retrying with the current token file",
+                            self.name,
+                        )
             except asyncio.CancelledError:
                 break
             except Exception as exc:
@@ -852,12 +1099,13 @@ class ZaloAdapter(BasePlatformAdapter):
             await asyncio.sleep(1)
 
     def _build_message_event(self, data: Dict[str, Any]) -> Optional[MessageEvent]:
-        """Build a MessageEvent from bridge message data."""
+        """Build a MessageEvent from bridge message data.
+
+        Group messages are mention-gated by default; skipped ones stay in a
+        bounded per-group backlog until the next addressed message.
+        """
         try:
             if not isinstance(data, dict):
-                return None
-            text = data.get("text")
-            if not isinstance(text, str) or not text.strip():
                 return None
             sender_id = str(data.get("senderId") or "")
             thread_id = str(data.get("threadId") or "")
@@ -865,14 +1113,36 @@ class ZaloAdapter(BasePlatformAdapter):
                 return None
             if self._own_id and sender_id == self._own_id:
                 return None
+            thread_type = _thread_type_value(data.get("threadType"))
+            self._remember_thread(thread_id, thread_type)
+            text = self._message_text(data)
+            notes = self._media_notes(data.get("media"))
+            if notes:
+                text = "\n".join([part for part in [text, *notes] if part])
+            if not text.strip():
+                return None
             sender_name = str(data.get("senderName") or "")
-            if sender_name:
+            group_name = (
+                str(data.get("groupName") or "") if thread_type == "group" else ""
+            )
+            if thread_type == "group":
+                if self._extra_flag("require_mention", True) and not (
+                    data.get("mentionsSelf") or data.get("quotesSelf")
+                ):
+                    self._buffer_group_message(thread_id, sender_name, text)
+                    return None
+                text = self._attach_group_backlog(thread_id, text)
+                if group_name:
+                    self._chat_names[thread_id] = group_name
+            elif sender_name:
                 self._chat_names[thread_id] = sender_name
 
             source = self.build_source(
                 chat_id=thread_id,
-                chat_name=sender_name or None,
-                chat_type="dm",
+                chat_name=(group_name or None)
+                if thread_type == "group"
+                else (sender_name or None),
+                chat_type="group" if thread_type == "group" else "dm",
                 user_id=sender_id,
                 user_name=sender_name or None,
             )
@@ -900,6 +1170,7 @@ async def _standalone_send(
     media_files=None,
     force_document=False,
     caption=None,
+    thread_type=None,
 ):
     """Out-of-process Zalo delivery through a running bridge.
 
@@ -917,6 +1188,14 @@ async def _standalone_send(
     target = str(chat_id or "").strip()
     if not target:
         return {"error": "Zalo chat_id is required"}
+    token = _read_bridge_token(_bridge_session_path(pconfig))
+    if not token:
+        return {
+            "error": (
+                f"Zalo bridge is not running on 127.0.0.1:{port} — "
+                "start the gateway bridge first"
+            )
+        }
 
     try:
         import aiohttp
@@ -927,8 +1206,13 @@ async def _standalone_send(
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"http://127.0.0.1:{port}/send",
-                json={"chatId": target, "message": text},
-                timeout=aiohttp.ClientTimeout(total=30),
+                json={
+                    "chatId": target,
+                    "threadType": _thread_type_value(thread_type),
+                    "message": text,
+                },
+                headers=_bridge_auth_headers(token),
+                timeout=aiohttp.ClientTimeout(total=BRIDGE_SEND_TIMEOUT_SECONDS),
             ) as resp:
                 if resp.status == 200:
                     data = await resp.json()
@@ -1030,6 +1314,6 @@ def register(ctx) -> None:
         emoji="💬",
         platform_hint=(
             "You are on Zalo. Reply with plain text; markdown is not rendered. "
-            "Only direct text messages are supported."
+            "In group chats, answer only when mentioned or quoted."
         ),
     )

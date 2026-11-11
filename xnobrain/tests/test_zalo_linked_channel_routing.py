@@ -172,7 +172,7 @@ class LinkedZaloRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.session = Path(self.temporary.name) / "zalo"
         self.session.mkdir()
         self.instance = self.adapter.ZaloAdapter(
-            types.SimpleNamespace(extra={"session_path": str(self.session)}, enabled=True)
+            types.SimpleNamespace(extra={"session_path": str(self.session), "auto_reply": True}, enabled=True)
         )
         self.instance._running = True
         self.instance.handle_message = mock.AsyncMock()
