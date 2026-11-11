@@ -18,11 +18,13 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
+import yaml
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
 
 from xnobrain.handlers.operations.runtime_updates import operations
+from xnobrain.integrations.hermes import AgentManager
 from xnobrain.models.runtime_updates import ReleaseSelector, RuntimeUpdatePreflight
 from xnobrain.repositories.base import RepositoryBase
 from xnobrain.services.base import ServiceError
@@ -30,6 +32,7 @@ from xnobrain.services.portability import PortabilityService
 from xnobrain.services.runtime_update_recovery import accept_expired_transfers
 from xnobrain.services.runtime_update_startup import finish_startup
 from xnobrain.services.runtime_updates import RuntimeUpdateService
+from xnobrain.services.workspace_upload import WorkspaceUploadService
 
 TARGET = {
     "version": "2.1.0",
@@ -99,6 +102,7 @@ class RuntimeUpdateLifecycleTests(unittest.IsolatedAsyncioTestCase):
             {
                 "RUNTIME_UPDATE_SERVICE_TOKEN": "update-service-token",
                 "RUNTIME_UPDATE_DATA_PATH": str(self.data),
+                "DATA_DIR": str(self.data),
                 "XNOBRAIN_VERSION": TARGET["version"],
                 "XNOBRAIN_SOURCE_COMMIT": TARGET["source_commit"],
                 "XNOBRAIN_RUNTIME_DIGEST": TARGET["runtime_digest"],
@@ -336,10 +340,24 @@ class RuntimeUpdateLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(caught.exception.code, 2)
         repository.assert_not_called()
 
-    async def test_restart_preserves_expired_transfers_until_verified_resume(self):
+    async def test_restart_preserves_uploads_and_profile_configs_until_verified_resume(self):
         portability = PortabilityService(self.platform.repository, self.big_brother)
+        uploads = WorkspaceUploadService(self.data / "workspace-uploads")
+
+        def agents():
+            return AgentManager(root_profile=self.big_brother, profiles_root=self.profiles)
+
+        manager = agents()
+        native = self.profiles / "existing-agent"
+        (native / "workspace").mkdir(parents=True)
+        original_config = b"skills:\n  disabled: [user-choice]\ncustom: preserve\n"
+        for profile in (self.big_brother, native):
+            (profile / "config.yaml").write_bytes(original_config)
+            (profile / "skills").mkdir(exist_ok=True)
+            (profile / "skills" / ".bundled_manifest").write_text("pdf:hash\nniche-example:hash\n")
+        manager.sync_profiles_registry()
         expired = []
-        for root in (portability.upload_root, portability.export_root):
+        for root in (portability.upload_root, portability.export_root, uploads.root):
             directory = root / "expired"
             directory.mkdir()
             (directory / "bundle.zip").write_bytes(b"archive fixture")
@@ -354,6 +372,8 @@ class RuntimeUpdateLifecycleTests(unittest.IsolatedAsyncioTestCase):
 
         # Reconstruct the same service as Runtime does after process replacement.
         self.platform.portability = PortabilityService(self.platform.repository, self.big_brother)
+        self.platform.agents = agents()
+        self.platform.workspace_uploads = WorkspaceUploadService(uploads.root)
         self.platform.runtime_updates = RuntimeUpdateService(self.platform)
         self.platform.config.ensure_write_approval_defaults = Mock()
         self.platform._ensure_existing_write_approval_defaults = Mock()
@@ -365,6 +385,9 @@ class RuntimeUpdateLifecycleTests(unittest.IsolatedAsyncioTestCase):
             for directory in expired:
                 self.assertTrue((directory / "bundle.zip").is_file())
                 self.assertTrue((directory / "metadata.json").is_file())
+            for profile in (self.big_brother, native):
+                self.assertEqual((profile / "config.yaml").read_bytes(), original_config)
+                self.assertFalse((profile / "snapshots" / "config").exists())
             self.service = self.platform.runtime_updates
             verified = await self.call(
                 "post_verify", request(checkpoint_id=checkpoint["checkpoint_id"])
@@ -375,6 +398,13 @@ class RuntimeUpdateLifecycleTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.wait_for(startup, timeout=2)
             self.assertTrue(all(not directory.exists() for directory in expired))
             self.assertTrue((fresh / "bundle.zip").is_file())
+            for profile in (self.big_brother, native):
+                config = yaml.safe_load((profile / "config.yaml").read_text())
+                self.assertTrue(config["xnobrain"]["default_skills_initialized"])
+                self.assertEqual(config["skills"]["disabled"], ["niche-example", "user-choice"])
+                self.assertEqual(config["custom"], "preserve")
+                snapshots = list((profile / "snapshots" / "config").glob("*.yaml"))
+                self.assertEqual([path.read_bytes() for path in snapshots], [original_config])
         finally:
             startup.cancel()
             await asyncio.gather(startup, return_exceptions=True)

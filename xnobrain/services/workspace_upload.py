@@ -249,6 +249,25 @@ class WorkspaceUploadService:
             temporary.unlink(missing_ok=True)
 
     def _cleanup_expired(self) -> None:
+        from ..repositories.base import StoreError
+        from ..repositories.runtime_update_gate import WorkspaceActivity
+
+        try:
+            activity = WorkspaceActivity(self.root.parent)
+        except StoreError as error:
+            if error.code not in {
+                "runtime_update_maintenance",
+                "workspace_rebalance_maintenance",
+                "workspace_memory_maintenance",
+            }:
+                raise
+            # Startup must retain upload parts until the checkpoint is verified.
+            # finish_startup retries after verified resume or abort.
+            return
+        with activity, self._lock:
+            self._remove_expired_uploads()
+
+    def _remove_expired_uploads(self) -> None:
         cutoff = time.time() - UPLOAD_RETENTION_SECONDS
         for child in self.root.iterdir():
             if not child.is_dir():

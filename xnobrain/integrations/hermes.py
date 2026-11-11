@@ -89,15 +89,7 @@ class AgentManager(
         self._compacting_sessions: set[str] = set()
         self._skill_sync_lock = threading.RLock()
         self.sync_profiles_registry()
-        self._apply_default_skills_policy(self.root_profile)
-        if self.profiles_root.is_dir():
-            for profile_dir in self.profiles_root.iterdir():
-                if (
-                    profile_dir != self.root_profile
-                    and not profile_dir.is_symlink()
-                    and self._is_native_agent_profile(profile_dir)
-                ):
-                    self._apply_default_skills_policy(profile_dir)
+        self.initialize_default_skills()
 
 
 __all__ = ["AgentAPIError", "AgentManager"]

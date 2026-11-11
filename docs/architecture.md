@@ -62,6 +62,12 @@ See [API contracts](api.md) and the root
 
 ## Profiles and persistence
 
+Startup cleanup of expired workspace uploads and initialization of existing
+profiles' default skills acquire the workspace activity gate. They defer while
+maintenance holds a rollout checkpoint and retry after verified resume or
+abort, before normal startup repairs finish. A process restart must not delete
+upload parts or rewrite profile configs before data verification.
+
 Runtime update manifests skip the canonical root-profile `profiles` symlink
 only when it points to the configured profiles directory inside the durable
 data root. The target directory is inspected separately; other symlinks remain

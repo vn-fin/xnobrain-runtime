@@ -28,6 +28,8 @@ async def finish_startup(platform, *, deferred: bool = False) -> None:
             await asyncio.sleep(0.25)
             continue
         with activity:
+            platform.agents.initialize_default_skills(data_dir=platform.repository.data_dir)
+            platform.workspace_uploads._cleanup_expired()
             if deferred:
                 platform.portability._cleanup_transfers()
                 platform.config.ensure_write_approval_defaults()

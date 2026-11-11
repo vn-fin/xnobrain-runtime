@@ -323,6 +323,8 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
             platform = SimpleNamespace(
                 repository=SimpleNamespace(data_dir=root),
                 runtime_updates=SimpleNamespace(dispatch_paused=False),
+                agents=SimpleNamespace(initialize_default_skills=Mock()),
+                workspace_uploads=SimpleNamespace(_cleanup_expired=Mock()),
                 ensure_default_agent=repair,
             )
             task = asyncio.create_task(finish_startup(platform))
@@ -351,6 +353,8 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         platform = SimpleNamespace(
             repository=SimpleNamespace(data_dir=Path(temporary.name)),
             runtime_updates=SimpleNamespace(dispatch_paused=True),
+            agents=SimpleNamespace(initialize_default_skills=Mock()),
+            workspace_uploads=SimpleNamespace(_cleanup_expired=Mock()),
             portability=SimpleNamespace(_cleanup_transfers=Mock()),
             config=SimpleNamespace(ensure_write_approval_defaults=Mock()),
             _ensure_existing_write_approval_defaults=Mock(),
@@ -361,11 +365,17 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         platform.ensure_default_agent.assert_not_awaited()
         platform.config.ensure_write_approval_defaults.assert_not_called()
         platform.portability._cleanup_transfers.assert_not_called()
+        platform.agents.initialize_default_skills.assert_not_called()
+        platform.workspace_uploads._cleanup_expired.assert_not_called()
         platform.runtime_updates.dispatch_paused = False
         await asyncio.wait_for(task, timeout=1)
         platform.ensure_default_agent.assert_awaited_once()
         platform.config.ensure_write_approval_defaults.assert_called_once()
         platform.portability._cleanup_transfers.assert_called_once()
+        platform.agents.initialize_default_skills.assert_called_once_with(
+            data_dir=platform.repository.data_dir
+        )
+        platform.workspace_uploads._cleanup_expired.assert_called_once()
         platform.runtime_updates.dispatch_paused = True
         task = asyncio.create_task(finish_startup(platform, deferred=True))
         await asyncio.sleep(0)

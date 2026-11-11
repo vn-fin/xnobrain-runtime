@@ -62,6 +62,34 @@ def bundled_skill_ids(
 
 
 class DefaultSkillsMixin:
+    def initialize_default_skills(self, *, data_dir: Path | None = None) -> None:
+        """Defer existing-profile changes while a rollout checkpoint is held."""
+        from ..repositories.base import StoreError
+        from ..repositories.runtime_update_gate import WorkspaceActivity
+
+        # Match the application composition's data root, including standalone
+        # installations. The lifespan retry passes its repository root directly.
+        root = data_dir or Path(os.environ.get("DATA_DIR") or self.root_profile / "xnobrain")
+        root.mkdir(parents=True, exist_ok=True, mode=0o750)
+        try:
+            activity = WorkspaceActivity(root)
+        except StoreError as error:
+            if error.code not in {
+                "runtime_update_maintenance",
+                "workspace_rebalance_maintenance",
+                "workspace_memory_maintenance",
+            }:
+                raise
+            return
+        with activity:
+            self._apply_default_skills_policy(self.root_profile)
+            if self.profiles_root.is_dir():
+                for profile_dir in self.profiles_root.iterdir():
+                    if profile_dir != self.root_profile and self._is_native_agent_profile(
+                        profile_dir
+                    ):
+                        self._apply_default_skills_policy(profile_dir)
+
     @staticmethod
     def _seed_bundled_skills(profile_dir: Path) -> None:
         """Seed a new profile through Hermes without changing process globals."""
