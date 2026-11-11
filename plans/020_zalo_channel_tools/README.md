@@ -294,3 +294,59 @@ Run inside the Runtime dev container:
 3. In channel-originated runs, read tools are limited to the current thread
    (D3). A request for any other chat returns `channel_thread_out_of_scope`.
    Web runs by the owner can read every approved chat.
+
+## Security fixes from the live test (2026-11-11)
+
+The Zalo Bot live test with Big Brother found two holes. Both must be closed
+before more tools ship.
+
+### Findings
+
+- **S1: sends bypass approval.** After `send_channel_message` was denied or
+  timed out, the agent ran `agent send --to zalo_bot:<chat> "text"` in its
+  terminal and the message was delivered. The path is `runtime/agent-cli.sh` →
+  `capacity_cli` → `hermes send` → `send_message_tool` → plugin standalone
+  sender, with no approval. The agent had written this recipe into a
+  self-authored profile skill (`skills/operations/messaging-channels`).
+  XNOBrain profiles run with `approvals.mode: off`, so terminal commands are
+  never gated.
+- **S2: channel turns run with the full toolset.** `run_internal_turn` sends
+  no toolset restriction, so a run started by any member of an approved group
+  gets terminal, file, code execution, `session_search` (every session in the
+  profile, and other profiles by id), memory, skills, delegation and the
+  owner's MCP servers (a group turn read Notion results). The current-thread
+  rule (decision 3) only covers the Zalo tools.
+
+### Fixes
+
+- **F1: channel turns get an allowlist (closes S2).** `run_internal_turn`
+  passes `toolsets` in the run body; `conversation_runner` already maps it to
+  `--toolsets`. The allowlist is `xnobrain_channels`, `web`, `vision`, `tts`,
+  `todo`. Excluded: `terminal`, `file`, `code_execution`, `session_search`,
+  `memory`, `skills`, `delegation`, `cronjob`, `kanban`, `browser`,
+  `computer_use`, `image_gen`, every MCP toolset. This is the real boundary:
+  without terminal and file tools the run cannot read the bot token, the
+  bridge token or other sessions. Tests assert that the run body carries the
+  allowlist for group and DM turns, and that a channel run's tool list
+  excludes `session_search`, `terminal` and MCP tools.
+- **F2: `agent send` refuses inside agent runs (S1, web runs).** In the CLI
+  entry, when `HERMES_AGENT=true` (set on every terminal subprocess) and the
+  command is `send` to a channel platform, exit non-zero with "use
+  send_channel_message, which asks the owner first". Cron and kanban
+  delivery call the Python transport directly and are not affected. Add an
+  `approvals.deny` entry for `agent send*` and `hermes send*` as a second
+  layer. Limit: a web run that keeps terminal access can still reach the
+  transport another way (for example `python -c`); F2 closes the documented
+  and learned path, and the owner is present in web runs.
+- **F3: remove the learned recipe.** Rewrite the Big Brother profile skill
+  `messaging-channels` to point at `send_channel_message` and drop the
+  `agent send --to` lines (profile data, done with the owner's consent).
+  Mention in the `send_channel_message` description that it is the only
+  supported way to send on Zalo.
+- **F4: approval card timeout.** In test 5 the web approval request was
+  emitted and no response reached Runtime before the 300 s timeout. Check the
+  UI card for the new `pattern_key`s (`zalo_bot.send_message`,
+  `zalo.send_group_message`) and the approve/deny round trip.
+
+Out of scope here: duplicate rows in `state.db` for one web session (123
+rows, 79 distinct), tracked separately.
