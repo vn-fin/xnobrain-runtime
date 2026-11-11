@@ -285,8 +285,6 @@ Run inside the Runtime dev container:
    `extra.history_retention_days` (1–365) in the channel config, editable on
    the channel settings card. Applies to the bot store and the personal
    `history.jsonl`.
-
-## Open questions
-
-1. Should read tools in channel-originated runs be limited to the current
-   thread (proposed) or disabled entirely?
+3. In channel-originated runs, read tools are limited to the current thread
+   (D3). A request for any other chat returns `channel_thread_out_of_scope`.
+   Web runs by the owner can read every approved chat.
