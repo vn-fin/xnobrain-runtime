@@ -5,6 +5,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from xnobrain.integrations import channel_tools, zalo_tools
@@ -528,6 +529,75 @@ class ZaloToolCallTests(unittest.TestCase):
 
         self.assertEqual(result["error"]["code"], "channel_send_denied")
         self.assertEqual(self.service.bridge_calls, [])
+
+
+class ZaloToolRegistryTests(unittest.TestCase):
+    """The engine rebuilds agent.tools from the registry between turns."""
+
+    def setUp(self):
+        channel_tools._BINDINGS.clear()
+        channel_tools._PLATFORMS.clear()
+        self.addCleanup(channel_tools._BINDINGS.clear)
+        self.addCleanup(channel_tools._PLATFORMS.clear)
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.profile = Path(self.temporary.name) / "profiles" / "agent-1"
+        self.other_profile = Path(self.temporary.name) / "profiles" / "agent-2"
+        self.profile.mkdir(parents=True)
+        self.other_profile.mkdir(parents=True)
+        self.service = _FakeService(self.profile)
+        channel_tools._BINDINGS["conv-1"] = (
+            self.service,
+            "agent-1",
+            "conv-1",
+            "run-1",
+            lambda approval: None,
+            None,
+        )
+        channel_tools._PLATFORMS["conv-1"] = frozenset({"zalo"})
+
+    def _agent(self, **kwargs):
+        return SimpleNamespace(
+            tools=[], valid_tool_names=set(), enabled_toolsets=["web"], **kwargs
+        )
+
+    def test_install_registers_tools_only_in_the_profile_scope(self):
+        from hermes_constants import hermes_home_key
+        from tools.registry import registry
+
+        zalo_tools.install_tools(self._agent(), "conv-1")
+
+        scope = hermes_home_key(self.profile)
+        other_scope = hermes_home_key(self.other_profile)
+        for name in _TOOL_NAMES:
+            self.assertIsNotNone(registry.get_entry(name, scope=scope))
+            self.assertIsNone(registry.get_entry(name, scope=other_scope))
+
+    def test_install_enables_the_toolset_and_keeps_other_entries(self):
+        agent = self._agent()
+        agent.tools = [{"type": "function", "function": {"name": "read"}}]
+        agent.valid_tool_names = {"read"}
+
+        zalo_tools.install_tools(agent, "conv-1")
+
+        self.assertEqual(agent.enabled_toolsets, ["web", "xnobrain_channels"])
+        self.assertEqual(agent.valid_tool_names - set(_TOOL_NAMES), {"read"})
+        names = [tool["function"]["name"] for tool in agent.tools]
+        self.assertEqual(names[0], "read")
+        self.assertEqual(set(names[1:]), set(_TOOL_NAMES))
+
+    def test_install_skips_an_unbound_run(self):
+        agent = self._agent()
+
+        zalo_tools.install_tools(agent, "missing")
+
+        self.assertEqual(agent.tools, [])
+        self.assertEqual(agent.enabled_toolsets, ["web"])
+
+    def test_unbound_call_still_returns_the_error_envelope(self):
+        result = json.loads(zalo_tools.call("zalo_me", {}, session_id="missing"))
+
+        self.assertEqual(result["error"]["code"], "channel_authority_required")
 
 
 if __name__ == "__main__":

@@ -31,7 +31,6 @@ _REACTION_NAMES = ("HEART", "LIKE", "HAHA", "WOW", "CRY", "ANGRY")
 _TRUST = "untrusted_external"
 
 _LOCK = threading.RLock()
-_REGISTERED = False
 
 
 class _EmptyRequest(BaseModel):
@@ -691,32 +690,44 @@ def _handler(name: str):
     return handle
 
 
-def register_tools() -> None:
-    global _REGISTERED
+def register_tools(profile_dir) -> None:
+    """Register the Zalo tools in the profile's registry scope.
 
+    The engine rebuilds ``agent.tools`` from the registry between turns and drops
+    tools appended by hand, so the tools must live in the registry. A profile
+    scope keeps them out of every other agent's tool list; unbound runs still get
+    an error result from the handler.
+    """
+    from hermes_constants import hermes_home_key
     from tools.registry import registry
 
+    scope = hermes_home_key(profile_dir)
     with _LOCK:
-        if _REGISTERED:
-            return
         for name, schema in _SCHEMAS.items():
+            if registry.get_entry(name, scope=scope) is not None:
+                continue
+            function = schema["function"]
             registry.register(
                 name=name,
                 toolset=_TOOLSET,
-                schema=schema,
+                schema=function,
                 handler=_handler(name),
-                check_fn=lambda: False,
+                description=function["description"],
+                scope=scope,
             )
-        _REGISTERED = True
 
 
-def install_tools(agent, session_id: str) -> None:
+def install_tools(agent, session_id: str, profile_dir=None) -> None:
     """Install the Zalo tool schemas only for a bound run with zalo enabled."""
     binding, platforms = channel_tools.run_binding(session_id)
     if binding is None or platforms is None or _PLATFORM not in platforms:
         return
     if int(getattr(agent, "_delegate_depth", 0) or 0):
         return
+    if profile_dir is None:
+        service, agent_id = binding[0], binding[1]
+        profile_dir = service.profile_path(agent_id)
+    register_tools(profile_dir)
     with _LOCK:
         schemas = {name: copy.deepcopy(schema) for name, schema in _SCHEMAS.items()}
     existing = {tool.get("function", {}).get("name") for tool in getattr(agent, "tools", [])}
@@ -724,3 +735,7 @@ def install_tools(agent, session_id: str) -> None:
     if added:
         agent.tools = list(getattr(agent, "tools", []) or []) + added
     agent.valid_tool_names = set(getattr(agent, "valid_tool_names", set())) | set(schemas)
+    # Without the toolset the between-turns refresh filters the registry tools out.
+    enabled = getattr(agent, "enabled_toolsets", None)
+    if enabled is not None and _TOOLSET not in enabled:
+        agent.enabled_toolsets = sorted({*enabled, _TOOLSET})

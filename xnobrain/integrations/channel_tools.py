@@ -122,9 +122,6 @@ def register_tools() -> None:
                 check_fn=lambda: False,
             )
             _SCHEMA.update({"type": "function", "function": function})
-    from . import zalo_tools
-
-    zalo_tools.register_tools()
 
 
 @contextmanager

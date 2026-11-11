@@ -41,6 +41,9 @@ class _FakeService:
     def resolve_recipient(self, agent_id, recipient):
         return self.resolution
 
+    def profile_path(self, agent_id):
+        return Path(tempfile.gettempdir()) / "xnobrain-channel-tests" / agent_id
+
     def resolve_zalo_group(self, agent_id, recipient):
         self.group_calls.append(recipient)
         return self.group_resolution
