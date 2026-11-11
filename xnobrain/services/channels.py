@@ -60,6 +60,10 @@ _GATEWAY_CONNECT_INSTRUCTION = (
 )
 _QR_WAIT_SECONDS = 5.0
 _BOT_TOKEN_ENV = "ZALO_BOT_TOKEN"
+# The plugin refreshes its per-profile state file every 30 seconds; a record
+# older than three missed heartbeats means the owning gateway stopped writing.
+_BOT_STATE_HEARTBEAT_SECONDS = 30.0
+_BOT_STATE_STALE_SECONDS = 3 * _BOT_STATE_HEARTBEAT_SECONDS
 
 
 class ChannelsService:
@@ -1486,23 +1490,21 @@ class ChannelsService:
         }
 
     def _bot_runtime_connected(self, profile: Path) -> bool:
-        """Map Hermes' persisted platform state when it is unambiguously scoped.
+        """Read the owning plugin's per-profile connected heartbeat.
 
-        ``gateway_state.json`` keys platforms by name, not by profile, so in
-        multiplex mode it cannot tell which profile owns the bot. Only trust a
-        non-multiplexing gateway whose root profile is the bot owner.
+        ``gateway_state.json`` keys platforms by name only, so it cannot say
+        which profile owns the bot under multiplexing. The bundled plugin
+        writes the profile-scoped state file instead; trust only a fresh
+        ``connected`` record so a dead gateway (stale heartbeat) reports as
+        configured rather than connected.
         """
-        root = self._root_profile()
-        try:
-            if Path(profile).resolve() != root:
-                return False
-            root_config = self.repository.config(root)
-        except Exception:
+        record = self.repository.zalo_bot_state(profile)
+        if not record or record.get("state") != "connected":
             return False
-        gateway = root_config.get("gateway")
-        if isinstance(gateway, dict) and gateway.get("multiplex_profiles"):
+        updated_at = record.get("updated_at")
+        if not isinstance(updated_at, (int, float)) or isinstance(updated_at, bool):
             return False
-        return self.repository.gateway_platform_state(root, "zalo_bot") == "connected"
+        return abs(time.time() - float(updated_at)) <= _BOT_STATE_STALE_SECONDS
 
     def _bot_channel_state(
         self,

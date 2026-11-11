@@ -5,11 +5,14 @@ API, so this module loads the vendored directory as a package with a minimal
 Hermes stub (same approach as ``test_zalo_bot_plugin.py``).
 """
 
+import asyncio
 import importlib.util
+import json
 import logging
 import os
 import sys
 import tempfile
+import time
 import types
 import unittest
 from pathlib import Path
@@ -183,6 +186,30 @@ class _FakeGroupManager:
     async def pin_message(self, group_id, message_id):
         self.pinned.append((group_id, message_id))
         return {"ok": True}
+
+
+class _FakeZaloClient:
+    """Minimal connected client: getMe succeeds, polling blocks until cancel."""
+
+    def __init__(self, bot_token):
+        self.bot_token = bot_token
+
+    async def get_me(self):
+        return {
+            "ok": True,
+            "result": {
+                "id": "bot-secret-id",
+                "account_name": "Bot",
+                "display_name": "Bot",
+            },
+        }
+
+    async def get_updates(self, timeout=30):
+        await asyncio.sleep(3600)
+        return []
+
+    async def close(self):
+        return None
 
 
 class ZaloBotHardeningTests(unittest.IsolatedAsyncioTestCase):
@@ -508,6 +535,82 @@ class ZaloBotHardeningTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(connected)
         self.assertNotIn(token, "\n".join(logs.output))
+
+    # ── Per-profile runtime state for the channels service ────────────
+
+    def _state_home(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        return Path(temporary.name)
+
+    async def test_state_file_lifecycle_and_no_secrets(self):
+        token = "123456:abcdefSECRET"
+        home = self._state_home()
+        with mock.patch.object(
+            self.adapter_module, "get_hermes_home", return_value=home
+        ):
+            adapter = self._adapter(bot_token=token)
+            states = []
+            original = adapter._write_state
+
+            def capture(state):
+                original(state)
+                states.append(state)
+
+            adapter._write_state = capture
+            with mock.patch.object(
+                self.adapter_module, "_ZaloClient", _FakeZaloClient
+            ):
+                self.assertTrue(await adapter.connect())
+
+            self.assertEqual(states[0], "connecting")
+            self.assertIn("connected", states)
+            path = home / "zalo_bot_state.json"
+            record = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(record["state"], "connected")
+            self.assertEqual(set(record), {"state", "updated_at", "pid"})
+            self.assertIsInstance(record["pid"], int)
+            contents = path.read_text(encoding="utf-8")
+            self.assertNotIn(token, contents)
+            self.assertNotIn("bot-secret-id", contents)
+
+            await adapter.disconnect()
+
+        self.assertEqual(states[-1], "disconnected")
+        record = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(record["state"], "disconnected")
+
+    def test_heartbeat_refreshes_updated_at(self):
+        home = self._state_home()
+        with mock.patch.object(
+            self.adapter_module, "get_hermes_home", return_value=home
+        ):
+            adapter = self._adapter(bot_token="123456:abcdefSECRET")
+            adapter._write_state("connected")
+            path = home / "zalo_bot_state.json"
+            before = json.loads(path.read_text(encoding="utf-8"))["updated_at"]
+            adapter._state_last_write = 0.0
+            time.sleep(0.01)
+
+            adapter._refresh_state_heartbeat()
+
+            record = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(record["state"], "connected")
+        self.assertGreater(record["updated_at"], before)
+
+    def test_state_write_failure_does_not_raise(self):
+        home = self._state_home()
+        with mock.patch.object(
+            self.adapter_module, "get_hermes_home", return_value=home
+        ):
+            adapter = self._adapter(bot_token="123456:abcdefSECRET")
+            with mock.patch.object(
+                self.adapter_module.os, "replace", side_effect=OSError("disk full")
+            ):
+                adapter._write_state("connected")
+
+            self.assertFalse((home / "zalo_bot_state.json").exists())
+            self.assertEqual(list(home.iterdir()), [])
 
 
 if __name__ == "__main__":

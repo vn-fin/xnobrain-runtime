@@ -33,6 +33,7 @@ import json
 import logging
 import os
 import re
+import tempfile
 import time
 from collections import OrderedDict
 from datetime import datetime
@@ -67,6 +68,10 @@ POLLING_TIMEOUT = 30  # seconds for long-poll
 POLLING_INTERVAL = 2  # seconds between polls when no updates
 RECONNECT_DELAY = 5  # seconds before reconnecting after error
 WEBHOOK_SECRET_HEADER = "X-Bot-Api-Secret-Token"
+# Per-profile runtime state read by the Runtime channels service. It contains
+# only the connection state, a heartbeat timestamp, and the writer PID.
+STATE_FILE = "zalo_bot_state.json"
+STATE_HEARTBEAT_SECONDS = 30.0
 
 # ── Moderation constants ──────────────────────────────────────────
 ANTI_SPAM_MAX_PER_MINUTE = 5
@@ -806,6 +811,10 @@ class ZaloAdapter(BasePlatformAdapter):
         self._bot_name: str = ""
         self._bot_display_name: str = ""
         self._seen_message_ids: "OrderedDict[str, None]" = OrderedDict()
+        # Resolved at connect() inside the profile's runtime scope, when Hermes
+        # multiplexing installs a context-local HERMES_HOME override.
+        self._profile_home: Optional[Path] = None
+        self._state_last_write = 0.0
 
         # Moderation & group management instances. _GroupManager resolves
         # self._client lazily (client is only created in connect()).
@@ -814,6 +823,78 @@ class ZaloAdapter(BasePlatformAdapter):
         self._group_manager = _GroupManager(self)
         self._history_sync = _ChatHistorySync()
         self._group_settings = _GroupSettings()
+
+    def _resolve_state_home(self) -> Optional[Path]:
+        """Return this adapter's profile home for its runtime state file.
+
+        ``get_hermes_home()`` is the single source of truth: a single-profile
+        gateway reads ``HERMES_HOME``, while a multiplexed gateway installs a
+        context-local override for the profile before it creates and connects
+        the adapter. Resolving on the adapter (not at import time) keeps one
+        process's adapters writing to their own profile directories.
+        """
+        if self._profile_home is None:
+            try:
+                self._profile_home = Path(get_hermes_home())
+            except Exception:
+                return None
+        return self._profile_home
+
+    def _write_state(self, state: str) -> None:
+        """Atomically persist this profile's Zalo Bot connection state.
+
+        The Runtime channels service reads ``<profile>/zalo_bot_state.json``;
+        it must never contain a token, bot ID, or message content. A failed
+        write is diagnostic only and never interrupts the adapter.
+        """
+        temporary = ""
+        try:
+            home = self._resolve_state_home()
+            if home is None:
+                return
+            path = home / STATE_FILE
+            payload = json.dumps(
+                {
+                    "state": state,
+                    "updated_at": time.time(),
+                    "pid": os.getpid(),
+                },
+                sort_keys=True,
+            )
+            fd, temporary = tempfile.mkstemp(
+                prefix=f".{STATE_FILE}.", dir=str(home)
+            )
+            try:
+                os.fchmod(fd, 0o600)
+                with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                    fd = -1
+                    handle.write(payload + "\n")
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.replace(temporary, path)
+                temporary = ""
+            except Exception:
+                if fd >= 0:
+                    try:
+                        os.close(fd)
+                    except OSError:
+                        pass
+                raise
+            self._state_last_write = time.monotonic()
+        except Exception as error:
+            logger.debug("Zalo: state write failed: %s", type(error).__name__)
+        finally:
+            if temporary:
+                try:
+                    os.unlink(temporary)
+                except OSError:
+                    pass
+
+    def _refresh_state_heartbeat(self) -> None:
+        """Refresh ``connected`` at most once per heartbeat interval."""
+        if time.monotonic() - self._state_last_write < STATE_HEARTBEAT_SECONDS:
+            return
+        self._write_state("connected")
 
     def _redact_token(self, token: str) -> str:
         """Placeholder kept for callers wanting a display form of the token.
@@ -857,6 +938,8 @@ class ZaloAdapter(BasePlatformAdapter):
 
     async def connect(self, is_reconnect: bool = False) -> bool:
         """Connect to Zalo Bot API: verify token and start polling/webhook."""
+        self._profile_home = None
+        self._write_state("connecting")
         if not self.bot_token:
             logger.error("Zalo: bot_token must be configured")
             self._set_fatal_error(
@@ -864,6 +947,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 "ZALO_BOT_TOKEN must be set",
                 retryable=False,
             )
+            self._write_state("disconnected")
             return False
 
         self._client = _ZaloClient(self.bot_token)
@@ -879,6 +963,7 @@ class ZaloAdapter(BasePlatformAdapter):
                     f"Zalo token rejected: {safe_me}",
                     retryable=False,
                 )
+                self._write_state("disconnected")
                 return False
             self._bot_info = me.get("result", {})
             self._bot_id = str(self._bot_info.get("id", ""))
@@ -894,6 +979,7 @@ class ZaloAdapter(BasePlatformAdapter):
             safe_error = _redact_secret_text(e, self.bot_token)
             logger.error("Zalo: token verification error: %s", safe_error)
             self._set_fatal_error("auth_error", safe_error, retryable=True)
+            self._write_state("disconnected")
             return False
 
         # Start receiving messages (polling or webhook)
@@ -906,6 +992,7 @@ class ZaloAdapter(BasePlatformAdapter):
             await self._start_polling()
 
         self._mark_connected()
+        self._write_state("connected")
         logger.info(
             "Zalo: connected as '%s' (%s)",
             self._bot_info.get("account_name", "?"),
@@ -915,6 +1002,7 @@ class ZaloAdapter(BasePlatformAdapter):
 
     async def disconnect(self) -> None:
         """Stop polling/webhook and close the API client."""
+        self._write_state("disconnected")
         self._mark_disconnected()
 
         if self._poll_task and not self._poll_task.done():
@@ -944,43 +1032,53 @@ class ZaloAdapter(BasePlatformAdapter):
         self._poll_task = asyncio.create_task(self._poll_loop())
 
     async def _poll_loop(self) -> None:
-        """Continuously poll for updates."""
+        """Continuously poll for updates and refresh the connected heartbeat."""
         consecutive_errors = 0
 
-        while self.is_connected:
-            try:
-                updates = await self._client.get_updates(timeout=POLLING_TIMEOUT)
+        try:
+            while self.is_connected:
+                try:
+                    updates = await self._client.get_updates(timeout=POLLING_TIMEOUT)
+                    # The receive loop is healthy after every successful poll,
+                    # including an empty long-poll response.
+                    self._refresh_state_heartbeat()
 
-                if not updates:
-                    await asyncio.sleep(POLLING_INTERVAL)
-                    continue
-
-                consecutive_errors = 0
-
-                for update in updates:
-                    event_name = update.get("event_name", "")
-                    message = update.get("message") or update.get("result", {}).get("message", {})
-
-                    if not message:
+                    if not updates:
+                        await asyncio.sleep(POLLING_INTERVAL)
                         continue
 
-                    update_id = (
-                        update.get("update_id")
-                        or update.get("message_id")
-                        or update.get("result", {}).get("update_id")
-                    )
-                    await self._handle_incoming(event_name, message, update_id=update_id)
+                    consecutive_errors = 0
 
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:
-                consecutive_errors += 1
-                delay = min(RECONNECT_DELAY * consecutive_errors, 60)
-                logger.warning(
-                    "Zalo: poll error (attempt %d): %s — retrying in %ds",
-                    consecutive_errors, e, delay,
-                )
-                await asyncio.sleep(delay)
+                    for update in updates:
+                        event_name = update.get("event_name", "")
+                        message = update.get("message") or update.get("result", {}).get(
+                            "message", {}
+                        )
+
+                        if not message:
+                            continue
+
+                        update_id = (
+                            update.get("update_id")
+                            or update.get("message_id")
+                            or update.get("result", {}).get("update_id")
+                        )
+                        await self._handle_incoming(
+                            event_name, message, update_id=update_id
+                        )
+
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    consecutive_errors += 1
+                    delay = min(RECONNECT_DELAY * consecutive_errors, 60)
+                    logger.warning(
+                        "Zalo: poll error (attempt %d): %s — retrying in %ds",
+                        consecutive_errors, e, delay,
+                    )
+                    await asyncio.sleep(delay)
+        finally:
+            self._write_state("disconnected")
 
     # ── Webhook mode ──────────────────────────────────────────────────────
 
@@ -1037,13 +1135,16 @@ class ZaloAdapter(BasePlatformAdapter):
         logger.info("Zalo: webhook listening on %s:%d", self.webhook_host, self.webhook_port)
 
         # Keep the task alive (runs as background task; cancelled on disconnect)
+        # and refresh the connected heartbeat from this same loop.
         try:
             while True:
-                await asyncio.sleep(3600)
+                await asyncio.sleep(STATE_HEARTBEAT_SECONDS)
+                self._refresh_state_heartbeat()
         except asyncio.CancelledError:
             raise
         finally:
             await runner.cleanup()
+            self._write_state("disconnected")
 
     # ── Incoming message handling ─────────────────────────────────────────
 

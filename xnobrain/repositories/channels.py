@@ -22,6 +22,7 @@ SESSION_FILE = "session.json"
 QR_FILE = "qr.png"
 GATEWAY_PID_FILE = "gateway.pid"
 GATEWAY_STATE_FILE = "gateway_state.json"
+BOT_STATE_FILE = "zalo_bot_state.json"
 RESTART_STATE_FILE = "gateway-restart.json"
 OWNER_FILE = "owner.json"
 OWNER_METADATA_DIR = ".xnobrain"
@@ -342,6 +343,37 @@ class ChannelsRepository:
         state = record.get("state") if isinstance(record, dict) else None
         text = str(state or "").strip().lower()
         return text or None
+
+    def zalo_bot_state(self, profile: Any) -> dict[str, Any] | None:
+        """Read the plugin-written per-profile Zalo Bot runtime state.
+
+        The bundled plugin writes ``<profile>/zalo_bot_state.json`` atomically
+        for the profile that owns the bot. Reject symlinks and non-files, and
+        tolerate missing or malformed records so status stays conservative.
+        """
+        try:
+            root = self._profile_root(profile)
+        except StoreError:
+            return None
+        path = root / BOT_STATE_FILE
+        if path.is_symlink() or not path.is_file():
+            return None
+        try:
+            value = json.loads(self._read_text(path))
+        except (ValueError, TypeError, StoreError):
+            return None
+        if not isinstance(value, dict):
+            return None
+        state = str(value.get("state") or "").strip().lower()
+        if state not in {"connected", "connecting", "disconnected"}:
+            return None
+        updated_at = value.get("updated_at")
+        if not isinstance(updated_at, (int, float)) or isinstance(updated_at, bool):
+            return None
+        pid = value.get("pid")
+        if isinstance(pid, bool) or not isinstance(pid, int):
+            pid = None
+        return {"state": state, "updated_at": float(updated_at), "pid": pid}
 
     def _restart_state_path(self) -> Path:
         return self.base.data_dir / "channels" / RESTART_STATE_FILE

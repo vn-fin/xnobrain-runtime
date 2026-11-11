@@ -117,6 +117,17 @@ Security hardening applied on top of the vendored upstream code on 2026-11-09:
       that starts with `/` is dropped because Hermes slash commands are
       DM-only. Empty text after mention stripping is also dropped so a group
       message can never fall back to the native gateway agent.
+12. Per-profile runtime connection state.
+    - `adapter.py`: `connect()`, the polling loop, the webhook keep-alive, and
+      `disconnect()` atomically write `<profile>/zalo_bot_state.json` (mode
+      `0600`, temp file plus `os.replace`) with only `state`
+      (`connecting`/`connected`/`disconnected`), `updated_at`, and `pid`.
+      `get_hermes_home()` resolves the profile home at connect time, so under
+      `gateway.multiplex_profiles` each profile writes its own file. The
+      polling and webhook loops refresh `connected` every 30 seconds while
+      healthy. Write failures are logged at debug level and never interrupt
+      the adapter. The file deliberately holds no token, bot ID, or user
+      content; the Runtime channels service reads it for `connected` status.
 
 Focused regression tests live in
 `xnobrain/tests/test_zalo_bot_plugin_hardening.py`.

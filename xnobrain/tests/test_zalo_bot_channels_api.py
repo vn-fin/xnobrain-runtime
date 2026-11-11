@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -25,6 +26,7 @@ from xnobrain.services.base import ServiceError
 from xnobrain.services.channels import ChannelsService
 
 TOKEN = "123456789012345:AbCdEf_-1234567890"
+SECOND_TOKEN = "987654321098765:ZyXwVu_-0987654321"
 BAD_TOKEN = "not-a-valid-token-value"
 
 
@@ -150,6 +152,46 @@ class ZaloBotChannelTests(unittest.IsolatedAsyncioTestCase):
         self.kill = mock.patch("os.kill", side_effect=kill)
         self.kill.start()
         self.addCleanup(self.kill.stop)
+
+    def _enable_bot(self, profile: Path, token: str | None = TOKEN) -> None:
+        path = profile / "config.yaml"
+        config = _read_yaml(path) if path.exists() else {}
+        platforms = config.setdefault("platforms", {})
+        bot = platforms.setdefault("zalo_bot", {})
+        bot["enabled"] = True
+        bot.setdefault("extra", {}).setdefault("dm_policy", "disabled")
+        path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+        env = profile / ".env"
+        lines = []
+        if env.exists():
+            lines = [
+                line
+                for line in env.read_text(encoding="utf-8").splitlines()
+                if not line.startswith("ZALO_BOT_TOKEN=")
+            ]
+        if token is not None:
+            lines.append(f"ZALO_BOT_TOKEN={token}")
+        env.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+
+    @staticmethod
+    def _write_bot_state(
+        profile: Path,
+        state: str = "connected",
+        updated_at: float | None = None,
+        pid: int = 4321,
+    ) -> Path:
+        path = profile / "zalo_bot_state.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "state": state,
+                    "updated_at": time.time() if updated_at is None else updated_at,
+                    "pid": pid,
+                }
+            ),
+            encoding="utf-8",
+        )
+        return path
 
     def test_enable_without_token_reports_needs_token(self):
         state = self.service.set_zalo_bot_enabled("agent-1", True)
@@ -347,31 +389,94 @@ class ZaloBotChannelTests(unittest.IsolatedAsyncioTestCase):
         mode = (self.profile / ".env").stat().st_mode & 0o777
         self.assertEqual(mode, 0o600)
 
-    def test_connected_status_uses_unambiguous_gateway_state(self):
-        self.service.set_zalo_bot_enabled("agent-1", True)
-        self.service.patch_zalo_bot("agent-1", {"bot_token": TOKEN})
-        self.root.joinpath("gateway.pid").write_text('{"pid": 222}', encoding="utf-8")
-        self.root.joinpath("gateway_state.json").write_text(
-            json.dumps({"platforms": {"zalo_bot": {"state": "connected"}}}),
-            encoding="utf-8",
-        )
+    def test_fresh_connected_profile_state_reports_connected(self):
+        self._enable_bot(self.profile)
+        self._write_bot_state(self.profile)
+
+        state = self.service.list_channels("agent-1")["channels"][1]
+
+        self.assertEqual(state["status"], "connected")
+
+    def test_stale_connected_profile_state_reports_configured(self):
+        self._enable_bot(self.profile)
+        self._write_bot_state(self.profile, updated_at=time.time() - 91)
 
         state = self.service.list_channels("agent-1")["channels"][1]
 
         self.assertEqual(state["status"], "configured")
 
-    def test_connected_status_maps_when_the_root_owns_the_bot(self):
-        self.service.set_zalo_bot_enabled("big-brother", True)
-        self.service.patch_zalo_bot("big-brother", {"bot_token": TOKEN})
-        self.root.joinpath("gateway.pid").write_text('{"pid": 222}', encoding="utf-8")
-        self.root.joinpath("gateway_state.json").write_text(
-            json.dumps({"platforms": {"zalo_bot": {"state": "connected"}}}),
+    def test_missing_garbage_or_symlinked_state_reports_configured(self):
+        self._enable_bot(self.profile)
+        state = self.service.list_channels("agent-1")["channels"][1]
+        self.assertEqual(state["status"], "configured")
+
+        path = self.profile / "zalo_bot_state.json"
+        path.write_text("{not-json", encoding="utf-8")
+        state = self.service.list_channels("agent-1")["channels"][1]
+        self.assertEqual(state["status"], "configured")
+
+        path.unlink()
+        target = self.root / "outside-zalo-bot-state.json"
+        target.write_text(
+            json.dumps({"state": "connected", "updated_at": time.time(), "pid": 1}),
             encoding="utf-8",
         )
+        os.symlink(target, path)
+        state = self.service.list_channels("agent-1")["channels"][1]
+        self.assertEqual(state["status"], "configured")
 
-        state = self.service.list_channels("big-brother")["channels"][1]
+    def test_multiplex_profiles_use_their_own_state_file(self):
+        second = self.profiles / "agent-2"
+        second.mkdir()
+        self._enable_bot(self.profile, TOKEN)
+        self._enable_bot(second, SECOND_TOKEN)
+        root_config = _read_yaml(self.root / "config.yaml")
+        root_config["gateway"]["multiplex_profiles"] = True
+        root_config["gateway"]["multiplex_profile_allowlist"] = ["agent-1", "agent-2"]
+        (self.root / "config.yaml").write_text(
+            yaml.safe_dump(root_config, sort_keys=False), encoding="utf-8"
+        )
+        # Only profile B's plugin reports connected.
+        self._write_bot_state(second)
 
-        self.assertEqual(state["status"], "connected")
+        first_state = self.service.list_channels("agent-1")["channels"][1]
+        second_state = self.service.list_channels("agent-2")["channels"][1]
+
+        self.assertEqual(first_state["status"], "configured")
+        self.assertEqual(second_state["status"], "connected")
+
+    def test_disabled_precedes_a_connected_state(self):
+        self._write_bot_state(self.profile)
+
+        state = self.service.list_channels("agent-1")["channels"][1]
+
+        self.assertEqual(state["status"], "disabled")
+
+    def test_needs_token_precedes_a_connected_state(self):
+        self._enable_bot(self.profile, token=None)
+        self._write_bot_state(self.profile)
+
+        state = self.service.list_channels("agent-1")["channels"][1]
+
+        self.assertEqual(state["status"], "needs_token")
+
+    def test_gateway_down_precedes_a_connected_state(self):
+        self._enable_bot(self.profile)
+        self._write_bot_state(self.profile)
+        (self.root / "gateway.pid").unlink()
+
+        state = self.service.list_channels("agent-1")["channels"][1]
+
+        self.assertEqual(state["status"], "gateway_down")
+
+    def test_pending_restart_precedes_a_connected_state(self):
+        self._enable_bot(self.profile)
+        self._write_bot_state(self.profile)
+        self.service.repository.mark_gateway_restart(111)
+
+        state = self.service.list_channels("agent-1")["channels"][1]
+
+        self.assertEqual(state["status"], "pending_restart")
 
     async def test_invalid_token_returns_422_without_echoing_it(self):
         app = FastAPI()

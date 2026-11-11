@@ -736,9 +736,15 @@ The bundled `zalo_bot` platform plugin is exposed through the same
 For `zalo_bot`, `ChannelState` adds `token_set` (never the token itself).
 `status` is one of `disabled`, `needs_token` (enabled without a token),
 `pending_restart`, `gateway_down`, `configured`, or `connected`. `connected`
-is derived from Hermes' `gateway_state.json` only when the gateway is not
-multiplexing, because that file is not profile-scoped. There is no bridge, no
-QR flow, and no network probe such as `getMe`.
+comes from the owning plugin's per-profile
+`<profile>/zalo_bot_state.json`, which records `state`, `updated_at`, and `pid`
+and contains no token, bot ID, or message content. The file is profile-scoped,
+so multiplexed profiles can report different states. Only a `connected`
+record whose heartbeat is within 90 seconds reports `connected`; a missing,
+stale, malformed, or other state reports `configured`, which also covers a
+gateway that died without writing `disconnected`. There is no bridge and no QR
+flow. The Runtime service performs no network probe such as `getMe`; the
+plugin verifies the token when it connects.
 
 `bot_token` is write-only and must match `^[0-9]{1,20}:[A-Za-z0-9_-]{8,128}$`;
 the route family returns a generic `422` that never echoes the submitted
