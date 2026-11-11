@@ -66,7 +66,6 @@ _GROUP_DEFAULT_LIMIT = 20
 _GROUP_MAX_LIMIT = 1000
 _GROUP_SEEN_REPORT_SECONDS = 600.0
 _GROUP_SEEN_TIMEOUT_SECONDS = 5.0
-_GROUP_RECEIPT_TIMEOUT_SECONDS = 2.0
 # Exact pinned Hermes silence marker: the gateway suppresses delivery but keeps
 # normal user/assistant transcript alternation.
 _SILENT_REPLY = "NO_REPLY"
@@ -488,37 +487,18 @@ def _response_error_code(envelope) -> str:
     return str(error.get("code") or "")
 
 
-async def _post_group_seen(runner, source, profile_home: Path, group_id: str) -> None:
+async def _post_group_seen(_runner, source, profile_home: Path, group_id: str) -> None:
     """Report one unapproved group mention without blocking or leaking."""
     try:
         token = os.environ.get("RUNTIME_INTERNAL_SERVICE_TOKEN", "").strip()
         if not token:
             return
-        group_name = ""
-        try:
-            adapter = runner._adapter_for_source(source)
-            manager = getattr(adapter, "_group_manager", None)
-            info = getattr(manager, "get_group_info", None)
-            if callable(info):
-                receipt = await asyncio.wait_for(
-                    info(group_id), timeout=_GROUP_RECEIPT_TIMEOUT_SECONDS
-                )
-                if isinstance(receipt, dict):
-                    result = receipt.get("result")
-                    if isinstance(result, dict):
-                        group_name = str(result.get("name") or "")
-                    if not group_name:
-                        group_name = str(receipt.get("name") or "")
-        except Exception:
-            group_name = ""
+        # Zalo's Bot API has no group metadata lookup, so no name is reported.
         payload = {
             "platform": "zalo_bot",
             "agent_id": Path(profile_home).name,
             "group_id": group_id,
         }
-        group_name = " ".join(group_name.split())[:100]
-        if group_name:
-            payload["group_name"] = group_name
         sender_name = " ".join(
             str(getattr(source, "user_name", "") or "").split()
         )[:100]

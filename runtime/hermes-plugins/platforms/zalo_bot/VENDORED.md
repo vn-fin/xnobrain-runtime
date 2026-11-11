@@ -12,17 +12,18 @@ personal-account `zalo` plugin in `../zalo/`.
 - Date vendored: 2026-11-09
 
 Only these upstream files were taken: `zalo/__init__.py`, `zalo/adapter.py`,
-`zalo/group_manager.py`, `zalo/plugin.yaml`, and the repository `LICENSE`.
-The upstream root `__init__.py`, `examples/`, `.github/`, and `docs/` were not
-vendored.
+`zalo/plugin.yaml`, and the repository `LICENSE`. The upstream root
+`__init__.py`, `group_manager.py`, `examples/`, `.github/`, and `docs/` were
+not kept.
 
 ## Local modifications
 
 Everything except the changes below is byte-identical to the pinned upstream
 commit. The local patches under "Local patches" below also modify behavior;
-the rest of the networking, authentication, pairing, admin, anti-spam, CRM, and
+the rest of the networking, authentication, pairing, moderation, CRM, and
 webhook logic is unchanged. The upstream chat-history sync is replaced by the
-local conversation store in patch 13 below.
+local conversation store in patch 13 below, and the undocumented group
+management API is removed in patch 16.
 
 1. Platform key and label
    - `adapter.py`: `register()` now registers `name="zalo_bot"` and
@@ -61,12 +62,10 @@ local conversation store in patch 13 below.
 Security hardening applied on top of the vendored upstream code on 2026-11-09:
 
 1. H1 — Group admin authorization fails closed.
-   - `adapter.py`: new `_is_live_group_admin()` performs a live
-     `getGroupInfo` member-role lookup; any lookup error, malformed response,
-     missing member entry, or non-`owner`/`admin` role denies. The previous
-     allowlist fallback and the `chat_type == "GROUP"` bypass are removed, so
-     admin-only commands (`/kick`, `/promote`, `/poll`, `/pin`, `/noi-quy`, and
-     local settings commands) always require a live platform role.
+   - `adapter.py`: `_is_live_group_admin()` never grants a role. Any
+     admin-only adapter command is denied with no allowlist fallback and no
+     `chat_type == "GROUP"` bypass. Since B3 (patch 16) it returns `False`
+     directly because the Bot API has no role lookup.
 2. H2 — Bot token redaction in logs and errors.
    - `adapter.py`: `httpx` and `httpcore` loggers are raised to `WARNING` at
      adapter/client init so request URLs (which embed `/bot{token}`) are not
@@ -180,14 +179,41 @@ Security hardening applied on top of the vendored upstream code on 2026-11-09:
       mode `0700`; settings and CRM files are written atomically with mode
       `0600`.
 15. B2 — Standalone Bot API helper for Runtime tools (plan 020).
-    - `adapter.py`: `_ZaloClient` gains `send_sticker()`, `send_voice()`, and
-      `get_webhook_info()`. The module function `_standalone_api(pconfig,
-      action, **kwargs)` exposes a fixed allowlist (`get_me`,
-      `get_webhook_info`, `send_photo`, `send_sticker`, `send_voice`) for the
-      Runtime tool layer. It resolves the token the same way as
-      `_standalone_send`, closes the client, is never allowed to fall back to
-      text, and returns content-free errors so no token or message content is
-      echoed.
+    - `adapter.py`: `_ZaloClient` gains `send_sticker()` and `send_voice()`.
+      `send_voice()` posts `{"chat_id", "voice_url"}` (the field name verified
+      against the live API on 2026-11-11; `voice`, `url`, `audio`, and
+      `audio_url` are rejected). The module function
+      `_standalone_api(pconfig, action, **kwargs)` exposes a fixed allowlist
+      (`get_me`, `send_photo`, `send_sticker`, `send_voice`) for the Runtime
+      tool layer. It resolves the token the same way as `_standalone_send`,
+      closes the client, is never allowed to fall back to text, and returns
+      content-free errors so no token or message content is echoed.
+16. B3 — Undocumented group endpoints removed (2026-11-11).
+    - Verified against the live Zalo Bot API (dev bot, fake group ids, `POST
+      https://bot-api.zaloplatforms.com/bot<token>/<method>`, 2026-11-11).
+      Every group endpoint and `getWebhookInfo` returns `{"ok": false,
+      "error_code": 404, "description": "Not Found"}`, identical to a made-up
+      method name. Bots also cannot be group admins.
+    - Confirmed API surface: `getMe` ok; `sendPhoto {chat_id, photo}` and
+      `sendSticker {chat_id, sticker}` accept their fields; `sendVoice` needs
+      `voice_url`; a fake chat id returns `410 "chat_id is invalid"`.
+    - Removed from `adapter.py`: the `_GroupManager` class and
+      `self._group_manager`; every endpoint wrapper (`createGroup`,
+      `getGroupInfo`, `listGroupMembers`, `kickGroupMember`,
+      `promoteGroupAdmin`, `demoteGroupAdmin`, `inviteGroupMember`,
+      `setGroupAnnouncement`, `createPoll`, `pinGroupMessage`,
+      `unpinGroupMessage`, `muteGroup`, `unmuteGroup`, `setGroupName`,
+      `setGroupAvatar`, `getGroupInvites`, `getGroupLink`, `enableGroupLink`,
+      `disableGroupLink`); `_ZaloClient.get_webhook_info()`; and the slash
+      commands that only called them: `/info`, `/kick`, `/promote`, `/demote`,
+      `/invite`, `/poll`, `/pin`, `/unpin`, `/noi-quy`, `/mute`, `/unmute`.
+      Menu and `/huong-dan` help text no longer list them.
+    - `_is_live_group_admin()` now returns `False` directly. Local admin-only
+      commands (`/warn`, `/unwarn`, `/report`, `/silent`, `/welcome`,
+      `/welcome-text`, `/follow`, `/name-trigger`) remain registered so their
+      code is kept, but they stay denied because the API cannot prove a
+      platform role.
+    - `group_manager.py` is deleted from this vendored directory.
 
 Focused regression tests live in
 `xnobrain/tests/test_zalo_bot_plugin_hardening.py`,

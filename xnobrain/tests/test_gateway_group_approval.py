@@ -54,22 +54,6 @@ class _ClientFactory:
         return _Client(self)
 
 
-class _Adapter:
-    def __init__(self, group_name="Test group"):
-        self.group_name = group_name
-
-    async def get_group_info(self, group_id):
-        return {"ok": True, "result": {"name": self.group_name}}
-
-
-class _RunnerWithGroupInfo:
-    def __init__(self):
-        self._group_manager = SimpleNamespace(get_group_info=self.get_group_info)
-
-    async def get_group_info(self, group_id):
-        return {"ok": True, "result": {"name": "Test group"}}
-
-
 def _gateway_module():
     class FakeGatewayRunner:
         _xnobrain_channel_delegation = False
@@ -194,7 +178,6 @@ class GatewayGroupApprovalTests(unittest.IsolatedAsyncioTestCase):
     async def test_revoked_group_is_denied_and_cached_by_mtime(self):
         runner_class = self.install_auth()
         runner = runner_class()
-        runner._adapter_for_source = lambda source: _RunnerWithGroupInfo()
         self.write_groups(_groups_payload(pending=["group_1"]))
         with mock.patch("httpx.AsyncClient", _ClientFactory()):
             self.assertFalse(runner._is_user_authorized(_source()))
@@ -205,7 +188,6 @@ class GatewayGroupApprovalTests(unittest.IsolatedAsyncioTestCase):
     async def test_unapproved_group_reports_seen_once(self):
         runner_class = self.install_auth()
         runner = runner_class()
-        runner._adapter_for_source = lambda source: _RunnerWithGroupInfo()
         factory = _ClientFactory()
         with mock.patch("httpx.AsyncClient", factory):
             self.assertFalse(runner._is_user_authorized(_source(chat_id="group_2")))
@@ -219,7 +201,7 @@ class GatewayGroupApprovalTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(call["json"]["platform"], "zalo_bot")
         self.assertEqual(call["json"]["agent_id"], "agent-1")
         self.assertEqual(call["json"]["group_id"], "group_2")
-        self.assertEqual(call["json"]["group_name"], "Test group")
+        self.assertNotIn("group_name", call["json"])
         self.assertEqual(call["json"]["sender_name"], "Nam")
 
     async def test_non_group_and_personal_zalo_sources_use_the_original(self):
@@ -237,7 +219,6 @@ class GatewayGroupApprovalTests(unittest.IsolatedAsyncioTestCase):
     async def test_missing_or_corrupt_groups_file_fails_closed(self):
         runner_class = self.install_auth()
         runner = runner_class()
-        runner._adapter_for_source = lambda source: _RunnerWithGroupInfo()
         (self.profile / "zalo" / "groups.json").unlink()
         (self.profile / "zalo" / "groups.json").write_text("{not json", encoding="utf-8")
         with mock.patch("httpx.AsyncClient", _ClientFactory()):
@@ -256,7 +237,6 @@ class GatewayGroupApprovalTests(unittest.IsolatedAsyncioTestCase):
         runner_class = self.install_auth()
         runner = runner_class()
         runner._adapter_profile_for_source = lambda source: "plugin-qa"
-        runner._adapter_for_source = lambda source: _RunnerWithGroupInfo()
         factory = _ClientFactory()
         with (
             mock.patch("hermes_constants.get_default_hermes_root", return_value=root),

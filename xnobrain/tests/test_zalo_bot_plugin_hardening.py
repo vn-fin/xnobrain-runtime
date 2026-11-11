@@ -167,27 +167,6 @@ def _load_plugin_package():
                 sys.modules[name] = previous
 
 
-class _FakeGroupManager:
-    def __init__(self, group_info=None, error=None):
-        self.group_info = group_info
-        self.error = error
-        self.kicked = []
-        self.pinned = []
-
-    async def get_group_info(self, group_id):
-        if self.error is not None:
-            raise self.error
-        return self.group_info
-
-    async def kick_member(self, group_id, user_id, reason=""):
-        self.kicked.append((group_id, user_id, reason))
-        return {"ok": True}
-
-    async def pin_message(self, group_id, message_id):
-        self.pinned.append((group_id, message_id))
-        return {"ok": True}
-
-
 class _FakeZaloClient:
     """Minimal connected client: getMe succeeds, polling blocks until cancel."""
 
@@ -241,56 +220,65 @@ class ZaloBotHardeningTests(unittest.IsolatedAsyncioTestCase):
             "text": text,
         }
 
-    # ── H1: admin check fails closed ──────────────────────────────────
+    # ── B3: undocumented group endpoints and commands removed ─────────
 
-    async def test_admin_check_denies_when_lookup_fails(self):
+    def test_removed_group_commands_are_not_registered(self):
+        commands = self.adapter_module.SLASH_COMMANDS
+        for removed in (
+            "/info",
+            "/kick",
+            "/promote",
+            "/demote",
+            "/invite",
+            "/poll",
+            "/pin",
+            "/unpin",
+            "/noi-quy",
+            "/mute",
+            "/unmute",
+        ):
+            self.assertNotIn(removed, commands)
+        for kept in (
+            "/menu",
+            "/rules",
+            "/huong-dan",
+            "/warn",
+            "/unwarn",
+            "/report",
+            "/silent",
+            "/welcome",
+            "/welcome-text",
+            "/follow",
+            "/name-trigger",
+            "/settings",
+        ):
+            self.assertIn(kept, commands)
+
+    async def test_admin_check_fails_closed_without_an_http_call(self):
+        adapter = self._adapter(bot_token="1:secret", allow_all="true")
+        calls = []
+
+        async def fake_post(endpoint, data=None):
+            calls.append(endpoint)
+            return {"ok": True, "result": {"name": "Group"}}
+
+        adapter._client = _FakeZaloClient("1:secret")
+        adapter._client._post = fake_post
+
+        self.assertFalse(await adapter._is_live_group_admin("group1", "user1"))
+        self.assertEqual(calls, [])
+        self.assertFalse(hasattr(adapter, "_group_manager"))
+
+    async def test_remaining_admin_command_stays_denied(self):
         adapter = self._adapter(bot_token="1:secret", allow_all="true")
         sent = self._install_sender(adapter)
-        manager = _FakeGroupManager(error=RuntimeError("group API down"))
-        adapter._group_manager = manager
 
-        slash = self.adapter_module.parse_slash_command("/kick @victim spam")
-        await adapter._handle_slash_command(slash, "group1", "user1", "User", "text", None, "GROUP")
+        slash = self.adapter_module.parse_slash_command("/warn @victim spam")
+        await adapter._handle_slash_command(
+            slash, "group1", "user1", "User", "text", None, "GROUP"
+        )
 
         self.assertTrue(any("không có quyền" in text for _, text in sent))
-        self.assertEqual(manager.kicked, [])
-
-    async def test_admin_check_denies_without_group_chat_type(self):
-        adapter = self._adapter(bot_token="1:secret", allow_all="true")
-        sent = self._install_sender(adapter)
-        manager = _FakeGroupManager(
-            group_info={
-                "ok": True,
-                "result": {
-                    "members": [{"user_id": "user1", "role": "member"}],
-                },
-            }
-        )
-        adapter._group_manager = manager
-
-        slash = self.adapter_module.parse_slash_command("/pin 123")
-        await adapter._handle_slash_command(slash, "chat1", "user1", "User", "text", None, "")
-
-        self.assertTrue(any("không có quyền" in text for _, text in sent))
-        self.assertEqual(manager.pinned, [])
-
-    async def test_admin_check_allows_live_owner_role(self):
-        adapter = self._adapter(bot_token="1:secret", allow_all="true")
-        self._install_sender(adapter)
-        manager = _FakeGroupManager(
-            group_info={
-                "ok": True,
-                "result": {
-                    "members": [{"user_id": "user1", "role": "owner"}],
-                },
-            }
-        )
-        adapter._group_manager = manager
-
-        slash = self.adapter_module.parse_slash_command("/kick @victim spam")
-        await adapter._handle_slash_command(slash, "group1", "user1", "User", "text", None, "GROUP")
-
-        self.assertEqual(manager.kicked, [("group1", "victim", "spam")])
 
     # ── H3: DM policy and pairing ─────────────────────────────────────
 
@@ -614,7 +602,7 @@ class ZaloBotHardeningTests(unittest.IsolatedAsyncioTestCase):
 
     # ── Standalone API for Runtime tools (plan 020 B2) ────────────────
 
-    async def test_client_media_and_webhook_methods_post_expected_payloads(self):
+    async def test_client_media_methods_post_expected_payloads(self):
         client = self.adapter_module._ZaloClient("1:secret")
         calls = []
 
@@ -628,14 +616,15 @@ class ZaloBotHardeningTests(unittest.IsolatedAsyncioTestCase):
             "ok": True, "result": {"message_id": "9"}
         })
         await client.send_voice("chat", "https://cdn.example/v.aac")
-        await client.get_webhook_info()
 
         self.assertEqual(
             calls,
             [
                 ("sendSticker", {"chat_id": "chat", "sticker": "st-1"}),
-                ("sendVoice", {"chat_id": "chat", "voice": "https://cdn.example/v.aac"}),
-                ("getWebhookInfo", None),
+                (
+                    "sendVoice",
+                    {"chat_id": "chat", "voice_url": "https://cdn.example/v.aac"},
+                ),
             ],
         )
 
@@ -643,14 +632,14 @@ class ZaloBotHardeningTests(unittest.IsolatedAsyncioTestCase):
         module = self.adapter_module
         self.assertEqual(
             module._STANDALONE_API_ACTIONS,
-            frozenset(
-                {"get_me", "get_webhook_info", "send_photo", "send_sticker", "send_voice"}
-            ),
+            frozenset({"get_me", "send_photo", "send_sticker", "send_voice"}),
         )
         pconfig = types.SimpleNamespace(extra={"bot_token": "123456:abcdefSECRET"})
 
         unknown = await module._standalone_api(pconfig, "send_text")
         self.assertEqual(unknown, {"error": "unsupported_action"})
+        webhook = await module._standalone_api(pconfig, "get_webhook_info")
+        self.assertEqual(webhook, {"error": "unsupported_action"})
 
         class FailingClient:
             def __init__(self, bot_token):

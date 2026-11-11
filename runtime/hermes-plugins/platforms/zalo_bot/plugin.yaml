@@ -10,9 +10,9 @@ description: >
 
   Zero extra dependencies — uses httpx, already a Hermes Agent dependency.
 
-  v2.0 adds: group management (create/kick/admin/poll/pin/invite),
-  slash commands (/menu, /warn, /kick, /promote, /poll, /pin, /noi-quy...),
-  zero-token anti-spam + warn system, chat history storage, CRM contacts.
+  v2.0 adds: moderation slash commands (/menu, /warn, /silent...),
+  a zero-token anti-spam + warn system, chat history storage, CRM contacts.
+  The undocumented group-management API is removed (see VENDORED.md).
 author: Moken
 repository: "https://github.com/moken627-hub/hermes-plugin-zalo"
 requires_env:

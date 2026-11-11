@@ -67,7 +67,8 @@ _TOOL_DEFINITIONS: tuple[tuple[str, str, dict], ...] = (
     (
         "zalo_bot_status",
         "Report the Zalo Bot channel status, direct-message policy, history "
-        "retention, and the bot's own identity when the Bot API is reachable.",
+        "retention, and the bot identity from getMe when the Bot API is "
+        "reachable.",
         {"type": "object", "properties": {}, "additionalProperties": False},
     ),
     (

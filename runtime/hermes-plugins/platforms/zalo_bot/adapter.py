@@ -230,11 +230,6 @@ def _quiet_http_loggers() -> None:
 
 # ── Slash commands registry ───────────────────────────────────────
 SLASH_COMMANDS = {
-    "/noi-quy": {
-        "description": "Quy định nhóm",
-        "usage": "/noi-quy <text>",
-        "admin_only": True,
-    },
     "/menu": {
         "description": "Hiển thị menu lệnh",
         "usage": "/menu",
@@ -264,56 +259,6 @@ SLASH_COMMANDS = {
         "description": "Quy tắc nhóm",
         "usage": "/rules",
         "admin_only": False,
-    },
-    "/poll": {
-        "description": "Tạo poll",
-        "usage": "/poll <question> | option1, option2, ...",
-        "admin_only": True,
-    },
-    "/pin": {
-        "description": "Ghim tin nhắn",
-        "usage": "/pin <message_id>",
-        "admin_only": True,
-    },
-    "/unpin": {
-        "description": "Bỏ ghim tin nhắn",
-        "usage": "/unpin <message_id>",
-        "admin_only": True,
-    },
-    "/invite": {
-        "description": "Mời thành viên",
-        "usage": "/invite @user1, @user2",
-        "admin_only": True,
-    },
-    "/kick": {
-        "description": "Kick thành viên",
-        "usage": "/kick @user <reason>",
-        "admin_only": True,
-    },
-    "/promote": {
-        "description": "Thăng admin",
-        "usage": "/promote @user",
-        "admin_only": True,
-    },
-    "/demote": {
-        "description": "Xoá quyền admin",
-        "usage": "/demote @user",
-        "admin_only": True,
-    },
-    "/info": {
-        "description": "Thông tin nhóm",
-        "usage": "/info",
-        "admin_only": False,
-    },
-    "/mute": {
-        "description": "Mute nhóm",
-        "usage": "/mute",
-        "admin_only": True,
-    },
-    "/unmute": {
-        "description": "Unmute nhóm",
-        "usage": "/unmute",
-        "admin_only": True,
     },
     "/silent": {
         "description": "Silent mode (chỉ reply khi @tag)",
@@ -445,15 +390,13 @@ class _ZaloClient:
 
     async def send_voice(self, chat_id: str, voice_url: str) -> dict:
         """Send a voice message from an ``.aac`` URL (Bot API ``sendVoice``)."""
-        return await self._post("sendVoice", {"chat_id": chat_id, "voice": voice_url})
-
-    async def get_webhook_info(self) -> dict:
-        """Return the bot's current webhook configuration."""
-        return await self._post("getWebhookInfo")
+        return await self._post(
+            "sendVoice", {"chat_id": chat_id, "voice_url": voice_url}
+        )
 
 
 # ---------------------------------------------------------------------------
-# Moderation & Group Management Classes
+# Moderation Classes
 # ---------------------------------------------------------------------------
 
 
@@ -510,116 +453,6 @@ class _WarnSystem:
     def clear_warnings(self, group_id: str, user_id: str) -> Dict[str, Any]:
         self._store.pop(f"{group_id}:{user_id}", None)
         return {"ok": True, "action": "cleared"}
-
-
-class _GroupManager:
-    """Group management via Zalo Bot API.
-
-    The HTTP client does not exist until ``connect()`` creates it, so the
-    manager holds the adapter and resolves the live client lazily on every
-    call instead of caching a ``None`` reference from ``__init__``.
-    """
-
-    def __init__(self, adapter: Any) -> None:
-        self._adapter = adapter
-
-    @property
-    def _client(self) -> Any:
-        client = getattr(self._adapter, "_client", None)
-        if client is None:
-            raise RuntimeError("Zalo: client not connected (group API unavailable)")
-        return client
-
-    async def create_group(self, name: str, description: str = "",
-                           join_type: str = "anyone",
-                           admin_ids: Optional[List[str]] = None) -> Dict[str, Any]:
-        payload: Dict[str, Any] = {"name": name[:100], "description": description[:500],
-                                   "join_type": join_type}
-        if admin_ids:
-            payload["admin_ids"] = admin_ids[:20]
-        return await self._client._post("createGroup", payload)
-
-    async def kick_member(self, group_id: str, user_id: str,
-                          reason: str = "") -> Dict[str, Any]:
-        payload: Dict[str, Any] = {"group_id": group_id, "user_id": user_id}
-        if reason:
-            payload["reason"] = reason[:200]
-        return await self._client._post("kickGroupMember", payload)
-
-    async def promote_admin(self, group_id: str, user_id: str) -> Dict[str, Any]:
-        return await self._client._post("promoteGroupAdmin",
-                                        {"group_id": group_id, "user_id": user_id})
-
-    async def demote_admin(self, group_id: str, user_id: str) -> Dict[str, Any]:
-        return await self._client._post("demoteGroupAdmin",
-                                        {"group_id": group_id, "user_id": user_id})
-
-    async def invite_member(self, group_id: str, user_ids: List[str]) -> Dict[str, Any]:
-        return await self._client._post("inviteGroupMember",
-                                        {"group_id": group_id, "user_ids": user_ids[:50]})
-
-    async def get_group_info(self, group_id: str) -> Dict[str, Any]:
-        return await self._client._post("getGroupInfo", {"group_id": group_id})
-
-    async def list_members(self, group_id: str, limit: int = 50) -> Dict[str, Any]:
-        return await self._client._post("listGroupMembers",
-                                        {"group_id": group_id, "limit": limit})
-
-    async def set_announcement(self, group_id: str, text: str) -> Dict[str, Any]:
-        return await self._client._post("setGroupAnnouncement",
-                                        {"group_id": group_id, "text": text[:500]})
-
-    async def create_poll(self, group_id: str, question: str,
-                          options: List[str], expiry: int = 86400,
-                          allow_multiple: bool = False) -> Dict[str, Any]:
-        if len(options) < 2 or len(options) > 10:
-            return {"ok": False, "error": "Poll requires 2-10 options"}
-        payload = {"group_id": group_id, "question": question[:200],
-                   "options": [o[:100] for o in options],
-                   "expiry": expiry, "allow_multiple": allow_multiple}
-        return await self._client._post("createPoll", payload)
-
-    async def pin_message(self, group_id: str, message_id: str) -> Dict[str, Any]:
-        return await self._client._post("pinGroupMessage",
-                                        {"group_id": group_id, "message_id": message_id})
-
-    async def unpin_message(self, group_id: str, message_id: str) -> Dict[str, Any]:
-        return await self._client._post("unpinGroupMessage",
-                                        {"group_id": group_id, "message_id": message_id})
-
-    async def mute_group(self, group_id: str) -> Dict[str, Any]:
-        """Mute a group (bot stops receiving notifications)."""
-        return await self._client._post("muteGroup", {"group_id": group_id})
-
-    async def unmute_group(self, group_id: str) -> Dict[str, Any]:
-        """Unmute a group."""
-        return await self._client._post("unmuteGroup", {"group_id": group_id})
-
-    async def set_group_name(self, group_id: str, name: str) -> Dict[str, Any]:
-        """Rename a group."""
-        return await self._client._post("setGroupName",
-                                        {"group_id": group_id, "name": name[:100]})
-
-    async def set_group_avatar(self, group_id: str, avatar_url: str) -> Dict[str, Any]:
-        """Set group avatar from URL."""
-        return await self._client._post("setGroupAvatar",
-                                        {"group_id": group_id, "avatar_url": avatar_url})
-
-    async def get_group_invites(self, group_id: str) -> Dict[str, Any]:
-        """Get pending invites for a group."""
-        return await self._client._post("getGroupInvites", {"group_id": group_id})
-
-    async def get_group_link(self, group_id: str) -> Dict[str, Any]:
-        """Get group invite link."""
-        return await self._client._post("getGroupLink", {"group_id": group_id})
-
-    async def enable_group_link(self, group_id: str) -> Dict[str, Any]:
-        """Enable group invite link."""
-        return await self._client._post("enableGroupLink", {"group_id": group_id})
-
-    async def disable_group_link(self, group_id: str) -> Dict[str, Any]:
-        """Disable group invite link."""
-        return await self._client._post("disableGroupLink", {"group_id": group_id})
 
 
 class _GroupSettings:
@@ -1164,11 +997,10 @@ class ZaloAdapter(BasePlatformAdapter):
         self._profile_home: Optional[Path] = None
         self._state_last_write = 0.0
 
-        # Moderation & group management instances. _GroupManager resolves
-        # self._client lazily (client is only created in connect()).
+        # Moderation instances. Zalo's Bot API exposes no group management, so
+        # there is no group manager and no server-side settings source.
         self._anti_spam = _AntiSpam()
         self._warn_system = _WarnSystem()
-        self._group_manager = _GroupManager(self)
         # Both stores resolve their directory lazily from the profile home
         # (or their environment override) and are rebuilt on connect().
         self._group_settings = _GroupSettings(self._settings_directory)
@@ -1955,32 +1787,12 @@ class ZaloAdapter(BasePlatformAdapter):
         )
 
     async def _is_live_group_admin(self, chat_id: str, user_id: str) -> bool:
-        """Fail-closed live owner/admin lookup for adapter-handled commands.
+        """Fail closed: the Zalo Bot API has no group role lookup.
 
-        Any lookup error, malformed platform response, missing member entry,
-        or non-owner/admin role denies. There is no allowlist fallback, and a
-        missing or unexpected chat type cannot skip the role check.
+        Verified against the live API on 2026-11-11: every group endpoint
+        returns ``404 Not Found`` and bots cannot be group admins. Admin-only
+        local commands therefore stay denied; there is no allowlist fallback.
         """
-        try:
-            group_info = await self._group_manager.get_group_info(chat_id)
-        except Exception as e:
-            logger.warning(
-                "Zalo: group admin check failed (%s) — denying", type(e).__name__
-            )
-            return False
-        if not isinstance(group_info, dict) or group_info.get("ok") is False:
-            return False
-        result = group_info.get("result")
-        if not isinstance(result, dict):
-            return False
-        members = result.get("members")
-        if not isinstance(members, list):
-            return False
-        for member in members:
-            if not isinstance(member, dict):
-                continue
-            if str(member.get("user_id")) == str(user_id):
-                return member.get("role") in ("owner", "admin")
         return False
 
     async def _handle_slash_command(
@@ -2019,130 +1831,6 @@ class ZaloAdapter(BasePlatformAdapter):
                 await self._send_text(chat_id, format_rules())
             elif cmd == "/huong-dan":
                 await self._send_text(chat_id, format_help())
-            elif cmd == "/info":
-                info = await self._group_manager.get_group_info(chat_id)
-                result = info.get("result", {})
-                name = result.get("name", chat_id)
-                members = result.get("member_count", 0)
-                await self._send_text(
-                    chat_id,
-                    f"ℹ️ **{name}**\n👥 Thành viên: {members}\n📝 Nhóm ID: {chat_id}",
-                )
-            elif cmd == "/warn":
-                target = args.strip().split(None, 1)
-                if not target:
-                    await self._send_text(chat_id, "⚠️ Dùng: `/warn @user <lí do>`")
-                    return
-                reason = target[1] if len(target) > 1 else "Chưa rõ lí do"
-                result = self._warn_system.warn(chat_id, target[0].lstrip("@"), reason)
-                msg = result.get("message", f"⚠️ Đã cảnh báo {target[0]}")
-                await self._send_text(chat_id, msg)
-            elif cmd == "/unwarn":
-                target = args.strip().lstrip("@")
-                self._warn_system.clear_warnings(chat_id, target)
-                await self._send_text(chat_id, f"✅ Đã xóa cảnh báo cho {target}")
-            elif cmd == "/report":
-                target = args.strip().split(None, 1)
-                if not target:
-                    await self._send_text(chat_id, "⚠️ Dùng: `/report @user <lí do>`")
-                    return
-                reason = target[1] if len(target) > 1 else "Chưa rõ lí do"
-                result = self._warn_system.warn(chat_id, target[0].lstrip("@"), f"REPORT: {reason}")
-                await self._send_text(
-                    chat_id,
-                    f"📋 Đã báo cáo {target[0]}: {reason}",
-                )
-            elif cmd == "/kick":
-                target = args.strip().split(None, 1)
-                if not target:
-                    await self._send_text(chat_id, "⚠️ Dùng: `/kick @user <lí do>`")
-                    return
-                reason = target[1] if len(target) > 1 else ""
-                result = await self._group_manager.kick_member(chat_id, target[0].lstrip("@"), reason)
-                if result.get("ok"):
-                    await self._send_text(chat_id, f"✅ Đã kick {target[0]}")
-                else:
-                    await self._send_text(chat_id, f"❌ Lỗi: {result.get('error', 'Unknown')}")
-            elif cmd == "/promote":
-                target = args.strip().lstrip("@")
-                result = await self._group_manager.promote_admin(chat_id, target)
-                if result.get("ok"):
-                    await self._send_text(chat_id, f"✅ {target} đã được thăng admin")
-                else:
-                    await self._send_text(chat_id, f"❌ Lỗi: {result.get('error', 'Unknown')}")
-            elif cmd == "/demote":
-                target = args.strip().lstrip("@")
-                result = await self._group_manager.demote_admin(chat_id, target)
-                if result.get("ok"):
-                    await self._send_text(chat_id, f"✅ {target} đã bị xoá quyền admin")
-                else:
-                    await self._send_text(chat_id, f"❌ Lỗi: {result.get('error', 'Unknown')}")
-            elif cmd == "/invite":
-                targets = [u.strip().lstrip("@") for u in args.split(",") if u.strip()]
-                if not targets:
-                    await self._send_text(chat_id, "⚠️ Dùng: `/invite @user1, @user2`")
-                    return
-                result = await self._group_manager.invite_member(chat_id, targets)
-                if result.get("ok"):
-                    await self._send_text(chat_id, f"✅ Đã mời {len(targets)} thành viên")
-                else:
-                    await self._send_text(chat_id, f"❌ Lỗi: {result.get('error', 'Unknown')}")
-            elif cmd == "/poll":
-                parts = args.split("|")
-                if len(parts) < 2:
-                    await self._send_text(chat_id, "⚠️ Dùng: `/poll <câu hỏi> | lựa_chọn_1, lựa_chọn_2, ...`")
-                    return
-                question = parts[0].strip()
-                options = [o.strip() for o in parts[1].split(",") if o.strip()]
-                result = await self._group_manager.create_poll(chat_id, question, options)
-                if result.get("ok"):
-                    await self._send_text(chat_id, f"📊 Poll đã tạo: {question}")
-                else:
-                    await self._send_text(chat_id, f"❌ Lỗi: {result.get('error', 'Unknown')}")
-            elif cmd == "/pin":
-                msg_id = args.strip()
-                if not msg_id:
-                    await self._send_text(chat_id, "⚠️ Dùng: `/pin <message_id>`")
-                    return
-                result = await self._group_manager.pin_message(chat_id, msg_id)
-                if result.get("ok"):
-                    await self._send_text(chat_id, "📌 Đã ghim tin nhắn")
-                else:
-                    await self._send_text(chat_id, f"❌ Lỗi: {result.get('error', 'Unknown')}")
-            elif cmd == "/unpin":
-                msg_id = args.strip()
-                if not msg_id:
-                    await self._send_text(chat_id, "⚠️ Dùng: `/unpin <message_id>`")
-                    return
-                result = await self._group_manager.unpin_message(chat_id, msg_id)
-                if result.get("ok"):
-                    await self._send_text(chat_id, "📌 Đã bỏ ghim")
-                else:
-                    await self._send_text(chat_id, f"❌ Lỗi: {result.get('error', 'Unknown')}")
-            elif cmd == "/noi-quy":
-                announcement = args.strip()
-                if not announcement:
-                    await self._send_text(chat_id, "⚠️ Dùng: `/noi-quy <nội dung>`")
-                    return
-                result = await self._group_manager.set_announcement(chat_id, announcement)
-                if result.get("ok"):
-                    await self._send_text(chat_id, "📢 Đã đăng thông báo nhóm")
-                else:
-                    await self._send_text(chat_id, f"❌ Lỗi: {result.get('error', 'Unknown')}")
-            elif cmd == "/mute":
-                result = await self._group_manager.mute_group(chat_id)
-                if result.get("ok"):
-                    self._group_settings.set(chat_id, "muted", True)
-                    await self._send_text(chat_id, "🔇 Đã mute nhóm")
-                else:
-                    await self._send_text(chat_id, f"❌ Lỗi: {result.get('error', 'Unknown')}")
-            elif cmd == "/unmute":
-                result = await self._group_manager.unmute_group(chat_id)
-                if result.get("ok"):
-                    self._group_settings.set(chat_id, "muted", False)
-                    await self._send_text(chat_id, "🔊 Đã unmute nhóm")
-                else:
-                    await self._send_text(chat_id, f"❌ Lỗi: {result.get('error', 'Unknown')}")
             elif cmd == "/silent":
                 settings = self._group_settings.get(chat_id)
                 new_val = not settings.get("silent", False)
@@ -2720,7 +2408,7 @@ async def _standalone_send(
 
 
 _STANDALONE_API_ACTIONS = frozenset(
-    {"get_me", "get_webhook_info", "send_photo", "send_sticker", "send_voice"}
+    {"get_me", "send_photo", "send_sticker", "send_voice"}
 )
 
 
@@ -2749,14 +2437,6 @@ async def _standalone_api(pconfig, action: str, **kwargs) -> Dict[str, Any]:
                     "result": _redact_secret_data(result.get("result"), token),
                 }
             return {"error": "auth_failed"}
-        if action == "get_webhook_info":
-            result = await client.get_webhook_info()
-            if result.get("ok"):
-                return {
-                    "success": True,
-                    "result": _redact_secret_data(result.get("result"), token),
-                }
-            return {"error": "api_error"}
         if action == "send_photo":
             result = await client.send_photo(
                 str(kwargs.get("chat_id") or ""),
@@ -2830,11 +2510,7 @@ def format_help() -> str:
         "• `/rules` — Xem quy tắc nhóm\n"
         "• `/huong-dan` — Hướng dẫn chi tiết\n\n"
         "Admin còn có thêm:\n"
-        "• `/warn @user <lí do>` — Cảnh báo\n"
-        "• `/kick @user <lí do>` — Kick\n"
-        "• `/promote @user` — Thăng admin\n"
-        "• `/poll <câu hỏi> | opt1, opt2` — Tạo poll\n"
-        "• `/pin <msg_id>` — Ghim tin nhắn\n\n"
+        "• `/warn @user <lí do>` — Cảnh báo\n\n"
         "Nhắn trực tiếp cho bot để bắt đầu cuộc trò chuyện."
     )
 
