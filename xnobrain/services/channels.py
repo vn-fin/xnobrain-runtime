@@ -27,6 +27,11 @@ from ..defaults import BIG_BROTHER_AGENT_ID
 from ..feature_flags import FEATURE_AGENT_CHANNELS
 from ..feature_flags import enabled as feature_enabled
 from ..integrations import AgentAPIError, zalo_channels
+from ..integrations.channel_tool_common import (
+    DEFAULT_RETENTION_DAYS,
+    MAX_RETENTION_DAYS,
+    MIN_RETENTION_DAYS,
+)
 from ..integrations.control_mcp_grants import WorkspaceMcpGrantClient
 from ..integrations.plugin_artifacts import builtin_platform_metadata
 from ..repositories.channels import (
@@ -373,6 +378,59 @@ class ChannelsService:
             recipient,
         )
 
+    def _bot_approved_user(self, agent_id: str, chat_id: str) -> str | None:
+        """Return the approved pairing display name, or None when not paired."""
+        try:
+            approved = self._pairing_store(agent_id).approved("zalo_bot")
+        except Exception:
+            return None
+        for entry in approved:
+            if not isinstance(entry, Mapping):
+                continue
+            if str(entry.get("user_id") or "").strip() == chat_id:
+                return self._pairing_label(entry.get("user_name"))
+        return None
+
+    def _bot_allowed_user(self, profile: Path, chat_id: str) -> bool:
+        env = self.repository.env(profile)
+        allowed = {
+            item.strip()
+            for item in str(env.get("ZALO_BOT_ALLOWED_USERS") or "").split(",")
+            if item.strip()
+        }
+        return chat_id in allowed
+
+    def resolve_bot_recipient(
+        self, agent_id: str, recipient: Any, thread_type: str = "dm"
+    ) -> dict[str, Any]:
+        """Resolve an exact Zalo Bot chat id for one approved DM or group."""
+        profile = self._profile(agent_id)
+        chat_id = str(recipient or "").strip()
+        if not _ZALO_BOT_ID.fullmatch(chat_id):
+            return {"status": "invalid", "thread_id": chat_id, "name": ""}
+        if thread_type == "group":
+            if not self._group_is_approved(profile, "zalo_bot", chat_id):
+                return {"status": "group_not_approved", "thread_id": chat_id, "name": ""}
+            _, record = self._group_state(profile, "zalo_bot")
+            entry = record["groups"].get(chat_id) or {}
+            return {
+                "status": "ok",
+                "thread_id": chat_id,
+                "name": self._group_name(entry.get("name")) or chat_id,
+                "type": "group",
+            }
+        if thread_type != "dm":
+            return {"status": "invalid", "thread_id": chat_id, "name": ""}
+        name = self._bot_approved_user(agent_id, chat_id)
+        if name is None and not self._bot_allowed_user(profile, chat_id):
+            return {"status": "not_found", "thread_id": chat_id, "name": ""}
+        return {
+            "status": "ok",
+            "thread_id": chat_id,
+            "name": name or chat_id,
+            "type": "dm",
+        }
+
     async def send_message(
         self,
         agent_id: str,
@@ -380,31 +438,36 @@ class ChannelsService:
         thread_id: str,
         name: str,
         text: str,
+        platform: str = zalo_channels.ZALO_PLATFORM,
     ) -> dict[str, Any]:
-        """Deliver approved text, then link the thread to this web conversation."""
+        """Deliver approved text, then link a personal thread to this conversation."""
         profile = self._profile(agent_id)
         self._conversation_exists(agent_id, conversation_id)
-        limit = zalo_channels.max_message_length()
+        limit = zalo_channels.max_message_length(platform)
         if len(text) > limit:
             raise ServiceError(
                 "channel message is too long", status=400, code="channel_message_too_long"
             )
         try:
-            result = await zalo_channels.send_text(thread_id, text)
+            result = await zalo_channels.send_text(thread_id, text, platform=platform)
         except zalo_channels.ChannelDeliveryError as error:
             raise ServiceError("channel delivery failed", status=502, code=error.code) from error
         timestamp = time.time()
-        record = self.repository.write_link(
-            profile,
-            thread_id,
-            agent_id=agent_id,
-            conversation_id=conversation_id,
-            name=self._sender_name(name, thread_id),
-            timestamp=timestamp,
-        )
+        if platform == zalo_channels.ZALO_PLATFORM:
+            record = self.repository.write_link(
+                profile,
+                thread_id,
+                agent_id=agent_id,
+                conversation_id=conversation_id,
+                name=self._sender_name(name, thread_id),
+                timestamp=timestamp,
+            )
+            name = record["name"]
+        else:
+            name = self._sender_name(name, thread_id)
         return {
             "thread_id": thread_id,
-            "name": record["name"],
+            "name": name,
             "message_id": result.get("message_id"),
             "ts": timestamp,
         }
@@ -978,7 +1041,7 @@ class ChannelsService:
     @staticmethod
     def _group_platform(value: Any) -> str:
         platform = str(value or "").strip().lower()
-        if platform != "zalo_bot":
+        if platform not in {"zalo", "zalo_bot"}:
             raise ServiceError("unsupported channel platform", status=422, code="invalid_platform")
         return platform
 
@@ -1304,6 +1367,39 @@ class ChannelsService:
         return value if value in _DM_POLICIES else "disabled"
 
     @staticmethod
+    def _retention_days_value(value: Any) -> int:
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ServiceError(
+                "history_retention_days must be an integer",
+                status=422,
+                code="invalid_history_retention_days",
+            )
+        if not MIN_RETENTION_DAYS <= value <= MAX_RETENTION_DAYS:
+            raise ServiceError(
+                "history_retention_days must be between 1 and 365",
+                status=422,
+                code="invalid_history_retention_days",
+            )
+        return value
+
+    @classmethod
+    def _retention_days_from_config(cls, config: Mapping[str, Any], platform: str) -> int:
+        value = cls._platform_extra(config, platform).get("history_retention_days")
+        if isinstance(value, bool):
+            return DEFAULT_RETENTION_DAYS
+        try:
+            days = int(value)
+        except (TypeError, ValueError):
+            return DEFAULT_RETENTION_DAYS
+        if not MIN_RETENTION_DAYS <= days <= MAX_RETENTION_DAYS:
+            return DEFAULT_RETENTION_DAYS
+        return days
+
+    def history_retention_days(self, profile: Path, platform: str) -> int:
+        platform = str(platform or "").strip().lower()
+        return self._retention_days_from_config(self.repository.config(profile), platform)
+
+    @staticmethod
     def _normalize_ids(values: Any) -> list[str]:
         if not isinstance(values, (list, tuple)):
             raise ServiceError(
@@ -1474,6 +1570,7 @@ class ChannelsService:
             "allowed_users": allowed_users,
             "dm_policy": self._dm_policy(config),
             "home_channel": home_channel,
+            "history_retention_days": self._retention_days_from_config(config, "zalo"),
             "token_set": False,
         }
 
@@ -1529,6 +1626,7 @@ class ChannelsService:
             "allowed_users": allowed_users,
             "dm_policy": self._bot_dm_policy(config),
             "home_channel": home_channel,
+            "history_retention_days": self._retention_days_from_config(config, "zalo_bot"),
             "token_set": token_set,
             "plugin_artifact": builtin_platform_metadata("zalo_bot"),
         }
@@ -1676,6 +1774,15 @@ class ChannelsService:
                 extra = {}
                 zalo["extra"] = extra
             extra["dm_policy"] = policy
+            config_changed = True
+        if "history_retention_days" in body:
+            days = self._retention_days_value(body.get("history_retention_days"))
+            zalo = self._ensure_platform_config(config, "zalo")
+            extra = zalo.get("extra")
+            if not isinstance(extra, dict):
+                extra = {}
+                zalo["extra"] = extra
+            extra["history_retention_days"] = days
             config_changed = True
         if not config_changed and not env_updates:
             self._write_channel_owner(profile, binding)
@@ -1828,6 +1935,15 @@ class ChannelsService:
                 extra = {}
                 bot["extra"] = extra
             extra["dm_policy"] = policy
+            config_changed = True
+        if "history_retention_days" in body:
+            days = self._retention_days_value(body.get("history_retention_days"))
+            bot = self._ensure_platform_config(config, "zalo_bot")
+            extra = bot.get("extra")
+            if not isinstance(extra, dict):
+                extra = {}
+                bot["extra"] = extra
+            extra["history_retention_days"] = days
             config_changed = True
         if not config_changed and not env_updates:
             self._write_channel_owner(profile, binding)

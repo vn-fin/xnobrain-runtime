@@ -5,7 +5,14 @@ from __future__ import annotations
 import re
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictInt,
+    field_validator,
+    model_validator,
+)
 
 _IDENTITY = r"^[^\x00-\x1f/\\]{1,200}$"
 _ZALO_ID = r"^[0-9]{1,32}$"
@@ -101,7 +108,8 @@ class SendChannelMessageRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    platform: Literal["zalo"] = "zalo"
+    platform: Literal["zalo", "zalo_bot"] = "zalo"
+    thread_type: Literal["dm", "group"] = "dm"
     recipient: str = Field(min_length=1, max_length=200)
     text: str = Field(min_length=1, max_length=20000)
 
@@ -127,6 +135,7 @@ class ChannelState(BaseModel):
     allowed_users: list[str] = Field(default_factory=list)
     dm_policy: DmPolicy = "disabled"
     home_channel: str | None = None
+    history_retention_days: int = Field(default=30, ge=1, le=365)
     # The bot token itself is write-only and is never part of this contract.
     token_set: bool = False
     plugin_artifact: ChannelPluginArtifact | None = None
@@ -165,6 +174,7 @@ class ChannelZaloPatch(BaseModel):
     )
     dm_policy: DmPolicy | None = None
     home_channel: str | None = Field(default=None, max_length=32, pattern=_ZALO_ID)
+    history_retention_days: StrictInt | None = Field(default=None, ge=1, le=365)
 
     @field_validator("allowed_users")
     @classmethod
@@ -212,6 +222,7 @@ class ChannelZaloBotPatch(BaseModel):
     )
     dm_policy: DmPolicy | None = None
     home_channel: str | None = Field(default=None, max_length=64, pattern=_ZALO_BOT_ID)
+    history_retention_days: StrictInt | None = Field(default=None, ge=1, le=365)
 
     @field_validator("allowed_users")
     @classmethod
@@ -309,9 +320,9 @@ class ChannelGroupApproved(BaseModel):
 
 
 class ChannelGroupListResult(BaseModel):
-    """Sanitized group approval state for one agent's Zalo Bot channel."""
+    """Sanitized group approval state for one agent's channel."""
 
-    platform: Literal["zalo_bot"] = "zalo_bot"
+    platform: Literal["zalo", "zalo_bot"] = "zalo_bot"
     daily_limit: int = Field(default=20, ge=0, le=1000)
     pending: list[ChannelGroupPending] = Field(default_factory=list)
     approved: list[ChannelGroupApproved] = Field(default_factory=list)

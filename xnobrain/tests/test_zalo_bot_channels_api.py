@@ -338,6 +338,38 @@ class ZaloBotChannelTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(cleared["allowed_users"], [])
         self.assertIsNone(cleared["home_channel"])
 
+    def test_history_retention_days_defaults_and_persists(self):
+        listed = self.service.list_channels("agent-1")
+        self.assertEqual(listed["channels"][1]["history_retention_days"], 30)
+
+        state = self.service.patch_zalo_bot(
+            "agent-1", {"history_retention_days": 14}
+        )
+
+        self.assertEqual(state["history_retention_days"], 14)
+        config = _read_yaml(self.profile / "config.yaml")
+        self.assertEqual(
+            _configured_profile(config, "zalo_bot")["extra"][
+                "history_retention_days"
+            ],
+            14,
+        )
+        self.assertEqual(
+            self.service.history_retention_days(self.profile, "zalo_bot"), 14
+        )
+
+    def test_history_retention_days_rejects_bad_values(self):
+        for value in (0, 366, True, "30", 1.5, None):
+            with self.subTest(value=value):
+                with self.assertRaises(ServiceError) as raised:
+                    self.service.patch_zalo_bot(
+                        "agent-1", {"history_retention_days": value}
+                    )
+                self.assertEqual(raised.exception.status, 422)
+                self.assertEqual(
+                    raised.exception.code, "invalid_history_retention_days"
+                )
+
     def test_dm_policy_open_is_rejected(self):
         with self.assertRaises(ServiceError) as raised:
             self.service.patch_zalo_bot("agent-1", {"dm_policy": "open"})

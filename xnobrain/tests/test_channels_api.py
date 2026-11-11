@@ -299,6 +299,38 @@ class ChannelWriteTests(unittest.IsolatedAsyncioTestCase):
             self.service.patch_channel("agent-1", {"dm_policy": "open"})
         self.assertEqual(raised.exception.code, "invalid_dm_policy")
 
+    def test_history_retention_days_defaults_and_persists(self):
+        listed = self.service.list_channels("agent-1")
+        self.assertEqual(listed["channels"][0]["history_retention_days"], 30)
+        self.assertEqual(
+            self.service.history_retention_days(self.profile, "zalo"), 30
+        )
+
+        state = self.service.patch_channel(
+            "agent-1", {"history_retention_days": 7}
+        )
+
+        self.assertEqual(state["history_retention_days"], 7)
+        config = _read_yaml(self.profile / "config.yaml")
+        self.assertEqual(
+            config["platforms"]["zalo"]["extra"]["history_retention_days"], 7
+        )
+        self.assertEqual(
+            self.service.history_retention_days(self.profile, "zalo"), 7
+        )
+
+    def test_history_retention_days_rejects_bad_values(self):
+        for value in (0, 366, True, "30", 1.5, None):
+            with self.subTest(value=value):
+                with self.assertRaises(ServiceError) as raised:
+                    self.service.patch_channel(
+                        "agent-1", {"history_retention_days": value}
+                    )
+                self.assertEqual(raised.exception.status, 422)
+                self.assertEqual(
+                    raised.exception.code, "invalid_history_retention_days"
+                )
+
     async def test_qr_starts_one_login_and_returns_the_png(self):
         self.service.set_channel_enabled("agent-1", True)
         self.root.joinpath("gateway.pid").write_text('{"pid": 222}', encoding="utf-8")

@@ -683,22 +683,26 @@ selects a resource and never authorizes access. A disabled runtime answers `404`
 |---|---|---|
 | `GET /xnobrain/api/runtime/v1/agents/{agent_id}/channels` | — | `{channels: [ChannelState], gateway: {running, pid, pending_restart}}` |
 | `PUT /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo` | `{enabled: bool}` | `ChannelState` |
-| `PATCH /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo` | `{allowed_users?: [id], dm_policy?: "disabled"\|"allowlist"\|"pairing", home_channel?: id\|null}` | `ChannelState` |
+| `PATCH /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo` | `{allowed_users?: [id], dm_policy?: "disabled"\|"allowlist"\|"pairing", home_channel?: id\|null, history_retention_days?: int}` | `ChannelState` |
 | `GET /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo/qr` | — | `{status, image_base64}` |
 | `POST /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo/logout` | — | `ChannelState` |
 
 `ChannelState` is `{platform: "zalo"|"zalo_bot", enabled, status, own_id,
-allowed_users, dm_policy, home_channel, token_set}`. For the personal channel
+allowed_users, dm_policy, home_channel, history_retention_days, token_set}`.
+`history_retention_days` is the stored channel history retention in days
+(integer `1..365`, default `30` when absent). For the personal channel
 `status` is one of `disabled`, `starting`, `needs_login`, `qr`, `connected`,
 `closed`, `pending_restart`, `gateway_down`. It comes from the loopback bridge
 `GET http://127.0.0.1:<port>/health`; `connecting` maps to `starting`. Big
 Brother (the root profile) cannot own a personal channel (`409 protected_agent`).
 
 Writes snapshot the profile `config.yaml` first, then atomically update
-`platforms.zalo.enabled`, `platforms.zalo.extra.dm_policy`, and the profile
-`.env` keys `ZALO_ALLOWED_USERS` and `ZALO_HOME_CHANNEL`. New channels default to
-`dm_policy: disabled`. The root profile's `gateway.multiplex_profiles` and
-`gateway.multiplex_profile_allowlist` are kept in sync with every non-root
+`platforms.zalo.enabled`, `platforms.zalo.extra.dm_policy`,
+`platforms.zalo.extra.history_retention_days`, and the profile `.env` keys
+`ZALO_ALLOWED_USERS` and `ZALO_HOME_CHANNEL`. New channels default to
+`dm_policy: disabled` and `history_retention_days: 30`. The root profile's
+`gateway.multiplex_profiles` and `gateway.multiplex_profile_allowlist` are kept
+in sync with every non-root
 profile whose Zalo channel is enabled; the root profile and `default` are never
 listed. The bridge port is the bundled plugin's rule (`3110` plus the stable
 profile index, or an explicit `platforms.zalo.extra.bridge_port`).
@@ -730,7 +734,7 @@ The bundled `zalo_bot` platform plugin is exposed through the same
 | Method and path | Body | Result |
 |---|---|---|
 | `PUT /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo_bot` | `{enabled: bool}` | `ChannelState` |
-| `PATCH /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo_bot` | `{bot_token?: str\|null, allowed_users?: [id]\|null, dm_policy?: "disabled"\|"allowlist"\|"pairing", home_channel?: id\|null}` | `ChannelState` |
+| `PATCH /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo_bot` | `{bot_token?: str\|null, allowed_users?: [id]\|null, dm_policy?: "disabled"\|"allowlist"\|"pairing", home_channel?: id\|null, history_retention_days?: int}` | `ChannelState` |
 | `POST /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo_bot/logout` | — | `ChannelState` |
 
 For `zalo_bot`, `ChannelState` adds `token_set` (never the token itself).
@@ -763,7 +767,8 @@ Re-submitting an agent's own token and clearing it with `null` remain valid.
 The `409` response never echoes the token value.
 
 Writes atomically update `platforms.zalo_bot.enabled`,
-`platforms.zalo_bot.extra.dm_policy`, and the `.env` keys
+`platforms.zalo_bot.extra.dm_policy`,
+`platforms.zalo_bot.extra.history_retention_days`, and the `.env` keys
 `ZALO_BOT_ALLOWED_USERS` and `ZALO_BOT_HOME_CHANNEL`, snapshot `config.yaml`
 first, request the same `SIGUSR1` gateway restart, and are idempotent. A
 profile is included in `gateway.multiplex_profile_allowlist` when either
@@ -814,13 +819,14 @@ the same lock wrapper around `generate_code`, `approve_code`,
 constructor's split-directory migration before the pinned gateway starts; no
 vendor source is edited.
 
-### Zalo Bot group approval and daily limits
+### Channel group approval and daily limits
 
-Group approval is available only for the `zalo_bot` platform and is gated by
+Group approval is available for both `zalo` and `zalo_bot` and is gated by
 the same feature flag, enabled-channel check, and verified same-agent Personal
 owner binding as pairing management. Group approval is always required: a
 sender who is DM-paired with this agent still cannot chat in an unapproved
-group. Once approved, every member of that group may chat with the bot.
+group. Once approved, every member of that group may chat with the agent. Other
+platform values return `422 invalid_platform`.
 
 | Method and path | Body | Result |
 |---|---|---|
@@ -830,9 +836,10 @@ group. Once approved, every member of that group may chat with the bot.
 | `POST .../channels/{platform}/groups/revoke` | `{group_id}` | `ChannelGroupRevokeResult` |
 | `POST .../channels/{platform}/groups/settings` | `{daily_limit}` | `ChannelGroupSettingsResult` |
 
-`group_id` uses the Zalo Bot ID pattern `^[A-Za-z0-9_-]{1,64}$`. Group and
-sender names are collapsed to one line and truncated to 100 characters before
-they are stored or returned. `platform` other than `zalo_bot` returns
+`group_id` uses `^[A-Za-z0-9_-]{1,64}$`; personal `zalo` group IDs are the
+numeric Zalo group IDs, which match that pattern. Group and sender names are
+collapsed to one line and truncated to 100 characters before they are stored
+or returned. `platform` values other than `zalo` and `zalo_bot` return
 `422 invalid_platform`. `approve` promotes an existing pending entry and
 returns `404 channel_group_not_found` when the group is not pending; `deny`
 removes only the pending entry with the same missing error; `revoke` removes

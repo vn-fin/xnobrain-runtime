@@ -10,11 +10,17 @@ from pathlib import Path
 from typing import Any, Mapping
 
 ZALO_PLATFORM = "zalo"
+ZALO_BOT_PLATFORM = "zalo_bot"
 DEFAULT_MAX_MESSAGE_LENGTH = 2000
 BRIDGE_PORT_BASE = 3110
 MAX_KNOWN_NAMES = 20
 _THREAD_ID = re.compile(r"^[0-9]{1,32}$")
-_PLUGIN_READY: bool | None = None
+_ZALO_BOT_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+_THREAD_ID_PATTERNS = {
+    ZALO_PLATFORM: _THREAD_ID,
+    ZALO_BOT_PLATFORM: _ZALO_BOT_ID,
+}
+_PLATFORM_READY: dict[str, bool] = {}
 BRIDGE_STATUS = {
     "connecting": "starting",
     "needs_login": "needs_login",
@@ -111,8 +117,15 @@ def resolve_recipient(
 
 def zalo_plugin_registered() -> bool:
     """True when Hermes loaded the bundled Zalo platform plugin."""
-    global _PLUGIN_READY
-    if _PLUGIN_READY:
+    return platform_plugin_registered(ZALO_PLATFORM)
+
+
+def platform_plugin_registered(platform: str) -> bool:
+    """True when Hermes loaded the bundled plugin for one channel platform."""
+    name = str(platform or "").strip().lower()
+    if name not in _THREAD_ID_PATTERNS:
+        return False
+    if _PLATFORM_READY.get(name):
         return True
     try:
         from tools.send_message_tool import prepare_send_message_platforms
@@ -120,17 +133,17 @@ def zalo_plugin_registered() -> bool:
         prepare_send_message_platforms()
         from gateway.platform_registry import platform_registry
 
-        _PLUGIN_READY = platform_registry.get(ZALO_PLATFORM) is not None
+        _PLATFORM_READY[name] = platform_registry.get(name) is not None
     except Exception:
-        _PLUGIN_READY = False
-    return bool(_PLUGIN_READY)
+        _PLATFORM_READY[name] = False
+    return bool(_PLATFORM_READY[name])
 
 
-def max_message_length() -> int:
+def max_message_length(platform: str = ZALO_PLATFORM) -> int:
     try:
         from gateway.platform_registry import platform_registry
 
-        entry = platform_registry.get(ZALO_PLATFORM)
+        entry = platform_registry.get(str(platform or ZALO_PLATFORM))
         if entry is not None and int(entry.max_message_length or 0) > 0:
             return int(entry.max_message_length)
     except Exception:
@@ -229,24 +242,38 @@ def bridge_start_login(port: int, *, timeout: float = 2.0) -> dict[str, Any] | N
     return _bridge_request(port, "/login", method="POST", timeout=timeout)
 
 
-def profile_enables_zalo(profile: Path) -> bool:
-    """Read ``platforms.zalo.enabled`` from the profile config (plan 015 D4)."""
+def profile_enables_platform(profile: Path, platform: str) -> bool:
+    """Read ``platforms.<platform>.enabled`` from the profile config."""
+    name = str(platform or "").strip().lower()
     try:
         import yaml
 
         value = yaml.safe_load((Path(profile) / "config.yaml").read_text(encoding="utf-8"))
         platforms = value.get("platforms") if isinstance(value, dict) else None
-        zalo = platforms.get(ZALO_PLATFORM) if isinstance(platforms, dict) else None
-        return bool(isinstance(zalo, dict) and zalo.get("enabled"))
+        record = platforms.get(name) if isinstance(platforms, dict) else None
+        return bool(isinstance(record, dict) and record.get("enabled"))
     except (OSError, ValueError, TypeError):
         return False
 
 
-async def send_text(thread_id: str, text: str) -> dict[str, Any]:
+def profile_enables_zalo(profile: Path) -> bool:
+    """Read ``platforms.zalo.enabled`` from the profile config (plan 015 D4)."""
+    return profile_enables_platform(profile, ZALO_PLATFORM)
+
+
+async def send_text(
+    thread_id: str,
+    text: str,
+    platform: str = ZALO_PLATFORM,
+) -> dict[str, Any]:
     """Send text through Hermes' plugin standalone sender, not raw bridge HTTP."""
-    if not _THREAD_ID.fullmatch(str(thread_id or "")):
+    name = str(platform or "").strip().lower()
+    pattern = _THREAD_ID_PATTERNS.get(name)
+    if pattern is None:
+        raise ChannelDeliveryError("channel_platform_unavailable")
+    if not pattern.fullmatch(str(thread_id or "")):
         raise ChannelDeliveryError("channel_recipient_invalid")
-    limit = max_message_length()
+    limit = max_message_length(name)
     if len(text) > limit:
         raise ChannelDeliveryError("channel_message_too_long")
     if not text.strip():
@@ -258,18 +285,18 @@ async def send_text(thread_id: str, text: str) -> dict[str, Any]:
         from gateway.config import Platform, load_gateway_config
         from gateway.platform_registry import platform_registry
 
-        if platform_registry.get(ZALO_PLATFORM) is None:
+        if platform_registry.get(name) is None:
             raise ChannelDeliveryError("channel_platform_unavailable")
-        platform = Platform(ZALO_PLATFORM)
+        target = Platform(name)
         config = load_gateway_config()
         pconfig = None
         for key, value in dict(getattr(config, "platforms", {}) or {}).items():
-            if getattr(key, "value", str(key)) == ZALO_PLATFORM:
+            if getattr(key, "value", str(key)) == name:
                 pconfig = value
                 break
         if pconfig is None or not getattr(pconfig, "enabled", False):
             raise ChannelDeliveryError("channel_platform_not_configured")
-        result = await _send_to_platform(platform, pconfig, str(thread_id), text)
+        result = await _send_to_platform(target, pconfig, str(thread_id), text)
     except ChannelDeliveryError:
         raise
     except Exception as error:

@@ -344,22 +344,51 @@ class ChannelGroupServiceTests(ChannelGroupFixture):
         self.assertEqual(raised.exception.status, 403)
         self.assertEqual(raised.exception.code, "channel_personal_required")
 
-    async def test_non_bot_platform_is_rejected(self):
+    async def test_unknown_platform_is_rejected(self):
         with self.assertRaises(ServiceError) as raised:
-            await self.service.list_groups("agent-1", "zalo", self._trusted())
+            await self.service.list_groups("agent-1", "whatsapp", self._trusted())
         self.assertEqual(raised.exception.status, 422)
         self.assertEqual(raised.exception.code, "invalid_platform")
 
         with self.assertRaises(ServiceError) as raised:
             self.service.record_group_seen(
                 {
-                    "platform": "zalo",
+                    "platform": "whatsapp",
                     "agent_id": "agent-1",
                     "group_id": "123456",
                 },
                 TOKEN,
             )
         self.assertEqual(raised.exception.code, "invalid_platform")
+
+    async def test_personal_zalo_groups_are_accepted(self):
+        config = yaml.safe_load(self.profile.joinpath("config.yaml").read_text())
+        config["platforms"]["zalo"]["enabled"] = True
+        config["platforms"]["zalo"]["extra"]["dm_policy"] = "pairing"
+        self.profile.joinpath("config.yaml").write_text(
+            yaml.safe_dump(config), encoding="utf-8"
+        )
+        self.service.record_group_seen(
+            {
+                "platform": "zalo",
+                "agent_id": "agent-1",
+                "group_id": "123456",
+                "group_name": "Personal Group",
+                "sender_name": "Nam",
+            },
+            TOKEN,
+        )
+
+        listed = await self.service.list_groups("agent-1", "zalo", self._trusted())
+
+        self.assertEqual(listed["platform"], "zalo")
+        self.assertEqual([item["group_id"] for item in listed["pending"]], ["123456"])
+        approved = await self.service.approve_group(
+            "agent-1", "zalo", "123456", self._trusted()
+        )
+        self.assertEqual(approved["status"], "approved")
+        listed = await self.service.list_groups("agent-1", "zalo", self._trusted())
+        self.assertEqual([item["group_id"] for item in listed["approved"]], ["123456"])
 
     async def test_internal_seen_requires_token_and_sanitizes(self):
         for token in (None, "", "wrong"):
