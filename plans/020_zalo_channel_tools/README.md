@@ -210,7 +210,8 @@ Replace `_ChatHistorySync` in the vendored adapter:
 - Record fields: `message_id`, `chat_id`, `chat_type`, `direction`,
   `sender_id`, `sender_name`, `type`, `text`, `ts`, `trust: untrusted_external`.
   Media is stored as a type marker and URL, not downloaded.
-- Retention 30 days, trimmed at adapter start and daily; max 50 MB per
+- Retention `extra.history_retention_days` (default 30), trimmed at adapter
+  start and daily; max 50 MB per
   profile (oldest chats trimmed first).
 - `/follow` becomes a per-group opt-out (default on for approved groups);
   revoking a group or disconnecting the channel deletes that history.
@@ -276,11 +277,16 @@ Run inside the Runtime dev container:
 3. P-B read tools.
 4. P-B send extras, group utilities, admin.
 
+## Decisions from review (2026-11-11)
+
+1. Owner approval of a group is enough consent to store every member's
+   messages. No in-group announcement.
+2. Retention defaults to 30 days and is configurable per agent and platform:
+   `extra.history_retention_days` (1–365) in the channel config, editable on
+   the channel settings card. Applies to the bot store and the personal
+   `history.jsonl`.
+
 ## Open questions
 
-1. Bot B1 stores messages from every member of an approved group. Is group
-   approval by the owner enough consent, or must the bot announce it in the
-   group when tracking starts?
-2. Retention: 30 days for both platforms?
-3. Should read tools in channel-originated runs be limited to the current
+1. Should read tools in channel-originated runs be limited to the current
    thread (proposed) or disabled entirely?
