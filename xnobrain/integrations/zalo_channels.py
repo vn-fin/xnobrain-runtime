@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -297,6 +298,78 @@ async def send_text(
         if pconfig is None or not getattr(pconfig, "enabled", False):
             raise ChannelDeliveryError("channel_platform_not_configured")
         result = await _send_to_platform(target, pconfig, str(thread_id), text)
+    except ChannelDeliveryError:
+        raise
+    except Exception as error:
+        raise ChannelDeliveryError("channel_send_failed") from error
+    if not isinstance(result, dict) or result.get("error") or not result.get("success"):
+        raise ChannelDeliveryError("channel_send_failed")
+    message_id = result.get("message_id")
+    return {
+        "message_id": str(message_id) if message_id not in (None, "") else None,
+    }
+
+
+_BOT_MEDIA_ACTIONS = {
+    "photo": "send_photo",
+    "sticker": "send_sticker",
+    "voice": "send_voice",
+}
+
+
+def _bot_media_payload(kind: str, value: str, caption: str) -> dict[str, Any]:
+    if kind == "photo":
+        return {"photo_url": value, "caption": caption}
+    if kind == "sticker":
+        return {"sticker": value}
+    return {"voice_url": value}
+
+
+async def send_bot_media(
+    chat_id: str,
+    kind: str,
+    url_or_id: str,
+    caption: str = "",
+) -> dict[str, Any]:
+    """Send one Bot media message through the plugin's ``_standalone_api``.
+
+    ``kind`` is ``photo``, ``sticker``, or ``voice``. The adapter helper keeps
+    a fixed action allowlist, so this path can never fall back to text.
+    """
+    name = ZALO_BOT_PLATFORM
+    action = _BOT_MEDIA_ACTIONS.get(str(kind or "").strip().lower())
+    if action is None:
+        raise ChannelDeliveryError("channel_media_unsupported")
+    if not _THREAD_ID_PATTERNS[name].fullmatch(str(chat_id or "")):
+        raise ChannelDeliveryError("channel_recipient_invalid")
+    try:
+        from tools.send_message_tool import prepare_send_message_platforms
+
+        prepare_send_message_platforms()
+        from gateway.config import load_gateway_config
+        from gateway.platform_registry import platform_registry
+
+        entry = platform_registry.get(name)
+        if entry is None:
+            raise ChannelDeliveryError("channel_platform_unavailable")
+        sender = getattr(entry, "standalone_sender_fn", None)
+        module = sys.modules.get(getattr(sender, "__module__", ""))
+        helper = getattr(module, "_standalone_api", None)
+        if not callable(helper):
+            raise ChannelDeliveryError("channel_platform_unavailable")
+        config = load_gateway_config()
+        pconfig = None
+        for key, value in dict(getattr(config, "platforms", {}) or {}).items():
+            if getattr(key, "value", str(key)) == name:
+                pconfig = value
+                break
+        if pconfig is None or not getattr(pconfig, "enabled", False):
+            raise ChannelDeliveryError("channel_platform_not_configured")
+        result = await helper(
+            pconfig,
+            action,
+            **_bot_media_payload(str(kind).strip().lower(), str(url_or_id or ""), caption),
+        )
     except ChannelDeliveryError:
         raise
     except Exception as error:

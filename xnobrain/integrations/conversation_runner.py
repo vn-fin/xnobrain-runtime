@@ -1474,6 +1474,9 @@ class ConversationRunnerMixin:
                 from .channel_tools import install_tools as install_channel_tools
 
                 install_channel_tools(agent, conversation_id)
+                from .zalo_bot_tools import install_tools as install_zalo_bot_tools
+
+                install_zalo_bot_tools(agent, conversation_id)
                 from .managed_mcp import install_tools as install_catalog_mcp_tools
 
                 install_catalog_mcp_tools(agent, profile_dir)
@@ -1569,9 +1572,20 @@ class ConversationRunnerMixin:
         page_scope.enter_context(bind_control_mcp_grant(profile_dir, prepared.get("_mcp_grant")))
         if getattr(manager, "channels_service", None):
             from .channel_tools import bind_run as bind_channel_run
+            from .zalo_bot_tools import bind_run as bind_zalo_bot_run
 
             page_scope.enter_context(
                 bind_channel_run(
+                    manager.channels_service,
+                    profile_dir,
+                    str(prepared["name"]),
+                    conversation_id,
+                    run_id,
+                    approval_notify_callback,
+                )
+            )
+            page_scope.enter_context(
+                bind_zalo_bot_run(
                     manager.channels_service,
                     profile_dir,
                     str(prepared["name"]),

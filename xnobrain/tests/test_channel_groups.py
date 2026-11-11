@@ -452,6 +452,73 @@ class ChannelGroupServiceTests(ChannelGroupFixture):
             )
         self.assertIn(f"{API_PREFIX}/internal/channels/groups/seen", paths)
 
+    # ── Conversation-store deletion ───────────────────────────────────
+
+    def _history_dir(self) -> Path:
+        directory = self.profile / "zalo_bot" / "history"
+        directory.mkdir(parents=True, exist_ok=True)
+        return directory
+
+    def _write_history(self, chat_id: str) -> Path:
+        path = self._history_dir() / f"{chat_id}.jsonl"
+        path.write_text('{"ts": 1}\n', encoding="utf-8")
+        return path
+
+    async def test_revoke_group_deletes_its_history(self):
+        await self._approve()
+        group_file = self._write_history("group_1")
+        other_file = self._write_history("group_2")
+
+        await self.service.revoke_group(
+            "agent-1", "zalo_bot", "group_1", self._trusted()
+        )
+
+        self.assertFalse(group_file.exists())
+        self.assertTrue(other_file.exists())
+
+    async def test_deny_group_deletes_its_history(self):
+        self.service.record_group_seen(
+            {
+                "platform": "zalo_bot",
+                "agent_id": "agent-1",
+                "group_id": "group_3",
+                "group_name": "Three",
+            },
+            TOKEN,
+        )
+        group_file = self._write_history("group_3")
+
+        await self.service.deny_group(
+            "agent-1", "zalo_bot", "group_3", self._trusted()
+        )
+
+        self.assertFalse(group_file.exists())
+
+    async def test_logout_deletes_all_history(self):
+        self._write_history("group_1")
+        self._write_history("dm-user")
+        self._write_history("dm-user-2")
+
+        self.service.logout_zalo_bot("agent-1")
+
+        self.assertEqual(list(self._history_dir().iterdir()), [])
+
+    async def test_revoke_pairing_deletes_dm_history(self):
+        dm_file = self._write_history("pair-user")
+
+        class _Store:
+            def revoke(self, platform, user_id):
+                return True
+
+        self.service._pairing_store = lambda agent_id: _Store()
+
+        result = await self.service.revoke_pairing(
+            "agent-1", "zalo_bot", "pair-user", self._trusted()
+        )
+
+        self.assertEqual(result["status"], "revoked")
+        self.assertFalse(dm_file.exists())
+
 
 class ChannelGroupTurnTests(ChannelGroupFixture):
     async def test_unapproved_group_is_refused_and_recorded(self):

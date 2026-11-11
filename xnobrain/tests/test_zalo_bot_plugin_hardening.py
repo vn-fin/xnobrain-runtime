@@ -612,6 +612,63 @@ class ZaloBotHardeningTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse((home / "zalo_bot_state.json").exists())
             self.assertEqual(list(home.iterdir()), [])
 
+    # ── Standalone API for Runtime tools (plan 020 B2) ────────────────
+
+    async def test_client_media_and_webhook_methods_post_expected_payloads(self):
+        client = self.adapter_module._ZaloClient("1:secret")
+        calls = []
+
+        async def fake_post(endpoint, data=None):
+            calls.append((endpoint, data))
+            return {"ok": True, "result": {"message_id": "9"}}
+
+        client._post = fake_post
+
+        self.assertEqual(await client.send_sticker("chat", "st-1"), {
+            "ok": True, "result": {"message_id": "9"}
+        })
+        await client.send_voice("chat", "https://cdn.example/v.aac")
+        await client.get_webhook_info()
+
+        self.assertEqual(
+            calls,
+            [
+                ("sendSticker", {"chat_id": "chat", "sticker": "st-1"}),
+                ("sendVoice", {"chat_id": "chat", "voice": "https://cdn.example/v.aac"}),
+                ("getWebhookInfo", None),
+            ],
+        )
+
+    async def test_standalone_api_action_allowlist(self):
+        module = self.adapter_module
+        self.assertEqual(
+            module._STANDALONE_API_ACTIONS,
+            frozenset(
+                {"get_me", "get_webhook_info", "send_photo", "send_sticker", "send_voice"}
+            ),
+        )
+        pconfig = types.SimpleNamespace(extra={"bot_token": "123456:abcdefSECRET"})
+
+        unknown = await module._standalone_api(pconfig, "send_text")
+        self.assertEqual(unknown, {"error": "unsupported_action"})
+
+        class FailingClient:
+            def __init__(self, bot_token):
+                self.bot_token = bot_token
+
+            async def send_sticker(self, chat_id, sticker):
+                raise RuntimeError(f"HTTP POST /bot{self.bot_token}/sendSticker")
+
+            async def close(self):
+                return None
+
+        with mock.patch.object(module, "_ZaloClient", FailingClient):
+            failed = await module._standalone_api(
+                pconfig, "send_sticker", chat_id="chat", sticker="st-1"
+            )
+        self.assertEqual(failed, {"error": "api_error"})
+        self.assertNotIn("123456:abcdefSECRET", json.dumps(failed))
+
 
 if __name__ == "__main__":
     unittest.main()

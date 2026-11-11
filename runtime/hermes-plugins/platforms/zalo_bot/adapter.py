@@ -77,14 +77,32 @@ STATE_HEARTBEAT_SECONDS = 30.0
 ANTI_SPAM_MAX_PER_MINUTE = 5
 WARN_MAX_WARNINGS = 3
 WARN_EXPIRY_SECONDS = 604800  # 1 week
-CRM_DATA_DIR = os.environ.get(
-    "ZALO_BOT_CRM_DIR",
-    str(get_hermes_home() / "zalo-bot-crm"),
-)
-HISTORY_DIR = os.environ.get(
-    "ZALO_BOT_HISTORY_DIR",
-    str(get_hermes_home() / "zalo-bot-history"),
-)
+
+# Per-profile plugin state directories. The environment overrides stay
+# authoritative when set; otherwise the adapter resolves the directory below
+# the profile home at connect time so multiplexed profiles never share files.
+SETTINGS_DIR_ENV = "ZALO_BOT_SETTINGS_DIR"
+SETTINGS_DIRNAME = "zalo-bot-settings"
+CRM_DIR_ENV = "ZALO_BOT_CRM_DIR"
+CRM_DIRNAME = "zalo-bot-crm"
+
+# ── Conversation store constants ──────────────────────────────────
+# The store lives below the profile home resolved at connect time (not at
+# import time), so multiplexed profiles keep separate files. One JSONL file
+# per chat: <profile home>/zalo_bot/history/<chat_id>.jsonl.
+BOT_HISTORY_DIRNAME = "zalo_bot"
+BOT_HISTORY_SUBDIR = "history"
+BOT_CHANNELS_DIRNAME = "zalo"
+BOT_GROUPS_FILE = "groups.json"
+# Runtime rewrites the group approval file from time to time; claim nothing
+# large when reading it.
+BOT_GROUPS_MAX_BYTES = 1024 * 1024
+HISTORY_TRIM_INTERVAL_SECONDS = 86400
+HISTORY_MAX_BYTES = 50 * 1024 * 1024
+HISTORY_TEXT_LIMIT = 4000
+HISTORY_RETENTION_DEFAULT_DAYS = 30
+HISTORY_RETENTION_MIN_DAYS = 1
+HISTORY_RETENTION_MAX_DAYS = 365
 
 # Chat/group IDs come from the wire; restrict them before they are used to
 # build local file paths (defence against traversal / odd filenames).
@@ -103,6 +121,31 @@ def _safe_path_component(identifier: str) -> str:
     """Reduce a chat/group ID to [A-Za-z0-9_-] for local file names."""
     sanitized = _SAFE_ID_RE.sub("_", str(identifier))[:128]
     return sanitized or "unknown"
+
+
+def _write_private_json(path: Path, value: Any) -> None:
+    """Atomically write one JSON file readable only by its owner (0600)."""
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            fd = -1
+            json.dump(value, handle, ensure_ascii=False, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+        temporary = ""
+    finally:
+        if fd >= 0:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        if temporary:
+            try:
+                os.unlink(temporary)
+            except OSError:
+                pass
 
 
 def _coerce_bool(value: Any, default: bool = False) -> bool:
@@ -139,6 +182,21 @@ def _coerce_dm_policy(value: Any) -> str:
     """Return a supported dm_policy, failing closed to "disabled"."""
     normalized = str(value or "").strip().lower()
     return normalized if normalized in DM_POLICIES else "disabled"
+
+
+def _coerce_retention_days(value: Any) -> int:
+    """Clamp ``history_retention_days`` to 1..365; invalid -> 30."""
+    if isinstance(value, bool):
+        return HISTORY_RETENTION_DEFAULT_DAYS
+    try:
+        days = int(value)
+    except (TypeError, ValueError):
+        return HISTORY_RETENTION_DEFAULT_DAYS
+    if days < HISTORY_RETENTION_MIN_DAYS:
+        return HISTORY_RETENTION_MIN_DAYS
+    if days > HISTORY_RETENTION_MAX_DAYS:
+        return HISTORY_RETENTION_MAX_DAYS
+    return days
 
 
 def _redact_secret_text(text: Any, token: str) -> str:
@@ -273,7 +331,7 @@ SLASH_COMMANDS = {
         "admin_only": True,
     },
     "/follow": {
-        "description": "Bật/tắt group tracking",
+        "description": "Bật/tắt lưu lịch sử trò chuyện nhóm",
         "usage": "/follow",
         "admin_only": True,
     },
@@ -380,6 +438,18 @@ class _ZaloClient:
     async def send_chat_action(self, chat_id: str, action: str = "typing") -> dict:
         """Send a chat action indicator."""
         return await self._post("sendChatAction", {"chat_id": chat_id, "action": action})
+
+    async def send_sticker(self, chat_id: str, sticker: str) -> dict:
+        """Send a sticker by id (Bot API ``sendSticker``)."""
+        return await self._post("sendSticker", {"chat_id": chat_id, "sticker": sticker})
+
+    async def send_voice(self, chat_id: str, voice_url: str) -> dict:
+        """Send a voice message from an ``.aac`` URL (Bot API ``sendVoice``)."""
+        return await self._post("sendVoice", {"chat_id": chat_id, "voice": voice_url})
+
+    async def get_webhook_info(self) -> dict:
+        """Return the bot's current webhook configuration."""
+        return await self._post("getWebhookInfo")
 
 
 # ---------------------------------------------------------------------------
@@ -553,41 +623,67 @@ class _GroupManager:
 
 
 class _GroupSettings:
-    """Per-group toggle settings (muted, silent, welcome, follow)."""
+    """Per-group toggle settings (muted, silent, welcome, follow).
 
-    SETTINGS_FILE = os.environ.get(
-        "ZALO_BOT_SETTINGS_DIR",
-        str(get_hermes_home() / "zalo-bot-settings"),
-    )
+    The directory is resolved lazily through ``directory_provider`` so each
+    multiplexed profile reads and writes below its own home. It is created with
+    mode ``0700`` on the first write and every file is written ``0600``.
+    """
 
-    def __init__(self) -> None:
-        self._dir = Path(self.SETTINGS_FILE)
-        self._dir.mkdir(parents=True, exist_ok=True)
+    def __init__(self, directory_provider) -> None:
+        self._directory_provider = directory_provider
+        self._dir: Optional[Path] = None
 
-    def _filepath(self, group_id: str) -> Path:
-        return self._dir / f"{_safe_path_component(group_id)}.json"
+    def _directory(self, *, create: bool) -> Optional[Path]:
+        if self._dir is None:
+            try:
+                directory = self._directory_provider()
+            except Exception:
+                directory = None
+            if directory is None:
+                return None
+            self._dir = Path(directory)
+        if create:
+            try:
+                self._dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+                os.chmod(self._dir, 0o700)
+            except OSError as error:
+                logger.debug(
+                    "Zalo: settings directory unavailable: %s",
+                    type(error).__name__,
+                )
+                return None
+        return self._dir
+
+    def _filepath(self, group_id: str, *, create: bool = False) -> Optional[Path]:
+        directory = self._directory(create=create)
+        if directory is None:
+            return None
+        return directory / f"{_safe_path_component(group_id)}.json"
 
     def _load(self, group_id: str) -> Dict[str, Any]:
         filepath = self._filepath(group_id)
-        if not filepath.exists():
+        if filepath is None or not filepath.exists():
             return {
                 "muted": False,
                 "silent": False,
                 "welcome": False,
-                "follow": False,
+                "follow": True,
                 "welcome_text": "",
                 "name_triggers": [],
             }
         try:
             with open(filepath, "r", encoding="utf-8") as f:
-                return json.load(f)
+                value = json.load(f)
+            return value if isinstance(value, dict) else {}
         except (json.JSONDecodeError, OSError):
-            return {"muted": False, "silent": False, "welcome": False, "follow": False}
+            return {"muted": False, "silent": False, "welcome": False, "follow": True}
 
     def _save(self, group_id: str, settings: Dict[str, Any]) -> None:
-        filepath = self._filepath(group_id)
-        with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(settings, f, ensure_ascii=False, indent=2)
+        filepath = self._filepath(group_id, create=True)
+        if filepath is None:
+            return
+        _write_private_json(filepath, settings)
 
     def get(self, group_id: str) -> Dict[str, Any]:
         return self._load(group_id)
@@ -612,111 +708,356 @@ class _GroupSettings:
         return {"ok": True, "key": key, "value": settings[key]}
 
 
-class _ChatHistorySync:
-    """Synchronizes Zalo chat history for agent access."""
+class _BotHistoryStore:
+    """Append-only per-chat conversation store for the Bot channel.
 
-    def __init__(self) -> None:
-        self._dir = Path(HISTORY_DIR)
-        self._dir.mkdir(parents=True, exist_ok=True)
-        self._buffer: Dict[str, List[Dict[str, Any]]] = {}
+    Every record is one JSON line written immediately (no buffer) to
+    ``<profile home>/zalo_bot/history/<chat_id>.jsonl``. Directories are
+    ``0700`` and files ``0600``; writes through a symlink are skipped. Storage
+    is diagnostic data for the Runtime, so any failure is logged at debug
+    level without content and never interrupts message handling.
+    """
 
-    def save_message(self, group_id: str, message: Dict[str, Any]) -> None:
-        if group_id not in self._buffer:
-            self._buffer[group_id] = []
-        entry = {
-            "message_id": message.get("message_id", ""),
-            "from_id": message.get("from_id", ""),
-            "from_name": message.get("from_name", ""),
-            "text": message.get("text", ""),
-            "timestamp": message.get("timestamp", time.time()),
-            "type": message.get("type", "text"),
-            # This is untrusted external chat content. Consumers must keep it
-            # out of instruction/system-prompt positions.
-            "trust": message.get("trust", "untrusted_external"),
+    def __init__(self, home: Path) -> None:
+        self._home = Path(home)
+
+    # ── Paths ─────────────────────────────────────────────────────────────
+
+    def _directory(self, *, create: bool) -> Optional[Path]:
+        """Return the resolved history directory, or None when unsafe."""
+        base = self._home / BOT_HISTORY_DIRNAME
+        if base.is_symlink():
+            logger.debug("Zalo: bot history base is a symlink; skipping")
+            return None
+        directory = base / BOT_HISTORY_SUBDIR
+        if directory.is_symlink():
+            logger.debug("Zalo: bot history directory is a symlink; skipping")
+            return None
+        if create:
+            try:
+                base.mkdir(parents=True, exist_ok=True, mode=0o700)
+                os.chmod(base, 0o700)
+                directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+                os.chmod(directory, 0o700)
+            except OSError as error:
+                logger.debug(
+                    "Zalo: bot history directory unavailable: %s",
+                    type(error).__name__,
+                )
+                return None
+        if not directory.is_dir():
+            return None
+        return directory
+
+    def _path(self, chat_id: str) -> Optional[Path]:
+        if not chat_id:
+            return None
+        directory = self._directory(create=False)
+        if directory is None:
+            return None
+        return directory / f"{_safe_path_component(chat_id)}.jsonl"
+
+    @staticmethod
+    def _history_files(directory: Path) -> List[Path]:
+        """Return regular ``*.jsonl`` files in ``directory``; never symlinks."""
+        files: List[Path] = []
+        try:
+            entries = list(directory.iterdir())
+        except OSError:
+            return files
+        for path in entries:
+            try:
+                if path.is_symlink() or not path.is_file():
+                    continue
+            except OSError:
+                continue
+            if path.suffix == ".jsonl":
+                files.append(path)
+        return files
+
+    # ── Records ───────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _normalize(record: Dict[str, Any]) -> Dict[str, Any]:
+        message_type = str(record.get("type") or "text").strip().lower()
+        if message_type not in ("text", "image", "sticker", "unsupported"):
+            message_type = "unsupported"
+        try:
+            timestamp = float(record.get("ts"))
+        except (TypeError, ValueError):
+            timestamp = time.time()
+        normalized = {
+            "message_id": str(record.get("message_id") or ""),
+            "chat_id": str(record.get("chat_id") or ""),
+            "chat_type": "group" if record.get("chat_type") == "group" else "dm",
+            "direction": "out" if record.get("direction") == "out" else "in",
+            "sender_id": str(record.get("sender_id") or ""),
+            "sender_name": str(record.get("sender_name") or "")[:200],
+            "type": message_type,
+            "text": str(record.get("text") or "")[:HISTORY_TEXT_LIMIT],
+            "ts": timestamp,
+            # Untrusted external chat content. Consumers must keep it out of
+            # instruction and system-prompt positions.
+            "trust": "untrusted_external",
         }
-        self._buffer[group_id].append(entry)
-        if len(self._buffer[group_id]) > 500:
-            self.flush(group_id)
+        if message_type in ("image", "sticker"):
+            normalized["media_url"] = str(record.get("media_url") or "")
+        return normalized
 
-    def flush(self, group_id: str) -> int:
-        if group_id not in self._buffer:
+    def append(self, record: Dict[str, Any]) -> None:
+        """Write exactly one JSON line immediately; never raise."""
+        try:
+            chat_id = str(record.get("chat_id") or "")
+            if not chat_id:
+                return
+            directory = self._directory(create=True)
+            if directory is None:
+                return
+            path = directory / f"{_safe_path_component(chat_id)}.jsonl"
+            if path.is_symlink():
+                logger.debug("Zalo: bot history file is a symlink; skipping")
+                return
+            line = json.dumps(self._normalize(record), ensure_ascii=False) + "\n"
+            fd = os.open(
+                str(path), os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600
+            )
+            try:
+                os.write(fd, line.encode("utf-8"))
+            finally:
+                os.close(fd)
+        except OSError as error:
+            logger.debug("Zalo: bot history write failed: %s", type(error).__name__)
+        except Exception as error:  # never break message handling
+            logger.debug("Zalo: bot history write failed: %s", type(error).__name__)
+
+    def has(self, chat_id: str) -> bool:
+        path = self._path(chat_id)
+        return path is not None and path.is_file() and not path.is_symlink()
+
+    # ── Deletion and retention ────────────────────────────────────────────
+
+    def delete(self, chat_id: str) -> int:
+        """Delete one chat file; never follow a symlink."""
+        path = self._path(chat_id)
+        if path is None or path.is_symlink() or not path.is_file():
             return 0
-        filepath = self._dir / f"{_safe_path_component(group_id)}.jsonl"
-        messages = self._buffer.pop(group_id, [])
-        with open(filepath, "a", encoding="utf-8") as f:
-            for msg in messages:
-                f.write(json.dumps(msg, ensure_ascii=False) + "\n")
-        return len(messages)
+        try:
+            path.unlink()
+        except OSError as error:
+            logger.debug("Zalo: bot history delete failed: %s", type(error).__name__)
+            return 0
+        return 1
 
-    def get_recent(self, group_id: str, limit: int = 50) -> List[Dict[str, Any]]:
-        filepath = self._dir / f"{_safe_path_component(group_id)}.jsonl"
-        if not filepath.exists():
-            return []
-        messages = []
-        with open(filepath, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
+    def delete_all(self) -> int:
+        """Delete every chat file in the store; never follow symlinks."""
+        directory = self._directory(create=False)
+        if directory is None:
+            return 0
+        removed = 0
+        for path in self._history_files(directory):
+            try:
+                path.unlink()
+            except OSError as error:
+                logger.debug(
+                    "Zalo: bot history delete failed: %s", type(error).__name__
+                )
+                continue
+            removed += 1
+        return removed
+
+    @staticmethod
+    def _replace_lines(path: Path, lines: List[str]) -> None:
+        """Atomically replace ``path`` with ``lines``, or delete it if empty."""
+        directory = path.parent
+        if not lines:
+            try:
+                path.unlink()
+            except OSError:
+                pass
+            return
+        fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(directory))
+        try:
+            os.fchmod(fd, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                fd = -1
+                for line in lines:
+                    handle.write(line + "\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, path)
+            temporary = ""
+        finally:
+            if fd >= 0:
                 try:
-                    messages.append(json.loads(line))
-                except json.JSONDecodeError:
-                    continue
-        return messages[-limit:][::-1]
+                    os.close(fd)
+                except OSError:
+                    pass
+            if temporary:
+                try:
+                    os.unlink(temporary)
+                except OSError:
+                    pass
 
-    def search(self, group_id: str, query: str, limit: int = 20) -> List[Dict[str, Any]]:
-        messages = self.get_recent(group_id, 10000)
-        q = query.lower()
-        return [m for m in messages if q in m.get("text", "").lower()][:limit]
+    def _trim_file(self, path: Path, cutoff: float) -> None:
+        """Drop records older than ``cutoff`` and malformed lines."""
+        if path.is_symlink() or not path.is_file():
+            return
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as handle:
+                raw_lines = handle.readlines()
+        except OSError:
+            return
+        kept: List[str] = []
+        dropped = False
+        for raw in raw_lines:
+            line = raw.strip()
+            if not line:
+                dropped = True
+                continue
+            try:
+                value = json.loads(line)
+            except (ValueError, TypeError):
+                dropped = True
+                continue
+            if not isinstance(value, dict):
+                dropped = True
+                continue
+            try:
+                timestamp = float(value.get("ts"))
+            except (TypeError, ValueError):
+                timestamp = 0.0
+            if timestamp < cutoff:
+                dropped = True
+                continue
+            kept.append(line)
+        if not dropped:
+            return
+        try:
+            self._replace_lines(path, kept)
+        except OSError as error:
+            logger.debug("Zalo: bot history trim failed: %s", type(error).__name__)
+
+    @staticmethod
+    def _trim_size(directory: Path, max_bytes: int) -> None:
+        """Delete whole chat files oldest-mtime-first until under the cap."""
+        files = []
+        for path in _BotHistoryStore._history_files(directory):
+            try:
+                files.append((path.stat().st_mtime, path.name, path))
+            except OSError:
+                continue
+        total = 0
+        for _, _, path in files:
+            try:
+                total += path.stat().st_size
+            except OSError:
+                continue
+        if total <= max_bytes:
+            return
+        files.sort(key=lambda item: (item[0], item[1]))
+        for _, _, path in files:
+            if total <= max_bytes:
+                break
+            try:
+                size = path.stat().st_size
+            except OSError:
+                continue
+            try:
+                path.unlink()
+            except OSError:
+                continue
+            total -= size
+
+    def trim(self, retention_days: int, max_bytes: int = HISTORY_MAX_BYTES) -> None:
+        """Apply age retention, then the per-profile size cap; never raise."""
+        try:
+            directory = self._directory(create=False)
+            if directory is None:
+                return
+            cutoff = time.time() - int(retention_days) * 86400
+            for path in self._history_files(directory):
+                self._trim_file(path, cutoff)
+            self._trim_size(directory, max_bytes)
+        except Exception as error:  # diagnostic only
+            logger.debug("Zalo: bot history trim failed: %s", type(error).__name__)
 
 
 class _CRMContacts:
-    """CRM contact management for Zalo groups."""
+    """CRM contact management for Zalo groups.
 
-    def __init__(self) -> None:
-        self._dir = Path(CRM_DATA_DIR)
-        self._dir.mkdir(parents=True, exist_ok=True)
+    The directory is resolved lazily through ``directory_provider`` so each
+    multiplexed profile keeps its own contacts. Files are written ``0600``.
+    """
 
-    def _filepath(self, group_id: str) -> Path:
-        return self._dir / f"{_safe_path_component(group_id)}_contacts.json"
+    def __init__(self, directory_provider) -> None:
+        self._directory_provider = directory_provider
+        self._dir: Optional[Path] = None
 
-    def _load(self, filepath: Path) -> Dict[str, Any]:
-        if not filepath.exists():
+    def _directory(self, *, create: bool) -> Optional[Path]:
+        if self._dir is None:
+            try:
+                directory = self._directory_provider()
+            except Exception:
+                directory = None
+            if directory is None:
+                return None
+            self._dir = Path(directory)
+        if create:
+            try:
+                self._dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+                os.chmod(self._dir, 0o700)
+            except OSError as error:
+                logger.debug(
+                    "Zalo: CRM directory unavailable: %s", type(error).__name__
+                )
+                return None
+        return self._dir
+
+    def _filepath(self, group_id: str, *, create: bool = False) -> Optional[Path]:
+        directory = self._directory(create=create)
+        if directory is None:
+            return None
+        return directory / f"{_safe_path_component(group_id)}_contacts.json"
+
+    def _load(self, group_id: str) -> Dict[str, Any]:
+        filepath = self._filepath(group_id)
+        if filepath is None or not filepath.exists():
             return {}
         try:
             with open(filepath, "r", encoding="utf-8") as f:
-                return json.load(f)
+                value = json.load(f)
+            return value if isinstance(value, dict) else {}
         except (json.JSONDecodeError, OSError):
             return {}
 
-    def _save(self, filepath: Path, contacts: Dict[str, Any]) -> None:
-        with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(contacts, f, ensure_ascii=False, indent=2)
+    def _save(self, group_id: str, contacts: Dict[str, Any]) -> None:
+        filepath = self._filepath(group_id, create=True)
+        if filepath is None:
+            return
+        _write_private_json(filepath, contacts)
 
     def add_contact(self, group_id: str, user_id: str, phone: str = "",
                     name: str = "", labels: Optional[List[str]] = None) -> Dict[str, Any]:
-        filepath = self._filepath(group_id)
-        contacts = self._load(filepath)
+        contacts = self._load(group_id)
         contact = contacts.get(user_id, {})
         contact.update({"user_id": user_id, "phone": phone, "name": name,
                         "labels": labels or [], "updated_at": time.time()})
         contacts[user_id] = contact
-        self._save(filepath, contacts)
+        self._save(group_id, contacts)
         return {"ok": True, "contact": contact}
 
     def get_contact(self, group_id: str, user_id: str) -> Optional[Dict[str, Any]]:
-        return self._load(self._filepath(group_id)).get(user_id)
+        return self._load(group_id).get(user_id)
 
     def list_contacts(self, group_id: str, label: str = "") -> List[Dict[str, Any]]:
-        contacts = list(self._load(self._filepath(group_id)).values())
+        contacts = list(self._load(group_id).values())
         if label:
             contacts = [c for c in contacts if label in c.get("labels", [])]
         return sorted(contacts, key=lambda c: c.get("updated_at", 0), reverse=True)
 
     def import_csv(self, group_id: str, csv_path: str) -> Dict[str, Any]:
         import csv as _csv
-        filepath = self._filepath(group_id)
-        contacts = self._load(filepath)
+        contacts = self._load(group_id)
         imported = 0
         with open(csv_path, "r", encoding="utf-8") as f:
             for row in _csv.DictReader(f):
@@ -730,12 +1071,12 @@ class _CRMContacts:
                           "updated_at": time.time()})
                 contacts[uid] = c
                 imported += 1
-        self._save(filepath, contacts)
+        self._save(group_id, contacts)
         return {"ok": True, "imported": imported}
 
     def export_csv(self, group_id: str, csv_path: str) -> Dict[str, Any]:
         import csv as _csv
-        contacts = self._load(self._filepath(group_id))
+        contacts = self._load(group_id)
         exported = 0
         with open(csv_path, "w", encoding="utf-8", newline="") as f:
             w = _csv.DictWriter(f, fieldnames=["user_id", "phone", "name", "labels"])
@@ -802,10 +1143,17 @@ class ZaloAdapter(BasePlatformAdapter):
         # webhook_host: "0.0.0.0" to listen on all interfaces.
         self.webhook_host = str(extra.get("webhook_host", "127.0.0.1"))
 
+        # Local conversation store retention (days), clamped to 1..365.
+        self.history_retention_days = _coerce_retention_days(
+            extra.get("history_retention_days", HISTORY_RETENTION_DEFAULT_DAYS)
+        )
+
         # Runtime state
         self._client: Optional[_ZaloClient] = None
         self._poll_task: Optional[asyncio.Task] = None
         self._webhook_runner: Optional[asyncio.Task] = None
+        self._history_trim_task: Optional[asyncio.Task] = None
+        self._bot_history: Optional[_BotHistoryStore] = None
         self._bot_info: Optional[dict] = None
         self._bot_id: str = ""
         self._bot_name: str = ""
@@ -821,8 +1169,10 @@ class ZaloAdapter(BasePlatformAdapter):
         self._anti_spam = _AntiSpam()
         self._warn_system = _WarnSystem()
         self._group_manager = _GroupManager(self)
-        self._history_sync = _ChatHistorySync()
-        self._group_settings = _GroupSettings()
+        # Both stores resolve their directory lazily from the profile home
+        # (or their environment override) and are rebuilt on connect().
+        self._group_settings = _GroupSettings(self._settings_directory)
+        self._crm_contacts = _CRMContacts(self._crm_directory)
 
     def _resolve_state_home(self) -> Optional[Path]:
         """Return this adapter's profile home for its runtime state file.
@@ -839,6 +1189,176 @@ class ZaloAdapter(BasePlatformAdapter):
             except Exception:
                 return None
         return self._profile_home
+
+    def _plugin_state_directory(self, env_name: str, dirname: str) -> Optional[Path]:
+        """Return one plugin state directory, honouring its env override."""
+        override = os.environ.get(env_name, "").strip()
+        if override:
+            return Path(override)
+        home = self._resolve_state_home()
+        if home is None:
+            try:
+                home = Path(get_hermes_home())
+            except Exception:
+                return None
+        return home / dirname
+
+    def _settings_directory(self) -> Optional[Path]:
+        return self._plugin_state_directory(SETTINGS_DIR_ENV, SETTINGS_DIRNAME)
+
+    def _crm_directory(self) -> Optional[Path]:
+        return self._plugin_state_directory(CRM_DIR_ENV, CRM_DIRNAME)
+
+
+    # ── Conversation store ────────────────────────────────────────────────
+
+    def _history_store(self) -> Optional["_BotHistoryStore"]:
+        """Return this profile's store, resolving the home on first use."""
+        if self._bot_history is None:
+            home = self._resolve_state_home()
+            if home is None:
+                try:
+                    home = Path(get_hermes_home())
+                except Exception:
+                    return None
+            self._bot_history = _BotHistoryStore(home)
+        return self._bot_history
+
+    def _group_is_approved(self, chat_id: str) -> bool:
+        """Return True only for a Runtime-approved ``zalo_bot`` group.
+
+        The Runtime channels service owns ``<profile>/zalo/groups.json``. The
+        file is small, so it is read on every call; any error, symlink, or
+        malformed record fails closed.
+        """
+        if not chat_id:
+            return False
+        try:
+            home = self._resolve_state_home()
+            if home is None:
+                return False
+            channels_dir = home / BOT_CHANNELS_DIRNAME
+            path = channels_dir / BOT_GROUPS_FILE
+            if channels_dir.is_symlink() or path.is_symlink() or not path.is_file():
+                return False
+            with open(path, "r", encoding="utf-8") as handle:
+                value = json.loads(handle.read(BOT_GROUPS_MAX_BYTES))
+            platforms = value.get("platforms") if isinstance(value, dict) else None
+            record = platforms.get("zalo_bot") if isinstance(platforms, dict) else None
+            groups = record.get("groups") if isinstance(record, dict) else None
+            entry = groups.get(chat_id) if isinstance(groups, dict) else None
+            return (
+                isinstance(entry, dict)
+                and str(entry.get("status") or "").strip().lower() == "approved"
+            )
+        except Exception:
+            return False
+
+    def _is_paired(self, user_id: str) -> bool:
+        """Return True when the owner paired this sender in the gateway store."""
+        try:
+            from gateway.pairing import PairingStore
+            from hermes_constants import get_default_hermes_root
+
+            home = self._resolve_state_home()
+            profile = "default"
+            if home is not None:
+                try:
+                    default_root = Path(get_default_hermes_root()).resolve()
+                except Exception:
+                    default_root = None
+                if default_root is None or Path(home).resolve() != default_root:
+                    profile = Path(home).name
+            return bool(
+                PairingStore(profile=profile).is_approved("zalo_bot", str(user_id))
+            )
+        except Exception:
+            return False
+
+    def _dm_history_allowed(self, user_id: str) -> bool:
+        """Store DMs only from senders the policy allows or the owner paired."""
+        if self.dm_policy == "disabled":
+            return False
+        if not self._passes_allowlist(user_id):
+            return False
+        if self.allow_all or user_id in self.allowed_users:
+            return True
+        return self._is_paired(user_id)
+
+    def _record_history(
+        self,
+        *,
+        chat_id: str,
+        chat_type: str,
+        direction: str,
+        sender_id: str,
+        sender_name: str,
+        message_type: str,
+        text: str,
+        message_id: str = "",
+        media_url: str = "",
+    ) -> None:
+        """Append one conversation record; storage never breaks handling."""
+        if not chat_id:
+            return
+        store = self._history_store()
+        if store is None:
+            return
+        store.append(
+            {
+                "message_id": message_id,
+                "chat_id": chat_id,
+                "chat_type": chat_type,
+                "direction": direction,
+                "sender_id": sender_id,
+                "sender_name": sender_name,
+                "type": message_type,
+                "text": text,
+                "ts": time.time(),
+                "media_url": media_url,
+            }
+        )
+
+    def _outbound_history_scope(self, chat_id: str) -> tuple:
+        """Return ``(store, chat_type)`` for one bot reply.
+
+        Store replies in approved groups with follow on, in chats that already
+        have a stored DM file, and for allowlisted or paired DMs; never create
+        a file for an unapproved group.
+        """
+        if self._group_is_approved(chat_id):
+            settings = self._group_settings.get(chat_id)
+            return settings.get("follow", True), "group"
+        store = self._history_store()
+        if store is not None and store.has(chat_id):
+            return True, "dm"
+        if self.allow_all or chat_id in self.allowed_users or self._is_paired(chat_id):
+            return True, "dm"
+        return False, "dm"
+
+    def _record_outbound(
+        self,
+        chat_id: str,
+        text: str,
+        message_id: str = "",
+        message_type: str = "text",
+        media_url: str = "",
+    ) -> None:
+        """Store one successful bot reply when the chat is in scope."""
+        allowed, chat_type = self._outbound_history_scope(chat_id)
+        if not allowed:
+            return
+        self._record_history(
+            chat_id=chat_id,
+            chat_type=chat_type,
+            direction="out",
+            sender_id=self._bot_id,
+            sender_name=self._bot_display_name or self._bot_name,
+            message_type=message_type,
+            text=text,
+            message_id=message_id,
+            media_url=media_url,
+        )
 
     def _write_state(self, state: str) -> None:
         """Atomically persist this profile's Zalo Bot connection state.
@@ -939,6 +1459,10 @@ class ZaloAdapter(BasePlatformAdapter):
     async def connect(self, is_reconnect: bool = False) -> bool:
         """Connect to Zalo Bot API: verify token and start polling/webhook."""
         self._profile_home = None
+        self._bot_history = None
+        # Rebuild the lazy directory users after the profile-home reset.
+        self._group_settings = _GroupSettings(self._settings_directory)
+        self._crm_contacts = _CRMContacts(self._crm_directory)
         self._write_state("connecting")
         if not self.bot_token:
             logger.error("Zalo: bot_token must be configured")
@@ -993,6 +1517,11 @@ class ZaloAdapter(BasePlatformAdapter):
 
         self._mark_connected()
         self._write_state("connected")
+        # Retention applies from the first connected moment, then daily.
+        store = self._history_store()
+        if store is not None:
+            store.trim(self.history_retention_days)
+        self._history_trim_task = asyncio.create_task(self._history_trim_loop())
         logger.info(
             "Zalo: connected as '%s' (%s)",
             self._bot_info.get("account_name", "?"),
@@ -1020,6 +1549,14 @@ class ZaloAdapter(BasePlatformAdapter):
             except asyncio.CancelledError:
                 pass
         self._webhook_runner = None
+
+        if self._history_trim_task and not self._history_trim_task.done():
+            self._history_trim_task.cancel()
+            try:
+                await self._history_trim_task
+            except asyncio.CancelledError:
+                pass
+        self._history_trim_task = None
 
         if self._client:
             await self._client.close()
@@ -1079,6 +1616,17 @@ class ZaloAdapter(BasePlatformAdapter):
                     await asyncio.sleep(delay)
         finally:
             self._write_state("disconnected")
+
+    async def _history_trim_loop(self) -> None:
+        """Trim the conversation store once per day while connected."""
+        try:
+            while self.is_connected:
+                await asyncio.sleep(HISTORY_TRIM_INTERVAL_SECONDS)
+                store = self._history_store()
+                if store is not None:
+                    store.trim(self.history_retention_days)
+        except asyncio.CancelledError:
+            raise
 
     # ── Webhook mode ──────────────────────────────────────────────────────
 
@@ -1193,17 +1741,26 @@ class ZaloAdapter(BasePlatformAdapter):
         message_type = MessageType.TEXT
         media_url = None
         text = raw_text
+        # Conversation-store form of the same fact; stickers keep their URL as
+        # media while the dispatch path keeps the legacy text behavior.
+        history_type = "text"
+        history_media_url = ""
 
         if event_name == "message.image.received":
             message_type = MessageType.IMAGE
             media_url = message.get("photo", "")
             if not text and message.get("caption"):
                 text = message["caption"]
+            history_type = "image"
+            history_media_url = str(media_url or "")
         elif event_name == "message.sticker.received":
             message_type = MessageType.STICKER
             text = message.get("sticker", "") or message.get("url", "") or "[Sticker]"
+            history_type = "sticker"
+            history_media_url = str(message.get("sticker") or message.get("url") or "")
         elif event_name == "message.unsupported.received":
             text = "[Unsupported message type]"
+            history_type = "unsupported"
 
         # ── Group message handling ──────────────────────────────────────
         is_group = chat_type == "group"
@@ -1215,14 +1772,35 @@ class ZaloAdapter(BasePlatformAdapter):
                 logger.debug("Zalo: group %s muted, ignoring message", chat_id)
                 return
 
-            # 2. Authorization before any history/name-trigger side effect.
-            #    With no adapter allowlist this defers to Hermes core, but it
-            #    still rejects a configured allowlist mismatch here.
+            # 2. Conversation store — keep every member's message in an
+            #    approved group with follow on, before per-sender
+            #    authorization and mention gating, so a summary is complete.
+            #    Slash commands are control traffic and are not stored.
+            if (
+                self._group_is_approved(chat_id)
+                and settings.get("follow", True)
+                and parse_slash_command(text) is None
+            ):
+                self._record_history(
+                    chat_id=chat_id,
+                    chat_type="group",
+                    direction="in",
+                    sender_id=user_id,
+                    sender_name=user_name,
+                    message_type=history_type,
+                    text=text,
+                    message_id=message_id,
+                    media_url=history_media_url,
+                )
+
+            # 3. Authorization before any name-trigger side effect. With no
+            #    adapter allowlist this defers to Hermes core, but it still
+            #    rejects a configured allowlist mismatch here.
             if not self._group_member_allowed(user_id):
                 logger.debug("Zalo: ignoring group message from unauthorized user %s", user_id)
                 return
 
-            # 3. Slash commands work regardless of silent mode (admin ops).
+            # 4. Slash commands work regardless of silent mode (admin ops).
             #    The slash handler performs its own authorization and live
             #    owner/admin lookup before any privileged action.
             slash = parse_slash_command(text)
@@ -1232,15 +1810,15 @@ class ZaloAdapter(BasePlatformAdapter):
                 )
                 return
 
-            # 4. Anti-spam check (BEFORE dispatch)
+            # 5. Anti-spam check (BEFORE dispatch)
             spam = self._anti_spam.check(chat_id, user_id, text)
             if spam["spam"]:
                 logger.debug("Zalo: spam blocked for %s in group %s", user_id, chat_id)
                 return
 
-            # 5. Side-effect paths require explicit adapter authorization.
+            # 6. Side-effect paths require explicit adapter authorization.
             #    Deferring group delivery to Hermes core is not enough here:
-            #    name triggers and history never reach Hermes authorization.
+            #    name triggers never reach Hermes authorization.
             explicitly_authorized = self._is_user_authorized(user_id)
             if explicitly_authorized:
                 triggers = settings.get("name_triggers", [])
@@ -1249,19 +1827,6 @@ class ZaloAdapter(BasePlatformAdapter):
                     if tname and tname in text.lower():
                         await self._send_text(chat_id, str(t.get("reply", "")))
                         return
-
-            # 6. Follow/tracking — untrusted external chat history, kept apart
-            #    from agent instructions.
-            if explicitly_authorized and settings.get("follow", False):
-                self._history_sync.save_message(chat_id, {
-                    "message_id": message_id,
-                    "from_id": user_id,
-                    "from_name": user_name,
-                    "text": text,
-                    "timestamp": time.time(),
-                    "type": "text",
-                    "trust": "untrusted_external",
-                })
 
             # 7. Check if bot is mentioned: @mention or reply to bot
             mentioned = False
@@ -1345,6 +1910,21 @@ class ZaloAdapter(BasePlatformAdapter):
         if not self._passes_allowlist(user_id):
             logger.info("Zalo: ignoring DM from user %s (not allowed by dm_policy); add this ID to allowed users", user_id)
             return
+
+        # Store an allowed DM before slash-command handling so a summary is
+        # complete. Slash commands are control traffic and are not stored.
+        if parse_slash_command(text) is None and self._dm_history_allowed(user_id):
+            self._record_history(
+                chat_id=chat_id,
+                chat_type="dm",
+                direction="in",
+                sender_id=user_id,
+                sender_name=user_name,
+                message_type=history_type,
+                text=text,
+                message_id=message_id,
+                media_url=history_media_url,
+            )
 
         # ── Slash command handling ──────────────────────────────
         # Works in both group and DM (owner/admin control from DM)
@@ -1577,10 +2157,10 @@ class ZaloAdapter(BasePlatformAdapter):
                 await self._send_text(chat_id, f"🎉 Welcome message {status}")
             elif cmd == "/follow":
                 settings = self._group_settings.get(chat_id)
-                new_val = not settings.get("follow", False)
+                new_val = not settings.get("follow", True)
                 self._group_settings.set(chat_id, "follow", new_val)
                 status = "BẬT" if new_val else "TẮT"
-                await self._send_text(chat_id, f"📋 Group tracking {status}")
+                await self._send_text(chat_id, f"📋 Lưu lịch sử trò chuyện nhóm {status}")
             elif cmd == "/welcome-text":
                 text = args.strip()
                 if not text:
@@ -1606,7 +2186,7 @@ class ZaloAdapter(BasePlatformAdapter):
                     f"  🔇 Mute: {'BẬT' if settings.get('muted') else 'TẮT'}",
                     f"  🔕 Silent: {'BẬT' if settings.get('silent') else 'TẮT'}",
                     f"  🎉 Welcome: {'BẬT' if settings.get('welcome') else 'TẮT'}",
-                    f"  📋 Follow: {'BẬT' if settings.get('follow') else 'TẮT'}",
+                    f"  📋 Follow: {'BẬT' if settings.get('follow', True) else 'TẮT'}",
                 ]
                 await self._send_text(chat_id, "\n".join(lines))
             else:
@@ -1695,6 +2275,7 @@ class ZaloAdapter(BasePlatformAdapter):
             result = await self._client.send_message(chat_id, text)
             if result.get("ok"):
                 msg_id = result.get("result", {}).get("message_id", "")
+                self._record_outbound(chat_id, text, msg_id)
                 return SendResult(success=True, message_id=msg_id)
             else:
                 return SendResult(success=False, error=str(result))
@@ -1737,6 +2318,8 @@ class ZaloAdapter(BasePlatformAdapter):
 
         if last_result and last_result.get("ok"):
             msg_id = last_result.get("result", {}).get("message_id", "")
+            # Store the full reply once, not one line per chunk.
+            self._record_outbound(chat_id, prepared, msg_id)
             return SendResult(success=True, message_id=msg_id)
         return SendResult(success=False, error=str(last_result or "Send failed"))
 
@@ -1763,6 +2346,13 @@ class ZaloAdapter(BasePlatformAdapter):
             )
             if result.get("ok"):
                 msg_id = result.get("result", {}).get("message_id", "")
+                self._record_outbound(
+                    chat_id,
+                    prepared_caption,
+                    msg_id,
+                    message_type="image",
+                    media_url=str(image_url or ""),
+                )
                 return SendResult(success=True, message_id=msg_id)
             return SendResult(success=False, error=str(result))
         except Exception as e:
@@ -2125,6 +2715,73 @@ async def _standalone_send(
         return {"error": str(result)}
     except Exception as e:
         return {"error": f"Zalo standalone send failed: {e}"}
+    finally:
+        await client.close()
+
+
+_STANDALONE_API_ACTIONS = frozenset(
+    {"get_me", "get_webhook_info", "send_photo", "send_sticker", "send_voice"}
+)
+
+
+async def _standalone_api(pconfig, action: str, **kwargs) -> Dict[str, Any]:
+    """Run one allowlisted Bot API action outside the gateway process.
+
+    Used by the Runtime channel tools for read-only status and media sends.
+    Returns ``{"success": True, ...}`` or a content-free ``{"error": code}``;
+    it never falls back to a text send. Message text, URLs, and the bot token
+    are never echoed in an error.
+    """
+    if action not in _STANDALONE_API_ACTIONS:
+        return {"error": "unsupported_action"}
+    extra = getattr(pconfig, "extra", {}) or {}
+    token = _resolve_zalo_secret("ZALO_BOT_TOKEN", extra.get("bot_token", ""))
+    if not token:
+        return {"error": "config_missing"}
+
+    client = _ZaloClient(token.strip())
+    try:
+        if action == "get_me":
+            result = await client.get_me()
+            if result.get("ok"):
+                return {
+                    "success": True,
+                    "result": _redact_secret_data(result.get("result"), token),
+                }
+            return {"error": "auth_failed"}
+        if action == "get_webhook_info":
+            result = await client.get_webhook_info()
+            if result.get("ok"):
+                return {
+                    "success": True,
+                    "result": _redact_secret_data(result.get("result"), token),
+                }
+            return {"error": "api_error"}
+        if action == "send_photo":
+            result = await client.send_photo(
+                str(kwargs.get("chat_id") or ""),
+                str(kwargs.get("photo_url") or ""),
+                str(kwargs.get("caption") or "")[:MAX_MESSAGE_LENGTH],
+            )
+        elif action == "send_sticker":
+            result = await client.send_sticker(
+                str(kwargs.get("chat_id") or ""),
+                str(kwargs.get("sticker") or ""),
+            )
+        else:  # send_voice
+            result = await client.send_voice(
+                str(kwargs.get("chat_id") or ""),
+                str(kwargs.get("voice_url") or ""),
+            )
+        if result.get("ok"):
+            return {
+                "success": True,
+                "message_id": result.get("result", {}).get("message_id", ""),
+            }
+        return {"error": "send_failed"}
+    except Exception:
+        # Exception text can embed the token-bearing request URL.
+        return {"error": "api_error"}
     finally:
         await client.close()
 

@@ -465,6 +465,36 @@ class ChannelsService:
             name = record["name"]
         else:
             name = self._sender_name(name, thread_id)
+            chat_type = None
+            if platform == zalo_channels.ZALO_BOT_PLATFORM:
+                if self._group_is_approved(profile, "zalo_bot", thread_id):
+                    chat_type = "group"
+                else:
+                    try:
+                        resolution = self.resolve_bot_recipient(agent_id, thread_id, "dm")
+                    except Exception:
+                        resolution = {}
+                    if resolution.get("status") == "ok":
+                        chat_type = "dm"
+            if chat_type is not None:
+                try:
+                    self.repository.append_bot_history(
+                        profile,
+                        thread_id,
+                        {
+                            "message_id": str(result.get("message_id") or ""),
+                            "chat_type": chat_type,
+                            "direction": "out",
+                            "sender_id": "",
+                            "sender_name": "bot",
+                            "type": "text",
+                            "text": text,
+                            "ts": timestamp,
+                        },
+                    )
+                except Exception:
+                    # Delivery already succeeded; history is diagnostic only.
+                    pass
         return {
             "thread_id": thread_id,
             "name": name,
@@ -878,6 +908,18 @@ class ChannelsService:
 
         return get_channel_pairing_store(agent_id, self._root_profile().name)
 
+    def _delete_bot_history(self, profile: Path, chat_id: str | None = None) -> None:
+        """Delete stored bot conversation files; log counts only, never raise."""
+        try:
+            removed = self.repository.delete_bot_history(profile, chat_id)
+        except Exception as error:
+            _LOGGER.warning(
+                "bot history deletion failed: %s", type(error).__name__
+            )
+            return
+        if removed:
+            _LOGGER.info("deleted %d bot history file(s)", removed)
+
     async def _call_pairing_store(self, function, *args):
         from ..repositories.file_lock import FileLockTimeout
 
@@ -1033,6 +1075,9 @@ class ChannelsService:
         self._require_enabled_channel(profile, platform)
         store = self._pairing_store(agent_id)
         revoked = await self._call_pairing_store(store.revoke, platform, user_id)
+        if platform == "zalo_bot":
+            # A revoked DM sender keeps no stored conversation.
+            self._delete_bot_history(profile, user_id)
         return {
             "status": "revoked" if revoked else "not_approved",
             "user_id": user_id,
@@ -1292,6 +1337,9 @@ class ChannelsService:
                 )
             del record["groups"][group_id]
             self.repository.write_groups(profile, state)
+        if platform == "zalo_bot":
+            # Denying an unapproved group drops any partial stored history.
+            self._delete_bot_history(profile, group_id)
         return {"status": "denied", "group_id": group_id}
 
     async def revoke_group(
@@ -1311,6 +1359,9 @@ class ChannelsService:
                 del record["groups"][group_id]
                 self.repository.write_groups(profile, state)
                 revoked = True
+        if revoked and platform == "zalo_bot":
+            # Revoking a group removes its stored conversation.
+            self._delete_bot_history(profile, group_id)
         return {
             "status": "revoked" if revoked else "not_approved",
             "group_id": group_id,
@@ -1965,6 +2016,8 @@ class ChannelsService:
         self._ensure_platform_config(config, "zalo_bot")["enabled"] = False
         self.repository.write_config(profile, config)
         self._write_bot_token(profile, None)
+        # Disconnecting the channel drops every stored conversation.
+        self._delete_bot_history(profile)
         self._delete_owner_when_no_channel_enabled(profile, config)
         self._sync_root_multiplex()
         gateway = self._restart_gateway()

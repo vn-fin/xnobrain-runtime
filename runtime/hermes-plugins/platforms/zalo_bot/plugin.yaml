@@ -12,7 +12,7 @@ description: >
 
   v2.0 adds: group management (create/kick/admin/poll/pin/invite),
   slash commands (/menu, /warn, /kick, /promote, /poll, /pin, /noi-quy...),
-  zero-token anti-spam + warn system, chat history sync, CRM contacts.
+  zero-token anti-spam + warn system, chat history storage, CRM contacts.
 author: Moken
 repository: "https://github.com/moken627-hub/hermes-plugin-zalo"
 requires_env:
@@ -49,10 +49,6 @@ optional_env:
   - name: ZALO_BOT_CRM_DIR
     description: "Directory for CRM contact data (default: ~/.hermes/zalo-bot-crm)"
     prompt: "CRM data directory"
-    password: false
-  - name: ZALO_BOT_HISTORY_DIR
-    description: "Directory for chat history sync (default: ~/.hermes/zalo-bot-history)"
-    prompt: "Chat history directory"
     password: false
   - name: ZALO_BOT_SETTINGS_DIR
     description: "Directory for per-group settings (default: ~/.hermes/zalo-bot-settings)"

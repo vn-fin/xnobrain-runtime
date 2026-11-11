@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import time
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -23,6 +25,10 @@ QR_FILE = "qr.png"
 GATEWAY_PID_FILE = "gateway.pid"
 GATEWAY_STATE_FILE = "gateway_state.json"
 BOT_STATE_FILE = "zalo_bot_state.json"
+BOT_DIR = "zalo_bot"
+BOT_HISTORY_DIR = "history"
+BOT_CRM_DIR = "zalo-bot-crm"
+BOT_SETTINGS_DIR = "zalo-bot-settings"
 RESTART_STATE_FILE = "gateway-restart.json"
 OWNER_FILE = "owner.json"
 OWNER_METADATA_DIR = ".xnobrain"
@@ -30,11 +36,16 @@ OWNER_CHANNEL_DIR = "channels"
 MAX_STATE_BYTES = 2 * 1024 * 1024
 MAX_QR_BYTES = 4 * 1024 * 1024
 MAX_HISTORY_LINES = 5000
+MAX_BOT_HISTORY_BYTES = 5 * 1024 * 1024
+MAX_BOT_HISTORY_TEXT = 4000
+MAX_BOT_CRM_BYTES = 1024 * 1024
+MAX_BOT_CRM_CONTACTS = 1000
 DEFAULT_GROUP_DAILY_LIMIT = 20
 MAX_GROUP_DAILY_LIMIT = 1000
 MAX_PENDING_GROUP_REQUESTS = 20
 MAX_GROUP_COUNTED_MESSAGE_IDS = 2000
 _GROUP_STATUSES = {"pending", "approved"}
+_BOT_CHAT_ID = re.compile(r"[A-Za-z0-9_-]{1,128}")
 _ENV_LINE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$")
 _ENV_KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _OWNER_VALUE = re.compile(r"^[^\x00-\x1f/\\]{1,200}$")
@@ -374,6 +385,376 @@ class ChannelsRepository:
         if isinstance(pid, bool) or not isinstance(pid, int):
             pid = None
         return {"state": state, "updated_at": float(updated_at), "pid": pid}
+
+    @classmethod
+    def _bot_history_dir(cls, profile: Any, *, create: bool = False) -> Path | None:
+        """Return ``<profile>/zalo_bot/history`` or None when it does not exist.
+
+        Every component is checked for symlinks and the resolved directory must
+        stay directly below the profile so a crafted link cannot escape it.
+        Directories are created ``0700`` only on an explicit write.
+        """
+        root = cls._profile_root(profile)
+        bot_dir = root / BOT_DIR
+        if bot_dir.is_symlink():
+            raise StoreError(
+                "agent bot storage is unsafe", status=400, code="channel_path_unsafe"
+            )
+        if create:
+            bot_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+            os.chmod(bot_dir, 0o700)
+        if not bot_dir.is_dir():
+            return None
+        resolved_bot = bot_dir.resolve()
+        if resolved_bot.parent != root:
+            raise StoreError(
+                "agent bot storage escapes the profile",
+                status=400,
+                code="channel_path_unsafe",
+            )
+        directory = resolved_bot / BOT_HISTORY_DIR
+        if directory.is_symlink():
+            raise StoreError(
+                "agent bot history is unsafe", status=400, code="channel_path_unsafe"
+            )
+        if create:
+            directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+            os.chmod(directory, 0o700)
+        if not directory.is_dir():
+            return None
+        resolved = directory.resolve()
+        if resolved.parent != resolved_bot:
+            raise StoreError(
+                "agent bot history escapes the profile",
+                status=400,
+                code="channel_path_unsafe",
+            )
+        return resolved
+
+    @staticmethod
+    def _bot_chat_file(directory: Path, chat_id: str) -> Path:
+        return directory / f"{chat_id}.jsonl"
+
+    @classmethod
+    def _read_bot_records(cls, path: Path) -> list[dict[str, Any]]:
+        """Read at most the last 5 MB of one history file, oldest first."""
+        if path.is_symlink() or not path.is_file():
+            return []
+        try:
+            with path.open("rb") as handle:
+                handle.seek(0, 2)
+                size = handle.tell()
+                start = max(0, size - MAX_BOT_HISTORY_BYTES)
+                handle.seek(start)
+                if start:
+                    handle.readline()  # drop a line cut by the window
+                payload = handle.read()
+        except OSError as error:
+            raise StoreError(
+                "agent bot history is unavailable",
+                status=500,
+                code="channel_state_unavailable",
+            ) from error
+        records: list[dict[str, Any]] = []
+        for line in payload.decode("utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                value = json.loads(line)
+            except (ValueError, TypeError):
+                continue
+            if isinstance(value, dict):
+                records.append(value)
+        return records
+
+    @classmethod
+    def _bot_history_files(cls, profile: Any) -> tuple[Path | None, list[Path]]:
+        directory = cls._bot_history_dir(profile)
+        if directory is None:
+            return None, []
+        files: list[Path] = []
+        try:
+            entries = sorted(directory.iterdir())
+        except OSError:
+            return directory, files
+        for path in entries:
+            if path.is_symlink() or not path.is_file():
+                continue
+            if path.suffix != ".jsonl":
+                continue
+            if _BOT_CHAT_ID.fullmatch(path.stem):
+                files.append(path)
+        return directory, files
+
+    def bot_history(
+        self,
+        profile: Any,
+        chat_id: Any,
+        since: Any = None,
+        limit: Any = 200,
+    ) -> list[dict[str, Any]]:
+        """Read one bot chat's stored records, oldest first."""
+        identifier = str(chat_id or "")
+        if not _BOT_CHAT_ID.fullmatch(identifier):
+            return []
+        try:
+            cap = int(limit)
+        except (TypeError, ValueError):
+            cap = 200
+        if cap <= 0:
+            return []
+        directory = self._bot_history_dir(profile)
+        if directory is None:
+            return []
+        records = self._read_bot_records(self._bot_chat_file(directory, identifier))
+        if since is not None:
+            try:
+                threshold = float(since)
+            except (TypeError, ValueError):
+                threshold = None
+            if threshold is not None:
+                filtered: list[dict[str, Any]] = []
+                for record in records:
+                    try:
+                        timestamp = float(record.get("ts"))
+                    except (TypeError, ValueError):
+                        continue
+                    if timestamp >= threshold:
+                        filtered.append(record)
+                records = filtered
+        return records[-cap:]
+
+    def bot_history_chats(self, profile: Any) -> list[dict[str, Any]]:
+        """Return one summary per stored bot chat, newest conversation first."""
+        _, files = self._bot_history_files(profile)
+        chats: list[dict[str, Any]] = []
+        for path in files:
+            try:
+                records = self._read_bot_records(path)
+            except StoreError:
+                continue
+            last_ts = 0.0
+            chat_type = "dm"
+            for record in records:
+                try:
+                    timestamp = float(record.get("ts"))
+                except (TypeError, ValueError):
+                    continue
+                if timestamp >= last_ts:
+                    last_ts = timestamp
+                    record_type = str(record.get("chat_type") or "").strip().lower()
+                    if record_type in {"dm", "group"}:
+                        chat_type = record_type
+            chats.append(
+                {
+                    "chat_id": path.stem,
+                    "chat_type": chat_type,
+                    "last_ts": last_ts,
+                    "message_count": len(records),
+                }
+            )
+        chats.sort(key=lambda item: item["last_ts"], reverse=True)
+        return chats
+
+    def delete_bot_history(self, profile: Any, chat_id: Any = None) -> int:
+        """Delete one stored chat, or every chat; never follow a symlink."""
+        directory, files = self._bot_history_files(profile)
+        if directory is None:
+            return 0
+        if chat_id is not None:
+            identifier = str(chat_id)
+            if not _BOT_CHAT_ID.fullmatch(identifier):
+                return 0
+            path = self._bot_chat_file(directory, identifier)
+            if path.is_symlink() or not path.is_file():
+                return 0
+            files = [path]
+        removed = 0
+        for path in files:
+            try:
+                path.unlink()
+            except OSError:
+                continue
+            removed += 1
+        if removed:
+            self.base._sync_dir(directory)
+        return removed
+
+    def append_bot_history(
+        self, profile: Any, chat_id: Any, record: Mapping[str, Any]
+    ) -> bool:
+        """Append one outbound bot record as a single JSON line."""
+        identifier = str(chat_id or "")
+        if not _BOT_CHAT_ID.fullmatch(identifier):
+            return False
+        directory = self._bot_history_dir(profile, create=True)
+        if directory is None:
+            return False
+        path = self._bot_chat_file(directory, identifier)
+        if path.is_symlink():
+            raise StoreError(
+                "agent bot history is unsafe", status=400, code="channel_path_unsafe"
+            )
+        try:
+            timestamp = float(record.get("ts"))
+        except (TypeError, ValueError):
+            timestamp = time.time()
+        value = {
+            "message_id": str(record.get("message_id") or "")[:200],
+            "chat_id": identifier,
+            "chat_type": "group" if record.get("chat_type") == "group" else "dm",
+            "direction": "out",
+            "sender_id": str(record.get("sender_id") or "")[:128],
+            "sender_name": str(record.get("sender_name") or "")[:200],
+            "type": str(record.get("type") or "text")[:32],
+            "text": str(record.get("text") or "")[:MAX_BOT_HISTORY_TEXT],
+            "ts": timestamp,
+            "trust": "untrusted_external",
+        }
+        media_url = str(record.get("media_url") or "")
+        if media_url:
+            value["media_url"] = media_url[:2048]
+        line = json.dumps(value, ensure_ascii=False) + "\n"
+        try:
+            descriptor = os.open(
+                str(path), os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600
+            )
+            try:
+                os.write(descriptor, line.encode("utf-8"))
+            finally:
+                os.close(descriptor)
+        except OSError as error:
+            raise StoreError(
+                "agent bot history is unavailable",
+                status=500,
+                code="channel_state_unavailable",
+            ) from error
+        return True
+
+    @classmethod
+    def _bot_plugin_dir(cls, profile: Any, dirname: str) -> Path | None:
+        """Return one ``<profile>/<dirname>`` plugin directory or None.
+
+        The directory is never created here; writers create it ``0700`` after
+        the same symlink and escape checks used by the other bot stores.
+        """
+        root = cls._profile_root(profile)
+        directory = root / dirname
+        if directory.is_symlink():
+            raise StoreError(
+                "agent bot storage is unsafe", status=400, code="channel_path_unsafe"
+            )
+        if not directory.is_dir():
+            return None
+        resolved = directory.resolve()
+        if resolved.parent != root:
+            raise StoreError(
+                "agent bot storage escapes the profile",
+                status=400,
+                code="channel_path_unsafe",
+            )
+        return resolved
+
+    def bot_contacts(self, profile: Any, chat_id: Any) -> list[dict[str, Any]]:
+        """Read one chat's CRM contacts from the plugin's profile file."""
+        identifier = str(chat_id or "")
+        if not _BOT_CHAT_ID.fullmatch(identifier):
+            return []
+        directory = self._bot_plugin_dir(profile, BOT_CRM_DIR)
+        if directory is None:
+            return []
+        path = directory / f"{identifier}_contacts.json"
+        if path.is_symlink() or not path.is_file():
+            return []
+        try:
+            payload = path.read_bytes()
+        except OSError as error:
+            raise StoreError(
+                "agent bot contacts are unavailable",
+                status=500,
+                code="channel_state_unavailable",
+            ) from error
+        try:
+            value = json.loads(payload[-MAX_BOT_CRM_BYTES:].decode("utf-8", errors="replace"))
+        except (ValueError, TypeError):
+            return []
+        if not isinstance(value, dict):
+            return []
+        contacts: list[dict[str, Any]] = []
+        for user_id, record in value.items():
+            if not isinstance(record, dict):
+                continue
+            labels = record.get("labels")
+            cleaned_labels = (
+                [str(item)[:64] for item in labels if isinstance(item, str)][:20]
+                if isinstance(labels, (list, tuple))
+                else []
+            )
+            try:
+                updated_at = float(record.get("updated_at"))
+            except (TypeError, ValueError):
+                updated_at = 0.0
+            contacts.append(
+                {
+                    "user_id": str(record.get("user_id") or user_id)[:128],
+                    "phone": str(record.get("phone") or "")[:64],
+                    "name": " ".join(str(record.get("name") or "").split())[:200],
+                    "labels": cleaned_labels,
+                    "updated_at": updated_at,
+                }
+            )
+        contacts.sort(key=lambda item: item["updated_at"], reverse=True)
+        return contacts[:MAX_BOT_CRM_CONTACTS]
+
+    def write_bot_group_settings(
+        self, profile: Any, chat_id: Any, updates: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        """Merge per-group plugin settings into the profile's 0600 JSON file."""
+        identifier = str(chat_id or "")
+        if not _BOT_CHAT_ID.fullmatch(identifier):
+            raise StoreError(
+                "agent bot group id is invalid", status=400, code="channel_recipient_invalid"
+            )
+        root = self._profile_root(profile)
+        directory = root / BOT_SETTINGS_DIR
+        if directory.is_symlink():
+            raise StoreError(
+                "agent bot settings are unsafe", status=400, code="channel_path_unsafe"
+            )
+        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        os.chmod(directory, 0o700)
+        resolved = directory.resolve()
+        if resolved.parent != root:
+            raise StoreError(
+                "agent bot settings escape the profile",
+                status=400,
+                code="channel_path_unsafe",
+            )
+        path = resolved / f"{identifier}.json"
+        if path.is_symlink():
+            raise StoreError(
+                "agent bot settings are unsafe", status=400, code="channel_path_unsafe"
+            )
+        settings: dict[str, Any] = {}
+        if path.is_file():
+            try:
+                existing = json.loads(
+                    path.read_bytes()[-MAX_BOT_CRM_BYTES:].decode(
+                        "utf-8", errors="replace"
+                    )
+                )
+            except (OSError, ValueError, TypeError):
+                existing = None
+            if isinstance(existing, dict):
+                settings = existing
+        settings.update(dict(updates))
+        self.base.atomic_write(
+            path,
+            (json.dumps(settings, ensure_ascii=False, indent=2) + "\n").encode("utf-8"),
+            mode=0o600,
+        )
+        return settings
 
     def _restart_state_path(self) -> Path:
         return self.base.data_dir / "channels" / RESTART_STATE_FILE
