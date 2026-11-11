@@ -197,6 +197,12 @@ bridge validation test and an approval test.
 
 ### B1 — Store conversations from connect time
 
+> Verified 2026-11-11 with the dev bot: Zalo delivers a group message to a bot
+> only when the message mentions the bot. Untagged group messages never reach
+> the adapter, so the bot store holds complete DMs but, for groups, only
+> tagged messages and the bot's replies. A full group summary needs the
+> personal channel (P-B, `getGroupChatHistory`).
+
 Replace `_ChatHistorySync` in the vendored adapter:
 
 - Write each message as one JSONL line on receipt (no 500-message buffer) to

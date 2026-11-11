@@ -132,6 +132,9 @@ Security hardening applied on top of the vendored upstream code on 2026-11-09:
       the adapter. The file deliberately holds no token, bot ID, or user
       content; the Runtime channels service reads it for `connected` status.
 13. B1 — Conversation store from connect time (plan 020).
+    - Live check (2026-11-11): Zalo only delivers group messages that
+      mention the bot, so group files contain tagged messages and bot
+      replies, not every member message. DMs are stored completely.
     - `adapter.py`: the upstream buffered `_ChatHistorySync` store and its
       `ZALO_BOT_HISTORY_DIR` variable are removed and replaced by
       `_BotHistoryStore`. One JSONL file per chat is written to
