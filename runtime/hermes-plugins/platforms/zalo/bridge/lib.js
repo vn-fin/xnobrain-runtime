@@ -23,6 +23,17 @@ export const SEND_RATE_LIMIT_PER_MINUTE = 20;
 export const LIST_CACHE_TTL_MS = 5 * 60_000;
 export const GROUP_INFO_BATCH_SIZE = 50;
 
+/** Cache lifetime for a group-info lookup (single group or batch). */
+export const GROUP_INFO_CACHE_TTL_MS = 10 * 60_000;
+
+/** Group-name memory bound; the oldest name is dropped past this size. */
+export const MAX_GROUP_NAMES = 1_000;
+
+/** Minimum spacing between two upstream read-info calls. */
+export const INFO_MIN_INTERVAL_MS = 1_500;
+export const INFO_BASE_BACKOFF_MS = 5_000;
+export const INFO_MAX_BACKOFF_MS = 300_000;
+
 export const REACTION_NAMES = Object.freeze([
   'HEART',
   'LIKE',
@@ -930,4 +941,442 @@ export function inboundQueueItem({
     quotesSelf: Boolean(quoted),
     media: Array.isArray(media) ? media.map(normalizeMediaItem).filter(Boolean) : [],
   };
+}
+
+const RATE_LIMIT_HINTS = Object.freeze([
+  'rate limit',
+  'rate_limit',
+  'too many',
+  '429',
+  'abnormal',
+  'spam',
+]);
+
+/**
+ * True when an upstream error looks like Zalo throttling the account.
+ *
+ * Only the message and code are inspected, never the request payload.
+ */
+export function isRateLimitError(error) {
+  if (!error) {
+    return false;
+  }
+  const message = typeof error === 'string' ? error : String(error.message || '');
+  const code = typeof error === 'string' ? '' : String(error.code ?? '');
+  const haystack = `${message} ${code}`.toLowerCase();
+  return RATE_LIMIT_HINTS.some((hint) => haystack.includes(hint));
+}
+
+function rateLimitedError() {
+  const error = new Error('rate_limited');
+  error.code = 'rate_limited';
+  return error;
+}
+
+/**
+ * Shared gate for every upstream read-info call.
+ *
+ * Reads are serialized through one promise queue with at least
+ * `minIntervalMs` between upstream calls so a burst of bridge requests cannot
+ * look like abuse to Zalo. Each key holds a TTL cache; a throttling error
+ * backs off exponentially and serves the stale value when one exists.
+ *
+ * @param {{minIntervalMs?: number, baseBackoffMs?: number,
+ *          maxBackoffMs?: number, now?: () => number,
+ *          sleep?: (ms: number) => Promise<void>}} options
+ */
+export function createInfoGate({
+  minIntervalMs = INFO_MIN_INTERVAL_MS,
+  baseBackoffMs = INFO_BASE_BACKOFF_MS,
+  maxBackoffMs = INFO_MAX_BACKOFF_MS,
+  now = Date.now,
+  sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+} = {}) {
+  const gap = Math.max(0, Number(minIntervalMs) || 0);
+  const base = Math.max(0, Number(baseBackoffMs) || 0);
+  const cap = Math.max(base, Number(maxBackoffMs) || base);
+  const wait = typeof sleep === 'function' ? sleep : () => Promise.resolve();
+
+  const entries = new Map();
+  let backoffMs = 0;
+  let backoffUntil = 0;
+  let lastCallAt = null;
+  let tail = Promise.resolve();
+
+  function readFresh(key) {
+    const entry = entries.get(key);
+    if (!entry || now() >= entry.expiresAt) {
+      return undefined;
+    }
+    return entry;
+  }
+
+  // Stale values are still readable during a backoff window.
+  function readStale(key) {
+    return entries.get(key);
+  }
+
+  function enqueue(task) {
+    // Both handlers keep the chain alive when a task rejects.
+    const result = tail.then(task, task);
+    tail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+
+  async function fetchUpstream(key, fetcher, ttlMs) {
+    if (now() < backoffUntil) {
+      const stale = readStale(key);
+      if (stale) {
+        return stale.value;
+      }
+      throw rateLimitedError();
+    }
+    if (lastCallAt !== null) {
+      const remaining = gap - (now() - lastCallAt);
+      if (remaining > 0) {
+        await wait(remaining);
+      }
+    }
+    lastCallAt = now();
+    try {
+      const value = await fetcher();
+      entries.delete(key);
+      entries.set(key, {
+        value,
+        expiresAt: now() + Math.max(0, Number(ttlMs) || 0),
+      });
+      backoffMs = 0;
+      backoffUntil = 0;
+      return value;
+    } catch (error) {
+      if (!isRateLimitError(error)) {
+        throw error;
+      }
+      backoffMs = backoffMs ? Math.min(backoffMs * 2, cap) : base;
+      backoffUntil = now() + backoffMs;
+      const stale = readStale(key);
+      if (stale) {
+        return stale.value;
+      }
+      throw rateLimitedError();
+    }
+  }
+
+  return {
+    /**
+     * Read one key through the gate.
+     *
+     * @param {string} key cache key
+     * @param {() => Promise<*>} fetcher upstream call
+     * @param {{ttlMs?: number, force?: boolean}} options
+     */
+    run(key, fetcher, { ttlMs = 0, force = false } = {}) {
+      const cacheKey = String(key ?? '');
+      if (!force) {
+        const cached = readFresh(cacheKey);
+        if (cached) {
+          return Promise.resolve(cached.value);
+        }
+      }
+      return enqueue(async () => {
+        // A queued duplicate may have filled the cache while it waited.
+        if (!force) {
+          const cached = readFresh(cacheKey);
+          if (cached) {
+            return cached.value;
+          }
+        }
+        return fetchUpstream(cacheKey, fetcher, ttlMs);
+      });
+    },
+  };
+}
+
+/** Stable cache key for one `getGroupInfo` batch: sorted ids, joined. */
+export function groupInfoCacheKey(ids) {
+  const list = Array.isArray(ids) ? ids : [ids];
+  return `groupinfo:${list
+    .map((id) => normalizeMessageId(id))
+    .filter(Boolean)
+    .sort()
+    .join(',')}`;
+}
+
+/** Store one group name in the bounded map, dropping the oldest entry. */
+export function rememberGroupName(names, groupId, name) {
+  if (!(names instanceof Map)) {
+    return names;
+  }
+  const id = normalizeMessageId(groupId);
+  const value = String(name || '');
+  if (!id || !value) {
+    return names;
+  }
+  names.delete(id);
+  names.set(id, value);
+  while (names.size > MAX_GROUP_NAMES) {
+    names.delete(names.keys().next().value);
+  }
+  return names;
+}
+
+/**
+ * Fill an empty `groupName` on queued group messages from the current map.
+ * Messages without a known name stay unchanged.
+ */
+export function fillGroupNames(messages, names) {
+  if (!Array.isArray(messages) || !(names instanceof Map)) {
+    return messages;
+  }
+  for (const message of messages) {
+    if (!message || typeof message !== 'object' || message.threadType !== 'group') {
+      continue;
+    }
+    if (message.groupName) {
+      continue;
+    }
+    const name = names.get(normalizeMessageId(message.threadId));
+    if (name) {
+      message.groupName = name;
+    }
+  }
+  return messages;
+}
+
+// zca-js TextStyle values (dist/apis/sendMessage.js:
+// Bold "b", Italic "i", StrikeThrough "s").
+const ST_BOLD = 'b';
+const ST_ITALIC = 'i';
+const ST_STRIKE = 's';
+
+const WORD_CHAR = /[\p{L}\p{N}]/u;
+
+const INLINE_PAIRS = Object.freeze([
+  { marker: '**', st: ST_BOLD, wordSafe: false },
+  { marker: '__', st: ST_BOLD, wordSafe: true },
+  { marker: '~~', st: ST_STRIKE, wordSafe: false },
+  { marker: '*', st: ST_ITALIC, wordSafe: false },
+  { marker: '_', st: ST_ITALIC, wordSafe: true },
+]);
+
+function canOpenMarker(source, index, marker, wordSafe) {
+  const next = source[index + marker.length] || '';
+  if (!next || /\s/.test(next)) {
+    return false;
+  }
+  if (wordSafe) {
+    const before = index > 0 ? source[index - 1] : '';
+    if (before && WORD_CHAR.test(before)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function findClosingMarker(source, from, marker, wordSafe) {
+  const step = marker.length;
+  for (let index = from; index + step <= source.length; index += 1) {
+    if (!source.startsWith(marker, index)) {
+      continue;
+    }
+    const before = index > 0 ? source[index - 1] : '';
+    const after = source[index + step] || '';
+    if (step === 1 && (before === marker || after === marker)) {
+      continue;
+    }
+    if (step === 2 && before === marker[0]) {
+      continue;
+    }
+    if (!before || /\s/.test(before)) {
+      continue;
+    }
+    if (wordSafe && after && WORD_CHAR.test(after)) {
+      continue;
+    }
+    return index;
+  }
+  return -1;
+}
+
+/** Append a parsed fragment and rebase its styles onto the outer text. */
+function appendStyled(target, fragment) {
+  const shift = target.msg.length;
+  for (const style of fragment.styles) {
+    target.styles.push({ start: style.start + shift, len: style.len, st: style.st });
+  }
+  target.msg += fragment.msg;
+}
+
+function tryInlinePair(source, index, depth) {
+  for (const pair of INLINE_PAIRS) {
+    if (!source.startsWith(pair.marker, index)) {
+      continue;
+    }
+    if (!canOpenMarker(source, index, pair.marker, pair.wordSafe)) {
+      continue;
+    }
+    const contentStart = index + pair.marker.length;
+    const close = findClosingMarker(source, contentStart + 1, pair.marker, pair.wordSafe);
+    if (close < 0) {
+      continue;
+    }
+    const inner = parseInline(source.slice(contentStart, close), depth + 1);
+    if (!inner.msg) {
+      continue;
+    }
+    const styles = inner.styles.slice();
+    styles.push({ start: 0, len: inner.msg.length, st: pair.st });
+    return { msg: inner.msg, styles, end: close + pair.marker.length };
+  }
+  return null;
+}
+
+function parseInline(source, depth = 0) {
+  const result = { msg: '', styles: [] };
+  if (depth > 8) {
+    result.msg = source;
+    return result;
+  }
+  let index = 0;
+  while (index < source.length) {
+    if (source[index] === '`') {
+      const close = source.indexOf('`', index + 1);
+      if (close > index + 1) {
+        result.msg += source.slice(index + 1, close);
+        index = close + 1;
+        continue;
+      }
+      result.msg += '`';
+      index += 1;
+      continue;
+    }
+    if (source[index] === '[') {
+      const link = /^\[([^\]\n]+)\]\(([^()\s]+)\)/.exec(source.slice(index));
+      if (link) {
+        const label = parseInline(link[1], depth + 1);
+        appendStyled(result, label);
+        result.msg += ` (${link[2]})`;
+        index += link[0].length;
+        continue;
+      }
+    }
+    const paired = tryInlinePair(source, index, depth);
+    if (paired) {
+      appendStyled(result, paired);
+      index = paired.end;
+      continue;
+    }
+    result.msg += source[index];
+    index += 1;
+  }
+  return result;
+}
+
+function convertMarkdownLine(line) {
+  const heading = /^(#{1,6})[ \t]+(.+)$/.exec(line);
+  if (heading) {
+    const content = heading[2].replace(/[ \t]+#+[ \t]*$/, '');
+    const parsed = parseInline(content);
+    if (parsed.msg) {
+      parsed.styles.push({ start: 0, len: parsed.msg.length, st: ST_BOLD });
+    }
+    return parsed;
+  }
+  const bullet = /^(\s*)[-*+][ \t]+(.*)$/.exec(line);
+  if (bullet) {
+    const shift = bullet[1].length + 2;
+    const parsed = parseInline(bullet[2]);
+    return {
+      msg: `${bullet[1]}• ${parsed.msg}`,
+      styles: parsed.styles.map((style) => ({
+        start: style.start + shift,
+        len: style.len,
+        st: style.st,
+      })),
+    };
+  }
+  return parseInline(line);
+}
+
+/**
+ * Convert a conservative Markdown subset into Zalo rich text.
+ *
+ * Returns `{ msg, styles }` where `styles` uses zca-js `Style` entries
+ * (`{ start, len, st }`, UTF-16 offsets into `msg`). Never throws: input that
+ * cannot be parsed is returned unchanged.
+ */
+export function markdownToZalo(text) {
+  const source = typeof text === 'string' ? text : String(text ?? '');
+  try {
+    const parts = [];
+    let fenced = false;
+    for (const line of source.split('\n')) {
+      if (/^\s*```/.test(line)) {
+        fenced = !fenced;
+        continue;
+      }
+      parts.push(fenced ? { msg: line, styles: [] } : convertMarkdownLine(line));
+    }
+    let msg = '';
+    const styles = [];
+    parts.forEach((part, index) => {
+      if (index > 0) {
+        msg += '\n';
+      }
+      const base = msg.length;
+      msg += part.msg;
+      for (const style of part.styles) {
+        styles.push({ start: style.start + base, len: style.len, st: style.st });
+      }
+    });
+    return { msg, styles };
+  } catch {
+    return { msg: source, styles: [] };
+  }
+}
+
+/**
+ * Split a styled message into sendable chunks.
+ *
+ * The clean text is chunked with `chunkText`; each style span is clipped to
+ * the chunk and rebased so a span crossing a boundary appears in both chunks.
+ */
+export function splitStyledChunks(msg, styles, size = MAX_CHUNK_LENGTH) {
+  const text = typeof msg === 'string' ? msg : '';
+  const chunks = chunkText(text, size);
+  if (chunks.length === 0) {
+    return [];
+  }
+  const normalized = Array.isArray(styles) ? styles : [];
+  let offset = 0;
+  return chunks.map((chunk) => {
+    const start = offset;
+    const end = offset + chunk.length;
+    offset = end;
+    const chunkStyles = [];
+    for (const style of normalized) {
+      if (!style || typeof style !== 'object') {
+        continue;
+      }
+      const styleStart = Math.max(0, Math.floor(Number(style.start) || 0));
+      const styleLen = Math.max(0, Math.floor(Number(style.len) || 0));
+      if (!styleLen) {
+        continue;
+      }
+      const overlapStart = Math.max(styleStart, start);
+      const overlapEnd = Math.min(styleStart + styleLen, end);
+      if (overlapEnd <= overlapStart) {
+        continue;
+      }
+      chunkStyles.push({
+        start: overlapStart - start,
+        len: overlapEnd - overlapStart,
+        st: style.st,
+      });
+    }
+    return { msg: chunk, styles: chunkStyles };
+  });
 }

@@ -60,22 +60,25 @@ import {
 
 import {
   GROUP_INFO_BATCH_SIZE,
+  GROUP_INFO_CACHE_TTL_MS,
   LIST_CACHE_TTL_MS,
   MAX_QUEUE_SIZE,
   MAX_RELOGIN_ATTEMPTS,
   READ_RATE_LIMIT_PER_MINUTE,
   SEND_RATE_LIMIT_PER_MINUTE,
   chunkList,
-  chunkText,
   classifyCloseCode,
   constantTimeEqual,
   cookieListFromJar,
+  createInfoGate,
   createTokenBucket,
-  createTtlCache,
+  fillGroupNames,
+  groupInfoCacheKey,
   historyEntry,
   inboundQueueItem,
   isLoopback,
   isNewerMessageId,
+  markdownToZalo,
   mediaFromContent,
   mentionsSelf,
   messageText,
@@ -87,7 +90,9 @@ import {
   receiptFields,
   reloginDelayMs,
   rememberCursor,
+  rememberGroupName,
   shouldQueueMessage,
+  splitStyledChunks,
   trimHistoryLines,
   validateReactBody,
   validateSeenBody,
@@ -140,13 +145,17 @@ const sendBucket = createTokenBucket({
   capacity: SEND_RATE_LIMIT_PER_MINUTE,
   perMinute: SEND_RATE_LIMIT_PER_MINUTE,
 });
-const friendsCache = createTtlCache({ ttlMs: LIST_CACHE_TTL_MS });
-const groupsCache = createTtlCache({ ttlMs: LIST_CACHE_TTL_MS });
+// One gate serializes every upstream read-info call, so Zalo never sees two
+// profile/list/group-info requests close together. It also owns the TTL cache
+// shared by /me, /friends, /groups and the inbound group-name lookups.
+const infoGate = createInfoGate();
 
 // Recently received inbound messages, used to resolve reaction and receipt
 // targets. Bounded so a long-running bridge cannot grow without limit.
 const inboundMessages = new Map();
 const groupNames = new Map();
+// Group ids with a name lookup currently in flight.
+const groupNameLookups = new Set();
 
 function writeBridgeToken() {
   try {
@@ -349,6 +358,40 @@ function saveSession(credentials) {
   }
 }
 
+/**
+ * Learn one group's name without blocking message ingestion.
+ *
+ * Called only when an inbound group message has no known name. The lookup
+ * goes through the shared info gate (10 minute cache), is deduplicated per
+ * group id while in flight, and failures are ignored: a later message retries.
+ */
+function requestGroupName(groupId) {
+  const id = normalizeMessageId(groupId);
+  if (!id || groupNames.has(id) || groupNameLookups.has(id) || !isConnected()) {
+    return;
+  }
+  groupNameLookups.add(id);
+  const lookup = infoGate.run(
+    groupInfoCacheKey([id]),
+    () => api.getGroupInfo([id]),
+    { ttlMs: GROUP_INFO_CACHE_TTL_MS },
+  );
+  void lookup
+    .then((info) => {
+      const group = info?.gridInfoMap?.[id];
+      const name = String(group?.name || '');
+      if (name) {
+        rememberGroupName(groupNames, id, name);
+      }
+    })
+    .catch(() => {
+      // A transient failure only means the name stays unknown for now.
+    })
+    .finally(() => {
+      groupNameLookups.delete(id);
+    });
+}
+
 function ingestMessage(message, { requireNewer = false } = {}) {
   if (!message) {
     return false;
@@ -395,6 +438,12 @@ function ingestMessage(message, { requireNewer = false } = {}) {
   persistCursors();
   const senderName = String(data.dName || '');
   const timestamp = Number(data.ts) || Date.now();
+  const groupName = threadType === 'group' ? groupNames.get(threadId) || '' : '';
+  if (threadType === 'group' && !groupName) {
+    // Fire and forget; GET /messages fills the name if this lookup finishes
+    // before the queue is drained.
+    requestGroupName(threadId);
+  }
   const item = inboundQueueItem({
     messageId,
     threadId,
@@ -403,7 +452,7 @@ function ingestMessage(message, { requireNewer = false } = {}) {
     text,
     timestamp,
     threadType,
-    groupName: threadType === 'group' ? groupNames.get(threadId) || '' : '',
+    groupName,
     mentionsSelf:
       threadType === 'group' ? mentionsSelf(data.mentions, ownId) : false,
     quotesSelf: quotesSelf(data.quote, ownId),
@@ -857,6 +906,15 @@ function fromUpstreamError(res) {
   return fail(res, 502, 'upstream_failed');
 }
 
+// A throttled info read is reported separately so the adapter can back off
+// instead of treating the account as broken.
+function fromInfoError(res, error) {
+  if (error?.code === 'rate_limited') {
+    return fail(res, 429, 'rate_limited');
+  }
+  return fromUpstreamError(res);
+}
+
 const app = express();
 
 app.use((req, res, next) => {
@@ -906,7 +964,7 @@ app.post('/login', (req, res) => {
 
 app.get('/messages', (req, res) => {
   const messages = messageQueue.splice(0, messageQueue.length);
-  res.json(messages);
+  return res.json(fillGroupNames(messages, groupNames));
 });
 
 app.get('/me', async (req, res) => {
@@ -917,7 +975,9 @@ app.get('/me', async (req, res) => {
     return fail(res, 429, 'rate_limited');
   }
   try {
-    const info = await api.fetchAccountInfo();
+    const info = await infoGate.run('me', () => api.fetchAccountInfo(), {
+      ttlMs: LIST_CACHE_TTL_MS,
+    });
     const profile = info?.profile || {};
     let accountId = '';
     try {
@@ -930,8 +990,8 @@ app.get('/me', async (req, res) => {
       displayName: String(profile.displayName || profile.zaloName || ''),
       avatar: String(profile.avatar || ''),
     });
-  } catch {
-    return fromUpstreamError(res);
+  } catch (error) {
+    return fromInfoError(res, error);
   }
 });
 
@@ -942,23 +1002,19 @@ app.get('/friends', async (req, res) => {
   if (!readBucket.take()) {
     return fail(res, 429, 'rate_limited');
   }
-  const cached = friendsCache.get('friends');
-  if (cached) {
-    return res.json(cached);
-  }
   try {
-    const friends = await api.getAllFriends();
-    const payload = {
+    const friends = await infoGate.run('friends', () => api.getAllFriends(), {
+      ttlMs: LIST_CACHE_TTL_MS,
+    });
+    return res.json({
       friends: (Array.isArray(friends) ? friends : []).map((friend) => ({
         userId: normalizeMessageId(friend?.userId),
         displayName: String(friend?.displayName || ''),
         zaloName: String(friend?.zaloName || ''),
       })),
-    };
-    friendsCache.set('friends', payload);
-    return res.json(payload);
-  } catch {
-    return fromUpstreamError(res);
+    });
+  } catch (error) {
+    return fromInfoError(res, error);
   }
 });
 
@@ -969,18 +1025,20 @@ app.get('/groups', async (req, res) => {
   if (!readBucket.take()) {
     return fail(res, 429, 'rate_limited');
   }
-  const cached = groupsCache.get('groups');
-  if (cached) {
-    return res.json(cached);
-  }
   try {
-    const listing = await api.getAllGroups();
+    const listing = await infoGate.run('groups:list', () => api.getAllGroups(), {
+      ttlMs: LIST_CACHE_TTL_MS,
+    });
     const grid = listing?.gridVerMap && typeof listing.gridVerMap === 'object'
       ? listing.gridVerMap
       : {};
     const groups = [];
     for (const batch of chunkList(Object.keys(grid), GROUP_INFO_BATCH_SIZE)) {
-      const info = await api.getGroupInfo(batch);
+      const info = await infoGate.run(
+        groupInfoCacheKey(batch),
+        () => api.getGroupInfo(batch),
+        { ttlMs: GROUP_INFO_CACHE_TTL_MS },
+      );
       const gridInfoMap = info?.gridInfoMap || {};
       for (const groupId of batch) {
         const group = gridInfoMap[groupId];
@@ -988,7 +1046,7 @@ app.get('/groups', async (req, res) => {
           continue;
         }
         const name = String(group.name || '');
-        groupNames.set(groupId, name);
+        rememberGroupName(groupNames, groupId, name);
         groups.push({
           groupId: normalizeMessageId(group.groupId || groupId),
           name,
@@ -996,11 +1054,9 @@ app.get('/groups', async (req, res) => {
         });
       }
     }
-    const payload = { groups };
-    groupsCache.set('groups', payload);
-    return res.json(payload);
-  } catch {
-    return fromUpstreamError(res);
+    return res.json({ groups });
+  } catch (error) {
+    return fromInfoError(res, error);
   }
 });
 
@@ -1012,7 +1068,10 @@ app.post('/send', async (req, res) => {
   if (!isConnected()) {
     return fail(res, 503, 'not_connected');
   }
-  const chunks = chunkText(body.message);
+  // Length validation applies to the raw input; Markdown is converted once,
+  // then the clean text is chunked with the style spans split alongside it.
+  const converted = markdownToZalo(body.message);
+  const chunks = splitStyledChunks(converted.msg, converted.styles);
   if (chunks.length === 0) {
     return fail(res, 400, 'invalid_request');
   }
@@ -1024,7 +1083,11 @@ app.post('/send', async (req, res) => {
   const messageIds = [];
   try {
     for (const chunk of chunks) {
-      const sent = await api.sendMessage(chunk, body.chatId, threadType);
+      // zca-js TextStyle: Bold "b", Italic "i", StrikeThrough "s".
+      const content = chunk.styles.length
+        ? { msg: chunk.msg, styles: chunk.styles }
+        : { msg: chunk.msg };
+      const sent = await api.sendMessage(content, body.chatId, threadType);
       const messageId = sent?.message?.msgId;
       messageIds.push(messageId === undefined || messageId === null ? null : String(messageId));
     }
