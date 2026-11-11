@@ -866,11 +866,40 @@ The gateway reports an unapproved mention through the private route
 `POST /xnobrain/api/runtime/v1/internal/channels/groups/seen` with
 `{platform, agent_id, group_id, group_name?, sender_name?}` and the same
 `X-XNOBrain-Internal-Token` as private turns. It is de-duplicated in-process
-per profile/group. A group turn in `run_internal_turn` is refused with
+per profile/platform/group; for `zalo` the inbound chat name is reported, while
+`zalo_bot` resolves the group name through the bot group manager. A group turn in `run_internal_turn` is refused with
 `403 channel_group_not_approved` while unapproved (and recorded as seen) and
 with `429 channel_group_limit_reached` when the per-member daily limit is
 reached. `daily_limit` is an integer `0..1000`, defaults to `20`, and `0`
 means unlimited.
+
+### Channel tools
+
+The run-scoped `send_channel_message` tool and the personal Zalo tools are
+registered in the `xnobrain_channels` toolset, gated by
+`FT_ENABLE_AGENT_CHANNELS`, and installed only for a run whose profile enables
+the platform.
+
+| Tool | Action | Approval |
+|---|---|---|
+| `send_channel_message` | text to `zalo` (DM or approved group) or `zalo_bot` | every send |
+| `zalo_status`, `zalo_me` | bridge status / own profile | none |
+| `zalo_list_friends`, `zalo_list_groups` | friend and group listings | none |
+| `zalo_send_image` | image from `<profile>/workspace` | every send |
+| `zalo_send_link` | http/https link | every send |
+| `zalo_react` | reaction on a recent inbound message | every reaction |
+
+Personal `zalo` group sends and reactions accept an exact approved group id or
+an exact approved group name; unapproved groups return
+`channel_group_not_approved` and duplicate names return
+`channel_recipient_ambiguous`. `send_channel_message` uses the
+`zalo.send_group_message` approval pattern for personal groups and
+`zalo.send_message` for DMs; the other send tools use `zalo.send_image`,
+`zalo.send_link`, and `zalo.react`. Friends, groups, and their names are
+returned as untrusted external data. A run started from a channel thread
+cannot list friends or groups (`channel_thread_out_of_scope`). Images must be
+JPEG, PNG, GIF, or WebP, stay inside the agent workspace, and respect the
+profile's `platforms.zalo.extra.media_max_mb` cap (default `10`).
 
 ### Private gateway turns
 
@@ -911,12 +940,13 @@ of starting a second turn. A different message while the thread's run is
 active returns `409 channel_turn_running`; a reused message ID with different
 input returns `409 channel_turn_conflict`.
 
-For `zalo_bot` with `thread_type: "group"`, the group must already be approved
-for this agent; otherwise the mention is recorded as pending and the turn is
-refused with `403 channel_group_not_approved`. Approved group turns are then
-counted against the sender's daily quota before the run starts, and a sender
-over the limit receives `429 channel_group_limit_reached` without starting a
-run. Personal `zalo` group turns keep their existing behavior.
+For `zalo` or `zalo_bot` with `thread_type: "group"`, the group must already be
+approved for this agent; otherwise the mention is recorded as pending and the
+turn is refused with `403 channel_group_not_approved`. Approval is stored per
+platform, so a group ID approved for `zalo_bot` does not authorize the same ID
+on `zalo`. Approved group turns are then counted against the sender's daily
+quota before the run starts, and a sender over the limit receives
+`429 channel_group_limit_reached` without starting a run.
 
 A successful response is
 `{conversation_id, run_id, reply, usage: {input_tokens, output_tokens, total_tokens}}`.

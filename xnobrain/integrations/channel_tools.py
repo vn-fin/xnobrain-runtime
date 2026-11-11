@@ -45,6 +45,7 @@ def _deliver(
     name: str,
     text: str,
     platform: str = zalo_channels.ZALO_PLATFORM,
+    thread_type: str = "dm",
 ) -> dict:
     service, agent_id, conversation_id, _run_id, _notify_cb, loop = binding
     future = asyncio.run_coroutine_threadsafe(
@@ -55,65 +56,75 @@ def _deliver(
             name,
             text,
             platform=platform,
+            thread_type=thread_type,
         ),
         loop,
     )
     return future.result(timeout=60)
 
 
+def run_binding(session_id: str) -> tuple:
+    """Return the run binding and its enabled platforms, or ``(None, None)``."""
+    with _LOCK:
+        key = str(session_id or "")
+        return _BINDINGS.get(key), _PLATFORMS.get(key)
+
+
 def register_tools() -> None:
     from tools.registry import registry
 
     with _LOCK:
-        if _SCHEMA:
-            return
-        limit = zalo_channels.max_message_length()
-        function = {
-            "name": "send_channel_message",
-            "description": (
-                "Send plain text on a messaging channel after the user approves it. "
-                "Platforms: 'zalo' (personal account, direct messages only) and "
-                "'zalo_bot' (bot, direct messages or approved groups). Pass an exact "
-                "Zalo thread id or an exact contact name seen in the agent's Zalo "
-                "history; bot sends require an exact chat id. The user must approve "
-                "every send, and bot groups must be approved first."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "platform": {
-                        "type": "string",
-                        "enum": ["zalo", "zalo_bot"],
-                        "default": "zalo",
+        if not _SCHEMA:
+            limit = zalo_channels.max_message_length()
+            function = {
+                "name": "send_channel_message",
+                "description": (
+                    "Send plain text on a messaging channel after the user approves it. "
+                    "Platforms: 'zalo' (personal account, direct messages or approved "
+                    "groups) and 'zalo_bot' (bot, direct messages or approved groups). "
+                    "Pass an exact Zalo thread id or an exact contact name seen in the "
+                    "agent's Zalo history; bot sends require an exact chat id. The user "
+                    "must approve every send, and every group must be approved first."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "platform": {
+                            "type": "string",
+                            "enum": ["zalo", "zalo_bot"],
+                            "default": "zalo",
+                        },
+                        "thread_type": {
+                            "type": "string",
+                            "enum": ["dm", "group"],
+                            "default": "dm",
+                        },
+                        "recipient": {
+                            "type": "string",
+                            "description": "Exact Zalo thread id/chat id or exact contact name.",
+                        },
+                        "text": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": limit,
+                            "description": f"Plain text, at most {limit} characters.",
+                        },
                     },
-                    "thread_type": {
-                        "type": "string",
-                        "enum": ["dm", "group"],
-                        "default": "dm",
-                    },
-                    "recipient": {
-                        "type": "string",
-                        "description": "Exact Zalo thread id/chat id or exact contact name.",
-                    },
-                    "text": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": limit,
-                        "description": f"Plain text, at most {limit} characters.",
-                    },
+                    "required": ["recipient", "text"],
+                    "additionalProperties": False,
                 },
-                "required": ["recipient", "text"],
-                "additionalProperties": False,
-            },
-        }
-        registry.register(
-            name="send_channel_message",
-            toolset="xnobrain_channels",
-            schema=function,
-            handler=call,
-            check_fn=lambda: False,
-        )
-        _SCHEMA.update({"type": "function", "function": function})
+            }
+            registry.register(
+                name="send_channel_message",
+                toolset="xnobrain_channels",
+                schema=function,
+                handler=call,
+                check_fn=lambda: False,
+            )
+            _SCHEMA.update({"type": "function", "function": function})
+    from . import zalo_tools
+
+    zalo_tools.register_tools()
 
 
 @contextmanager
@@ -185,14 +196,20 @@ def install_tools(agent, session_id: str) -> None:
         if session_id not in _BINDINGS or int(getattr(agent, "_delegate_depth", 0) or 0):
             return
         schema = copy.deepcopy(_SCHEMA)
-    if not schema:
-        return
-    existing = {tool.get("function", {}).get("name") for tool in getattr(agent, "tools", [])}
-    if "send_channel_message" not in existing:
-        agent.tools = list(getattr(agent, "tools", []) or []) + [schema]
-    agent.valid_tool_names = set(getattr(agent, "valid_tool_names", set())) | {
-        "send_channel_message"
-    }
+        platforms = _PLATFORMS.get(str(session_id)) or frozenset()
+    if schema:
+        existing = {
+            tool.get("function", {}).get("name") for tool in getattr(agent, "tools", [])
+        }
+        if "send_channel_message" not in existing:
+            agent.tools = list(getattr(agent, "tools", []) or []) + [schema]
+        agent.valid_tool_names = set(getattr(agent, "valid_tool_names", set())) | {
+            "send_channel_message"
+        }
+    if zalo_channels.ZALO_PLATFORM in platforms:
+        from . import zalo_tools
+
+        zalo_tools.install_tools(agent, session_id)
 
 
 def call(args, **kwargs):
@@ -209,12 +226,13 @@ def call(args, **kwargs):
     platform = request.platform
     if platform not in platforms:
         return _error("channel_platform_not_configured")
-    if platform == zalo_channels.ZALO_PLATFORM and request.thread_type == "group":
-        return _error("channel_group_unsupported")
     service, agent_id, _conversation_id, run_id, notify_cb, _loop = binding
     try:
         if platform == zalo_channels.ZALO_PLATFORM:
-            resolution = service.resolve_recipient(agent_id, request.recipient)
+            if request.thread_type == "group":
+                resolution = service.resolve_zalo_group(agent_id, request.recipient)
+            else:
+                resolution = service.resolve_recipient(agent_id, request.recipient)
         else:
             resolution = service.resolve_bot_recipient(
                 agent_id, request.recipient, request.thread_type
@@ -228,6 +246,10 @@ def call(args, **kwargs):
                 "channel_recipient_ambiguous",
                 candidates=resolution.get("candidates") or [],
             )
+        if status == "group_not_approved":
+            return _error("channel_group_not_approved")
+        if status == "invalid":
+            return _error("channel_recipient_invalid")
         if status != "ok":
             return _error(
                 "channel_recipient_not_found",
@@ -245,8 +267,13 @@ def call(args, **kwargs):
     limit = zalo_channels.max_message_length(platform)
     if len(request.text) > limit:
         return _error("channel_message_too_long")
-    label = "Zalo" if platform == zalo_channels.ZALO_PLATFORM else "Zalo Bot"
-    pattern_key = f"{platform}.send_message"
+    if platform == zalo_channels.ZALO_PLATFORM:
+        group_send = request.thread_type == "group"
+        label = "Zalo group" if group_send else "Zalo"
+        pattern_key = "zalo.send_group_message" if group_send else "zalo.send_message"
+    else:
+        label = "Zalo Bot"
+        pattern_key = "zalo_bot.send_message"
     preview = request.text if len(request.text) <= 300 else request.text[:300] + "…"
     preview = " ".join(preview.split())
     decision = _request_approval(
@@ -265,7 +292,14 @@ def call(args, **kwargs):
     if not decision.get("resolved") or choice not in {"once", "always"}:
         return _error("channel_send_denied")
     try:
-        result = _deliver(binding, thread_id, name, request.text, platform=platform)
+        result = _deliver(
+            binding,
+            thread_id,
+            name,
+            request.text,
+            platform=platform,
+            thread_type=request.thread_type,
+        )
     except ChannelDeliveryError as error:
         return _error(error.code)
     except Exception:

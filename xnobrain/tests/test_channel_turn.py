@@ -380,7 +380,24 @@ class ChannelTurnServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.platform.create_calls), 1)
         self.assertEqual(len(self.platform.run_calls), 2)
 
+    def _approve_zalo_group(self, group_id="1234567890", daily_limit=20):
+        self.service.repository.write_groups(
+            self.profile,
+            {
+                "schema_version": 1,
+                "platforms": {
+                    "zalo": {
+                        "daily_limit": daily_limit,
+                        "groups": {
+                            group_id: {"status": "approved", "name": "Group"},
+                        },
+                    }
+                },
+            },
+        )
+
     async def test_group_turn_uses_group_title(self):
+        self._approve_zalo_group()
         await self.service.run_internal_turn(
             _body(thread_type="group", thread_id="1234567890"), TOKEN
         )
@@ -394,6 +411,52 @@ class ChannelTurnServiceTests(unittest.IsolatedAsyncioTestCase):
             mapping["platforms"]["zalo"]["1234567890"]["title"],
             "Zalo · group 34567890",
         )
+
+    async def test_unapproved_zalo_group_turn_is_refused(self):
+        with self.assertRaises(ServiceError) as raised:
+            await self.service.run_internal_turn(
+                _body(thread_type="group", thread_id="1234567890"), TOKEN
+            )
+
+        self.assertEqual(raised.exception.status, 403)
+        self.assertEqual(raised.exception.code, "channel_group_not_approved")
+        self.assertEqual(self.platform.create_calls, [])
+        self.assertEqual(self.platform.run_calls, [])
+        groups = json.loads(
+            (self.profile / "zalo" / "groups.json").read_text(encoding="utf-8")
+        )
+        entry = groups["platforms"]["zalo"]["groups"]["1234567890"]
+        self.assertEqual(entry["status"], "pending")
+        self.assertEqual(entry["last_sender_name"], "Nam")
+
+    async def test_approved_zalo_group_turn_counts_the_daily_limit(self):
+        self._approve_zalo_group(daily_limit=1)
+
+        first = await self.service.run_internal_turn(
+            _body(
+                thread_type="group",
+                thread_id="1234567890",
+                message_id="message-1",
+            ),
+            TOKEN,
+        )
+        self.assertEqual(first["reply"], "channel reply")
+
+        with self.assertRaises(ServiceError) as raised:
+            await self.service.run_internal_turn(
+                _body(
+                    thread_type="group",
+                    thread_id="1234567890",
+                    message_id="message-2",
+                ),
+                TOKEN,
+            )
+        self.assertEqual(raised.exception.status, 429)
+        self.assertEqual(raised.exception.code, "channel_group_limit_reached")
+        usage = json.loads(
+            (self.profile / "zalo" / "group_usage.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(usage["platforms"]["zalo"]["counts"]["1234567890"]["789"], 1)
 
     async def test_name_conflict_retries_once_with_a_suffixed_title(self):
         self.platform.create_errors.append(

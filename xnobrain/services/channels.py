@@ -64,6 +64,7 @@ _GATEWAY_CONNECT_INSTRUCTION = (
     "QR callback values or other credentials in Zalo."
 )
 _QR_WAIT_SECONDS = 5.0
+_DEFAULT_MEDIA_MAX_MB = 10.0
 _BOT_TOKEN_ENV = "ZALO_BOT_TOKEN"
 # The plugin refreshes its per-profile state file every 30 seconds; a record
 # older than three missed heartbeats means the owning gateway stopped writing.
@@ -369,6 +370,10 @@ class ChannelsService:
                 ) from error
             raise
 
+    def profile_path(self, agent_id: str) -> Path:
+        """Return the agent profile directory for tool-side channel helpers."""
+        return self._profile(agent_id)
+
     def resolve_recipient(self, agent_id: str, recipient: Any) -> dict[str, Any]:
         """Resolve a thread id or known sender name for one agent profile."""
         profile = self._profile(agent_id)
@@ -377,6 +382,85 @@ class ChannelsService:
             self.repository.directory(profile),
             recipient,
         )
+
+    def resolve_zalo_group(self, agent_id: str, recipient: Any) -> dict[str, Any]:
+        """Resolve one owner-approved personal Zalo group by exact id or name."""
+        profile = self._profile(agent_id)
+        raw = zalo_channels.normalize_recipient(recipient)
+        if not raw:
+            return {"status": "invalid", "thread_id": "", "name": ""}
+        _, record = self._group_state(profile, "zalo")
+        groups = record["groups"]
+        entry = groups.get(raw)
+        if entry is not None:
+            name = self._group_name(entry.get("name")) or raw
+            status = "ok" if entry.get("status") == "approved" else "group_not_approved"
+            return {
+                "status": status,
+                "thread_id": raw,
+                "name": name,
+                "type": "group",
+            }
+        needle = zalo_channels.normalize_name(raw)
+        approved: list[dict[str, Any]] = []
+        pending: list[dict[str, Any]] = []
+        for group_id, item in groups.items():
+            item_id = str(group_id or "")
+            if not _ZALO_ID.fullmatch(item_id):
+                continue
+            if zalo_channels.normalize_name(item.get("name")) != needle:
+                continue
+            candidate = {
+                "thread_id": item_id,
+                "name": self._group_name(item.get("name")) or item_id,
+                "type": "group",
+            }
+            if item.get("status") == "approved":
+                approved.append(candidate)
+            else:
+                pending.append(candidate)
+        if len(approved) == 1:
+            return {**approved[0], "status": "ok"}
+        if len(approved) > 1:
+            return {
+                "status": "ambiguous",
+                "candidates": sorted(approved, key=lambda item: item["thread_id"]),
+            }
+        if pending:
+            return {**pending[0], "status": "group_not_approved"}
+        if _ZALO_ID.fullmatch(raw):
+            # Mirror the bot group branch: a group-shaped id is never a DM.
+            return {
+                "status": "group_not_approved",
+                "thread_id": raw,
+                "name": "",
+                "type": "group",
+            }
+        return {"status": "not_found", "thread_id": "", "name": "", "type": "group"}
+
+    def approved_zalo_groups(self, agent_id: str) -> set[str]:
+        """Return the personal Zalo group ids this agent's owner approved."""
+        profile = self._profile(agent_id)
+        _, record = self._group_state(profile, "zalo")
+        return {
+            str(group_id)
+            for group_id, entry in record["groups"].items()
+            if entry.get("status") == "approved"
+        }
+
+    def zalo_media_max_mb(self, agent_id: str) -> float:
+        """Read the profile's outbound media size cap in MiB."""
+        profile = self._profile(agent_id)
+        value = self._zalo_extra(self.repository.config(profile)).get(
+            "media_max_mb", _DEFAULT_MEDIA_MAX_MB
+        )
+        if isinstance(value, bool):
+            return _DEFAULT_MEDIA_MAX_MB
+        try:
+            limit = float(value)
+        except (TypeError, ValueError):
+            return _DEFAULT_MEDIA_MAX_MB
+        return limit if limit >= 0 else _DEFAULT_MEDIA_MAX_MB
 
     def _bot_approved_user(self, agent_id: str, chat_id: str) -> str | None:
         """Return the approved pairing display name, or None when not paired."""
@@ -439,6 +523,7 @@ class ChannelsService:
         name: str,
         text: str,
         platform: str = zalo_channels.ZALO_PLATFORM,
+        thread_type: str = "dm",
     ) -> dict[str, Any]:
         """Deliver approved text, then link a personal thread to this conversation."""
         profile = self._profile(agent_id)
@@ -449,7 +534,26 @@ class ChannelsService:
                 "channel message is too long", status=400, code="channel_message_too_long"
             )
         try:
-            result = await zalo_channels.send_text(thread_id, text, platform=platform)
+            if platform == zalo_channels.ZALO_PLATFORM and thread_type == "group":
+                # The plugin standalone sender has no thread-type argument, so a
+                # personal group send must go straight to the authenticated
+                # bridge with ``threadType: "group"``.
+                config = self.repository.config(profile)
+                token = self._bridge_token(profile, config)
+                if token is None:
+                    raise zalo_channels.ChannelDeliveryError(
+                        "channel_bridge_unauthorized"
+                    )
+                result = await asyncio.to_thread(
+                    zalo_channels.bridge_send_text,
+                    self._bridge_port(profile, config),
+                    token,
+                    thread_id,
+                    text,
+                    thread_type="group",
+                )
+            else:
+                result = await zalo_channels.send_text(thread_id, text, platform=platform)
         except zalo_channels.ChannelDeliveryError as error:
             raise ServiceError("channel delivery failed", status=502, code=error.code) from error
         timestamp = time.time()
@@ -696,13 +800,11 @@ class ChannelsService:
         profile = self._profile(agent_id)
         self._require_enabled_channel(profile, request["platform"])
         binding = self._require_owner_binding(agent_id, profile)
-        group_turn = (
-            request["platform"] == "zalo_bot" and request["thread_type"] == "group"
-        )
+        group_turn = request["thread_type"] == "group"
         if not group_turn:
-            # dm_policy governs direct messages. An approved Zalo Bot group is
-            # authorized by owner approval instead, so it may run even when
-            # DMs are disabled; personal zalo turns keep the existing gate.
+            # dm_policy governs direct messages. An approved group (personal
+            # Zalo or Zalo Bot) is authorized by owner approval instead, so it
+            # may run even when DMs are disabled.
             self._require_safe_dm_policy(profile, request["platform"])
         if group_turn and not self._group_is_approved(
             profile, request["platform"], request["thread_id"]
@@ -1497,6 +1599,58 @@ class ChannelsService:
             configured=configured,
         )
 
+    @classmethod
+    def _zalo_session_dir(cls, profile: Path, config: Mapping[str, Any]) -> Path:
+        """Mirror the plugin's rule: ``extra.session_path`` or ``<profile>/zalo``."""
+        configured = cls._zalo_extra(config).get("session_path")
+        if configured:
+            return Path(str(configured))
+        return Path(profile) / "zalo"
+
+    def _bridge_token(self, profile: Path, config: Mapping[str, Any]) -> str | None:
+        return zalo_channels.bridge_token(self._zalo_session_dir(profile, config))
+
+    def zalo_bridge_health(self, agent_id: str) -> dict[str, Any] | None:
+        """Read the open bridge health endpoint for one profile."""
+        profile = self._profile(agent_id)
+        config = self.repository.config(profile)
+        return zalo_channels.bridge_health(self._bridge_port(profile, config))
+
+    def call_zalo_bridge(
+        self,
+        agent_id: str,
+        path: str,
+        *,
+        method: str = "GET",
+        body: Mapping[str, Any] | None = None,
+        timeout: float = 2.0,
+        max_bytes: int = 2 * 1024 * 1024,
+    ) -> dict[str, Any]:
+        """Call one authenticated personal-Zalo bridge endpoint for a profile.
+
+        The token is re-read on every call. When it is missing no request is
+        sent and the result mirrors an unauthorized bridge response.
+        """
+        profile = self._profile(agent_id)
+        config = self.repository.config(profile)
+        token = self._bridge_token(profile, config)
+        if token is None:
+            return {
+                "ok": False,
+                "status": 0,
+                "data": None,
+                "error": "unauthorized",
+            }
+        return zalo_channels.bridge_request(
+            self._bridge_port(profile, config),
+            path,
+            method=method,
+            token=token,
+            body=body,
+            timeout=timeout,
+            max_bytes=max_bytes,
+        )
+
     @staticmethod
     def _pid_alive(pid: int | None) -> bool:
         if not isinstance(pid, int) or pid <= 1:
@@ -1812,7 +1966,11 @@ class ChannelsService:
         health = await asyncio.to_thread(zalo_channels.bridge_health, port)
         status = zalo_channels.bridge_status(health.get("status")) if health else "closed"
         if status == "needs_login":
-            await asyncio.to_thread(zalo_channels.bridge_start_login, port)
+            await asyncio.to_thread(
+                zalo_channels.bridge_start_login,
+                port,
+                token=self._bridge_token(profile, config),
+            )
             deadline = time.monotonic() + _QR_WAIT_SECONDS
             while time.monotonic() < deadline:
                 await asyncio.sleep(0.2)

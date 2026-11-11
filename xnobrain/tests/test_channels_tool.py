@@ -1,10 +1,12 @@
 """Channel recipient resolution, tool approval flow, and link persistence."""
 
 import asyncio
+import io
 import json
 import os
 import tempfile
 import unittest
+import urllib.error
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -28,23 +30,38 @@ class _Platform:
 
 
 class _FakeService:
-    def __init__(self, resolution, bot_resolution=None):
+    def __init__(self, resolution, bot_resolution=None, group_resolution=None):
         self.resolution = resolution
         self.bot_resolution = bot_resolution or {"status": "not_found"}
+        self.group_resolution = group_resolution or {"status": "not_found"}
         self.calls = []
         self.bot_calls = []
+        self.group_calls = []
 
     def resolve_recipient(self, agent_id, recipient):
         return self.resolution
+
+    def resolve_zalo_group(self, agent_id, recipient):
+        self.group_calls.append(recipient)
+        return self.group_resolution
 
     def resolve_bot_recipient(self, agent_id, recipient, thread_type="dm"):
         self.bot_calls.append((recipient, thread_type))
         return self.bot_resolution
 
     async def send_message(
-        self, agent_id, conversation_id, thread_id, name, text, platform="zalo"
+        self,
+        agent_id,
+        conversation_id,
+        thread_id,
+        name,
+        text,
+        platform="zalo",
+        thread_type="dm",
     ):
-        self.calls.append((agent_id, conversation_id, thread_id, name, text, platform))
+        self.calls.append(
+            (agent_id, conversation_id, thread_id, name, text, platform, thread_type)
+        )
         return {"message_id": "sent-1", "name": name}
 
 
@@ -188,6 +205,49 @@ class ChannelServiceSendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(raised.exception.code, "channel_message_too_long")
         send.assert_not_awaited()
 
+    async def test_personal_group_text_uses_the_authenticated_bridge(self):
+        token = "a" * 64
+        (self.profile / "zalo").mkdir()
+        (self.profile / "zalo" / "bridge.token").write_text(token, encoding="utf-8")
+        with mock.patch.object(
+            ChannelsService, "_bridge_port", return_value=3110
+        ), mock.patch.object(
+            zalo_channels,
+            "bridge_send_text",
+            return_value={"message_id": "77"},
+        ) as send:
+            result = await self.service.send_message(
+                "agent-1",
+                "conv-1",
+                "123",
+                "Team One",
+                "hello",
+                thread_type="group",
+            )
+
+        send.assert_called_once_with(3110, token, "123", "hello", thread_type="group")
+        self.assertEqual(result["message_id"], "77")
+        links = json.loads((self.profile / "zalo" / "links.json").read_text())
+        self.assertEqual(links["123"]["conversation_id"], "conv-1")
+
+    async def test_personal_group_text_needs_a_bridge_token(self):
+        with mock.patch.object(
+            ChannelsService, "_bridge_port", return_value=3110
+        ), mock.patch.object(zalo_channels, "bridge_send_text") as send:
+            with self.assertRaises(ServiceError) as raised:
+                await self.service.send_message(
+                    "agent-1",
+                    "conv-1",
+                    "123",
+                    "Team One",
+                    "hello",
+                    thread_type="group",
+                )
+
+        self.assertEqual(raised.exception.code, "channel_bridge_unauthorized")
+        send.assert_not_called()
+        self.assertFalse((self.profile / "zalo" / "links.json").exists())
+
     async def test_bot_send_uses_the_generalized_sender_without_a_personal_link(self):
         with mock.patch.object(
             zalo_channels, "send_text", mock.AsyncMock(return_value={"message_id": "7"})
@@ -300,6 +360,77 @@ class BotRecipientResolutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(pending["status"], "group_not_approved")
 
 
+class ZaloGroupResolutionTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        root = Path(self.temporary.name)
+        profiles = root / "profiles"
+        self.root_profile = profiles / "big-brother"
+        self.profile = profiles / "agent-1"
+        self.root_profile.mkdir(parents=True)
+        self.profile.mkdir(parents=True)
+        self.environment = mock.patch.dict(
+            os.environ,
+            {
+                "FT_ENABLE_AGENT_CHANNELS": "true",
+                "HERMES_HOME": str(self.root_profile),
+                "HERMES_ROOT_PROFILE": str(self.root_profile),
+                "HERMES_PROFILES_ROOT": str(profiles),
+                "DATA_DIR": str(root / "data"),
+                "RUNTIME_CUSTOM_PAGE_STORAGE_MOUNT": "",
+            },
+        )
+        self.environment.start()
+        self.addCleanup(self.environment.stop)
+        self.repository = FileRepository(
+            root / "data", profiles, root_profile=self.root_profile
+        )
+        platform = _Platform(self.repository, self.profile)
+        platform.config = SimpleNamespace(root_profile=self.root_profile)
+        self.service = ChannelsService(platform)
+
+    def _write_groups(self, groups):
+        self.service.repository.write_groups(
+            self.profile,
+            {"schema_version": 1, "platforms": {"zalo": {"groups": groups}}},
+        )
+
+    def test_approved_group_id_and_normalized_name_resolve(self):
+        self._write_groups(
+            {
+                "123": {"status": "approved", "name": "Team   One"},
+                "456": {"status": "pending", "name": "Team Two"},
+            }
+        )
+
+        by_id = self.service.resolve_zalo_group("agent-1", "123")
+        by_name = self.service.resolve_zalo_group("agent-1", "team one")
+        pending = self.service.resolve_zalo_group("agent-1", "456")
+        unknown = self.service.resolve_zalo_group("agent-1", "Nobody")
+        invalid = self.service.resolve_zalo_group("agent-1", "  ")
+
+        self.assertEqual(by_id["status"], "ok")
+        self.assertEqual(by_id["name"], "Team One")
+        self.assertEqual(by_name["thread_id"], "123")
+        self.assertEqual(pending["status"], "group_not_approved")
+        self.assertEqual(unknown["status"], "not_found")
+        self.assertEqual(invalid["status"], "invalid")
+
+    def test_duplicate_approved_group_names_are_ambiguous(self):
+        self._write_groups(
+            {
+                "123": {"status": "approved", "name": "Team"},
+                "456": {"status": "approved", "name": "team"},
+            }
+        )
+
+        result = self.service.resolve_zalo_group("agent-1", "TEAM")
+
+        self.assertEqual(result["status"], "ambiguous")
+        self.assertEqual(len(result["candidates"]), 2)
+
+
 class ChannelToolCallTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         channel_tools._BINDINGS.clear()
@@ -341,7 +472,7 @@ class ChannelToolCallTests(unittest.IsolatedAsyncioTestCase):
         service = _FakeService({"status": "ok", "thread_id": "111", "name": "Nam"})
         self._bind(service)
 
-        def deliver(binding, thread_id, name, text, platform="zalo"):
+        def deliver(binding, thread_id, name, text, platform="zalo", thread_type="dm"):
             service.calls.append(("agent-1", "conv-1", thread_id, name, text))
             return {"message_id": "sent-1"}
 
@@ -393,7 +524,7 @@ class ChannelToolCallTests(unittest.IsolatedAsyncioTestCase):
         self._bind(service, platforms={"zalo_bot"})
         delivered = []
 
-        def deliver(binding, thread_id, name, text, platform="zalo"):
+        def deliver(binding, thread_id, name, text, platform="zalo", thread_type="dm"):
             delivered.append((thread_id, name, text, platform))
             return {"message_id": "sent-9"}
 
@@ -446,7 +577,7 @@ class ChannelToolCallTests(unittest.IsolatedAsyncioTestCase):
         self._bind(service, platforms={"zalo_bot"})
         delivered = []
 
-        def deliver(binding, thread_id, name, text, platform="zalo"):
+        def deliver(binding, thread_id, name, text, platform="zalo", thread_type="dm"):
             delivered.append((thread_id, name, text, platform))
             return {"message_id": "sent-10"}
 
@@ -468,15 +599,84 @@ class ChannelToolCallTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(service.bot_calls, [("group_1", "group")])
         self.assertEqual(delivered, [("group_1", "Group One", "hello", "zalo_bot")])
 
-    async def test_personal_zalo_group_send_is_unsupported(self):
-        service = _FakeService({"status": "ok"})
+    async def test_personal_zalo_group_name_is_resolved_and_delivered(self):
+        service = _FakeService(
+            {"status": "ok"},
+            group_resolution={
+                "status": "ok",
+                "thread_id": "123",
+                "name": "Team One",
+                "type": "group",
+            },
+        )
+        self._bind(service, platforms={"zalo"})
+        with mock.patch.object(
+            channel_tools,
+            "_request_approval",
+            return_value={"resolved": True, "choice": "once"},
+        ) as approval, mock.patch.object(
+            channel_tools, "_deliver", return_value={"message_id": "sent-3"}
+        ) as deliver:
+            result = self._call(
+                {
+                    "platform": "zalo",
+                    "thread_type": "group",
+                    "recipient": "team one",
+                    "text": "hello",
+                }
+            )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["data"]["thread_id"], "123")
+        self.assertEqual(service.group_calls, ["team one"])
+        self.assertEqual(deliver.call_args.args[1:4], ("123", "Team One", "hello"))
+        self.assertEqual(deliver.call_args.kwargs["platform"], "zalo")
+        self.assertEqual(deliver.call_args.kwargs["thread_type"], "group")
+        self.assertEqual(approval.call_args.args[2]["pattern_key"], "zalo.send_group_message")
+        self.assertIn("Zalo group → Team One", approval.call_args.args[2]["command"])
+
+    async def test_personal_zalo_unapproved_group_is_refused_before_approval(self):
+        service = _FakeService(
+            {"status": "ok"},
+            group_resolution={"status": "group_not_approved", "thread_id": "123"},
+        )
         self._bind(service, platforms={"zalo"})
         with mock.patch.object(channel_tools, "_request_approval") as approval:
             result = self._call(
-                {"platform": "zalo", "thread_type": "group", "recipient": "111", "text": "hi"}
+                {
+                    "platform": "zalo",
+                    "thread_type": "group",
+                    "recipient": "123",
+                    "text": "hi",
+                }
             )
 
-        self.assertEqual(result["error"]["code"], "channel_group_unsupported")
+        self.assertEqual(result["error"]["code"], "channel_group_not_approved")
+        approval.assert_not_called()
+
+    async def test_personal_zalo_ambiguous_group_name_is_refused(self):
+        service = _FakeService(
+            {"status": "ok"},
+            group_resolution={
+                "status": "ambiguous",
+                "candidates": [
+                    {"thread_id": "123", "name": "Team"},
+                    {"thread_id": "456", "name": "Team"},
+                ],
+            },
+        )
+        self._bind(service, platforms={"zalo"})
+        with mock.patch.object(channel_tools, "_request_approval") as approval:
+            result = self._call(
+                {
+                    "platform": "zalo",
+                    "thread_type": "group",
+                    "recipient": "Team",
+                    "text": "hi",
+                }
+            )
+
+        self.assertEqual(result["error"]["code"], "channel_recipient_ambiguous")
         approval.assert_not_called()
 
     async def test_platform_that_is_not_enabled_is_refused(self):
@@ -548,7 +748,7 @@ class ChannelToolCallTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(enabled)
                 self.assertNotIn("conv-1", channel_tools._BINDINGS)
 
-    async def test_install_adds_the_tool_only_for_the_bound_run(self):
+    async def test_install_adds_channel_tools_only_for_the_bound_run(self):
         channel_tools._SCHEMA.update(
             {"type": "function", "function": {"name": "send_channel_message"}}
         )
@@ -559,11 +759,99 @@ class ChannelToolCallTests(unittest.IsolatedAsyncioTestCase):
         channel_tools.install_tools(agent, "conv-1")
         channel_tools.install_tools(child, "conv-1")
 
+        names = [tool["function"]["name"] for tool in agent.tools]
+        self.assertEqual(names[0], "send_channel_message")
+        self.assertIn("zalo_me", names)
+        self.assertIn("zalo_react", names)
+        self.assertIn("zalo_react", agent.valid_tool_names)
+        self.assertEqual(child.tools, [])
+
+    async def test_install_skips_zalo_tools_for_a_bot_only_run(self):
+        channel_tools._SCHEMA.update(
+            {"type": "function", "function": {"name": "send_channel_message"}}
+        )
+        self._bind(_FakeService({"status": "ok"}), platforms={"zalo_bot"})
+        agent = SimpleNamespace(tools=[], valid_tool_names=set(), _delegate_depth=0)
+
+        channel_tools.install_tools(agent, "conv-1")
+
         self.assertEqual(
             [tool["function"]["name"] for tool in agent.tools], ["send_channel_message"]
         )
-        self.assertIn("send_channel_message", agent.valid_tool_names)
-        self.assertEqual(child.tools, [])
+        self.assertNotIn("zalo_me", agent.valid_tool_names)
+
+
+class ZaloBridgeClientTests(unittest.TestCase):
+    def test_bridge_token_requires_a_regular_hex_file(self):
+        with tempfile.TemporaryDirectory() as name:
+            directory = Path(name)
+            token = "a" * 64
+            path = directory / "bridge.token"
+            path.write_text(token + "\n", encoding="utf-8")
+            self.assertEqual(zalo_channels.bridge_token(directory), token)
+
+            path.write_text("not-a-token", encoding="utf-8")
+            self.assertIsNone(zalo_channels.bridge_token(directory))
+            self.assertIsNone(zalo_channels.bridge_token(directory / "missing"))
+
+            path.unlink()
+            target = directory / "token-target"
+            target.write_text(token, encoding="utf-8")
+            path.symlink_to(target)
+            self.assertIsNone(zalo_channels.bridge_token(directory))
+
+    def test_bridge_request_sends_the_bearer_token_and_json_body(self):
+        response = mock.MagicMock()
+        response.status = 200
+        response.read.return_value = b'{"success":true}'
+        with mock.patch.object(
+            zalo_channels.urllib.request, "urlopen", return_value=response
+        ) as urlopen:
+            response.__enter__.return_value = response
+            result = zalo_channels._bridge_request(
+                3110,
+                "/send",
+                method="POST",
+                token="b" * 64,
+                body={"chatId": "123", "threadType": "group"},
+            )
+
+        request = urlopen.call_args.args[0]
+        self.assertEqual(request.get_header("Authorization"), "Bearer " + "b" * 64)
+        self.assertEqual(
+            json.loads(request.data),
+            {"chatId": "123", "threadType": "group"},
+        )
+        self.assertTrue(result["ok"])
+
+    def test_bridge_http_errors_map_to_stable_channel_codes(self):
+        cases = [
+            (401, "unauthorized", "channel_bridge_unauthorized"),
+            (404, "not_found", "channel_message_not_found"),
+            (429, "rate_limited", "channel_rate_limited"),
+            (503, "not_connected", "channel_not_connected"),
+            (500, "send_failed", "channel_bridge_failed"),
+        ]
+        for status, error, expected in cases:
+            with self.subTest(status=status):
+
+                def raise_error(*args, **kwargs):
+                    raise urllib.error.HTTPError(
+                        "http://127.0.0.1:3110/me",
+                        status,
+                        error,
+                        {},
+                        io.BytesIO(json.dumps({"error": error}).encode("utf-8")),
+                    )
+
+                with mock.patch.object(
+                    zalo_channels.urllib.request, "urlopen", side_effect=raise_error
+                ):
+                    result = zalo_channels._bridge_request(
+                        3110, "/me", token="c" * 64
+                    )
+                self.assertFalse(result["ok"])
+                self.assertEqual(zalo_channels.bridge_error_code(result), expected)
 
 
 if __name__ == "__main__":

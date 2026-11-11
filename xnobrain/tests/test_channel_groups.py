@@ -550,15 +550,28 @@ class ChannelGroupTurnTests(ChannelGroupFixture):
         result = await self.service.run_internal_turn(_turn_body(), TOKEN)
         self.assertEqual(result["reply"], "group reply")
 
-    async def test_personal_zalo_group_still_runs_without_approval(self):
+    async def test_personal_zalo_group_requires_owner_approval(self):
         config = yaml.safe_load(self.profile.joinpath("config.yaml").read_text())
         config["platforms"]["zalo"]["enabled"] = True
         config["platforms"]["zalo"]["extra"]["dm_policy"] = "pairing"
         self.profile.joinpath("config.yaml").write_text(
             yaml.safe_dump(config), encoding="utf-8"
         )
+        body = _turn_body(platform="zalo", thread_id="123456", sender_id="789")
+
+        with self.assertRaises(ServiceError) as raised:
+            await self.service.run_internal_turn(body, TOKEN)
+        self.assertEqual(raised.exception.code, "channel_group_not_approved")
+
+        await self.service.approve_group("agent-1", "zalo", "123456", self._trusted())
         result = await self.service.run_internal_turn(
-            _turn_body(platform="zalo", thread_id="123456", sender_id="789"), TOKEN
+            _turn_body(
+                platform="zalo",
+                thread_id="123456",
+                sender_id="789",
+                message_id="message-2",
+            ),
+            TOKEN,
         )
         self.assertEqual(result["reply"], "group reply")
 

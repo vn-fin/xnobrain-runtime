@@ -110,7 +110,7 @@ def _source(platform="zalo_bot", chat_type="group", chat_id="group_1"):
     )
 
 
-def _groups_payload(approved=(), pending=(), daily_limit=20):
+def _groups_payload(approved=(), pending=(), daily_limit=20, platform="zalo_bot"):
     groups = {}
     for group_id in pending:
         groups[group_id] = {"status": "pending", "name": "", "last_sender_name": ""}
@@ -118,7 +118,7 @@ def _groups_payload(approved=(), pending=(), daily_limit=20):
         groups[group_id] = {"status": "approved", "name": ""}
     return {
         "schema_version": 1,
-        "platforms": {"zalo_bot": {"daily_limit": daily_limit, "groups": groups}},
+        "platforms": {platform: {"daily_limit": daily_limit, "groups": groups}},
     }
 
 
@@ -222,11 +222,71 @@ class GatewayGroupApprovalTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(call["json"]["group_name"], "Test group")
         self.assertEqual(call["json"]["sender_name"], "Nam")
 
-    async def test_non_group_and_personal_zalo_sources_use_the_original(self):
+    async def test_personal_zalo_group_is_authorized_by_approval(self):
+        runner_class = self.install_auth()
+        runner = runner_class()
+        self.write_groups(_groups_payload(approved=["123456"], platform="zalo"))
+
+        self.assertTrue(
+            runner._is_user_authorized(_source(platform="zalo", chat_id="123456"))
+        )
+        self.assertEqual(runner_class.original_calls, [])
+
+    async def test_personal_zalo_unapproved_group_reports_the_chat_name(self):
+        runner_class = self.install_auth()
+        runner = runner_class()
+
+        def unexpected_lookup(source):
+            raise AssertionError("personal Zalo has no bot group manager")
+
+        runner._adapter_for_source = unexpected_lookup
+        self.write_groups(_groups_payload(pending=["123456"], platform="zalo"))
+        source = _source(platform="zalo", chat_id="123456")
+        source.chat_name = "Personal Group"
+        factory = _ClientFactory()
+        with mock.patch("httpx.AsyncClient", factory):
+            self.assertFalse(runner._is_user_authorized(source))
+            await asyncio.sleep(0.05)
+
+        self.assertEqual(len(factory.calls), 1)
+        payload = factory.calls[0]["json"]
+        self.assertEqual(payload["platform"], "zalo")
+        self.assertEqual(payload["group_id"], "123456")
+        self.assertEqual(payload["group_name"], "Personal Group")
+
+    async def test_group_approval_is_isolated_per_platform(self):
+        runner_class = self.install_auth()
+        runner = runner_class()
+        self.write_groups(
+            {
+                "schema_version": 1,
+                "platforms": {
+                    "zalo_bot": {
+                        "daily_limit": 20,
+                        "groups": {
+                            "123456": {"status": "approved", "name": ""},
+                        },
+                    },
+                    "zalo": {"daily_limit": 20, "groups": {}},
+                },
+            }
+        )
+        runner._adapter_for_source = lambda source: _RunnerWithGroupInfo()
+
+        self.assertTrue(
+            runner._is_user_authorized(_source(platform="zalo_bot", chat_id="123456"))
+        )
+        with mock.patch("httpx.AsyncClient", _ClientFactory()):
+            self.assertFalse(
+                runner._is_user_authorized(_source(platform="zalo", chat_id="123456"))
+            )
+            await asyncio.sleep(0.05)
+
+    async def test_direct_and_other_platform_sources_use_the_original(self):
         runner_class = self.install_auth()
         runner = runner_class()
         for source in (
-            _source(platform="zalo", chat_type="group"),
+            _source(platform="zalo", chat_type="dm"),
             _source(platform="zalo_bot", chat_type="dm"),
             _source(platform="telegram", chat_type="group"),
         ):
@@ -491,7 +551,7 @@ class GatewayGroupDelegationTests(unittest.IsolatedAsyncioTestCase):
             message="",
             context_prompt="",
             history=[],
-            source=_source(platform="zalo"),
+            source=_source(platform="zalo", chat_type="dm"),
             session_id="session-1",
             event_message_id="message-1",
         )

@@ -53,8 +53,10 @@ PAIRING_LIMIT_REPLY = (
 # Pinned upstream home-channel setup notice (gateway/run.py) starts with this.
 HOME_CHANNEL_NOTICE_PREFIX = "📬 No home channel is set for"
 
-# Zalo Bot group traffic is owner-approved per group and never falls back to
-# the native gateway agent. DM-only slash commands are stripped by the adapter.
+# Zalo personal and Zalo Bot group traffic is owner-approved per group and
+# never falls back to the native gateway agent. DM-only slash commands are
+# stripped by the adapter.
+_GROUP_PLATFORMS = {"zalo", "zalo_bot"}
 _GROUP_CHAT_TYPES = {"group", "forum", "channel", "thread"}
 _GROUP_LIMIT_TEXT = (
     "Bạn đã dùng hết {limit} lượt hỏi bot hôm nay trong nhóm này. "
@@ -74,9 +76,9 @@ _SILENT_REPLY = "NO_REPLY"
 _GROUP_CACHE_LOCK = threading.RLock()
 _GROUP_APPROVED_CACHE: dict[str, tuple[int, int, frozenset[str], int]] = {}
 _GROUP_SEEN_LOCK = threading.RLock()
-_GROUP_SEEN_STATE: dict[tuple[str, str], float] = {}
+_GROUP_SEEN_STATE: dict[tuple[str, str, str], float] = {}
 _GROUP_LIMIT_NOTICE_LOCK = threading.RLock()
-_GROUP_LIMIT_NOTICE_STATE: dict[tuple[str, str, str], float] = {}
+_GROUP_LIMIT_NOTICE_STATE: dict[tuple[str, str, str, str], float] = {}
 # Repeat the limit notice on every call, but at most once per sender per window
 # so a burst of mentions cannot make the bot flood the group.
 _GROUP_LIMIT_NOTICE_SECONDS = 30.0
@@ -223,12 +225,13 @@ def install_gateway_operator_notice_filter() -> None:
 
 
 def install_gateway_group_approval() -> None:
-    """Authorize Zalo Bot groups by owner approval instead of DM pairing.
+    """Authorize Zalo groups by owner approval instead of DM pairing.
 
-    Group-level approval is always required: a DM-paired sender still cannot
-    chat in an unapproved group. Unapproved mentions are reported to Runtime
-    for owner approval, at most once per profile/group per interval, without
-    blocking or changing the message flow.
+    Covers personal ``zalo`` and ``zalo_bot``. Group-level approval is always
+    required: a DM-paired sender still cannot chat in an unapproved group.
+    Unapproved mentions are reported to Runtime for owner approval, at most
+    once per profile/platform/group per interval, without blocking or changing
+    the message flow.
     """
     try:
         from gateway.run import GatewayRunner
@@ -245,8 +248,11 @@ def install_gateway_group_approval() -> None:
     def is_user_authorized(runner, source, *args, **kwargs):
         if _is_group_source(source):
             profile_home = _profile_home_for(runner, source)
+            platform = _source_platform(source)
             group_id = str(getattr(source, "chat_id", "") or "")
-            if profile_home is not None and _group_is_approved(profile_home, group_id):
+            if profile_home is not None and _group_is_approved(
+                profile_home, platform, group_id
+            ):
                 return True
             if profile_home is not None and group_id:
                 _report_group_seen(runner, source, profile_home, group_id)
@@ -419,11 +425,12 @@ def _group_limit(value) -> int:
     return limit
 
 
-def _read_group_state(profile_home: Path) -> tuple[frozenset[str], int]:
-    """Return (approved group IDs, daily limit) with an mtime-keyed cache.
+def _read_group_state(profile_home: Path, platform: str) -> tuple[frozenset[str], int]:
+    """Return (approved group IDs, daily limit) for one platform.
 
-    Any read or parse failure fails closed: no group is approved and the
-    default limit is used.
+    The cache is keyed by file path and platform, so a ``zalo_bot`` entry never
+    authorizes the same ID on ``zalo``. Any read or parse failure fails closed:
+    no group is approved and the default limit is used.
     """
     path = _group_state_path(profile_home)
     try:
@@ -434,7 +441,7 @@ def _read_group_state(profile_home: Path) -> tuple[frozenset[str], int]:
         return frozenset(), _GROUP_DEFAULT_LIMIT
     except OSError:
         return frozenset(), _GROUP_DEFAULT_LIMIT
-    key = str(path)
+    key = f"{path}\0{platform}"
     stamp = (int(stat.st_mtime_ns), int(stat.st_size))
     with _GROUP_CACHE_LOCK:
         cached = _GROUP_APPROVED_CACHE.get(key)
@@ -446,7 +453,7 @@ def _read_group_state(profile_home: Path) -> tuple[frozenset[str], int]:
         with path.open("r", encoding="utf-8") as file:
             value = json.load(file)
         platforms = value.get("platforms") if isinstance(value, dict) else None
-        record = platforms.get("zalo_bot") if isinstance(platforms, dict) else None
+        record = platforms.get(platform) if isinstance(platforms, dict) else None
         if isinstance(record, dict):
             limit = _group_limit(record.get("daily_limit"))
             groups = record.get("groups")
@@ -463,10 +470,10 @@ def _read_group_state(profile_home: Path) -> tuple[frozenset[str], int]:
     return approved, limit
 
 
-def _group_is_approved(profile_home: Path, group_id: str) -> bool:
+def _group_is_approved(profile_home: Path, platform: str, group_id: str) -> bool:
     if not group_id:
         return False
-    approved, _ = _read_group_state(profile_home)
+    approved, _ = _read_group_state(profile_home, platform)
     return group_id in approved
 
 
@@ -474,9 +481,15 @@ def _source_chat_type(source) -> str:
     return str(getattr(source, "chat_type", "") or "").strip().lower()
 
 
+def _source_platform(source) -> str:
+    return str(getattr(getattr(source, "platform", None), "value", "") or "").strip().lower()
+
+
 def _is_group_source(source) -> bool:
-    platform = str(getattr(getattr(source, "platform", None), "value", "") or "")
-    return platform == "zalo_bot" and _source_chat_type(source) in _GROUP_CHAT_TYPES
+    return (
+        _source_platform(source) in _GROUP_PLATFORMS
+        and _source_chat_type(source) in _GROUP_CHAT_TYPES
+    )
 
 
 def _response_error_code(envelope) -> str:
@@ -494,25 +507,31 @@ async def _post_group_seen(runner, source, profile_home: Path, group_id: str) ->
         token = os.environ.get("RUNTIME_INTERNAL_SERVICE_TOKEN", "").strip()
         if not token:
             return
+        platform = _source_platform(source)
         group_name = ""
-        try:
-            adapter = runner._adapter_for_source(source)
-            manager = getattr(adapter, "_group_manager", None)
-            info = getattr(manager, "get_group_info", None)
-            if callable(info):
-                receipt = await asyncio.wait_for(
-                    info(group_id), timeout=_GROUP_RECEIPT_TIMEOUT_SECONDS
-                )
-                if isinstance(receipt, dict):
-                    result = receipt.get("result")
-                    if isinstance(result, dict):
-                        group_name = str(result.get("name") or "")
-                    if not group_name:
-                        group_name = str(receipt.get("name") or "")
-        except Exception:
-            group_name = ""
+        if platform == "zalo":
+            # Personal Zalo has no group manager lookup on the gateway side;
+            # the inbound source already carries the group title.
+            group_name = str(getattr(source, "chat_name", "") or "")
+        else:
+            try:
+                adapter = runner._adapter_for_source(source)
+                manager = getattr(adapter, "_group_manager", None)
+                info = getattr(manager, "get_group_info", None)
+                if callable(info):
+                    receipt = await asyncio.wait_for(
+                        info(group_id), timeout=_GROUP_RECEIPT_TIMEOUT_SECONDS
+                    )
+                    if isinstance(receipt, dict):
+                        result = receipt.get("result")
+                        if isinstance(result, dict):
+                            group_name = str(result.get("name") or "")
+                        if not group_name:
+                            group_name = str(receipt.get("name") or "")
+            except Exception:
+                group_name = ""
         payload = {
-            "platform": "zalo_bot",
+            "platform": platform,
             "agent_id": Path(profile_home).name,
             "group_id": group_id,
         }
@@ -539,12 +558,12 @@ async def _post_group_seen(runner, source, profile_home: Path, group_id: str) ->
 
 
 def _report_group_seen(runner, source, profile_home: Path, group_id: str) -> None:
-    """Schedule at most one group-seen report per profile/group per interval."""
+    """Schedule at most one group-seen report per profile/platform/group."""
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
         return
-    key = (str(profile_home), group_id)
+    key = (str(profile_home), _source_platform(source), group_id)
     now = time.monotonic()
     with _GROUP_SEEN_LOCK:
         previous = _GROUP_SEEN_STATE.get(key)
@@ -554,9 +573,11 @@ def _report_group_seen(runner, source, profile_home: Path, group_id: str) -> Non
     loop.create_task(_post_group_seen(runner, source, profile_home, group_id))
 
 
-def _group_limit_notice(profile_home: Path, group_id: str, sender_id: str) -> str:
+def _group_limit_notice(
+    profile_home: Path, platform: str, group_id: str, sender_id: str
+) -> str:
     """Return the bilingual limit notice, at most once per sender per window."""
-    key = (str(profile_home), group_id, sender_id)
+    key = (str(profile_home), platform, group_id, sender_id)
     now = time.monotonic()
     with _GROUP_LIMIT_NOTICE_LOCK:
         for existing, sent in list(_GROUP_LIMIT_NOTICE_STATE.items()):
@@ -565,7 +586,7 @@ def _group_limit_notice(profile_home: Path, group_id: str, sender_id: str) -> st
         if key in _GROUP_LIMIT_NOTICE_STATE:
             return ""
         _GROUP_LIMIT_NOTICE_STATE[key] = now
-    _, limit = _read_group_state(profile_home)
+    _, limit = _read_group_state(profile_home, platform)
     return _GROUP_LIMIT_TEXT.format(limit=limit or _GROUP_DEFAULT_LIMIT)
 
 
@@ -775,6 +796,7 @@ def install_runtime_channel_delegation() -> None:
                 notice = (
                     _group_limit_notice(
                         profile_home,
+                        platform,
                         str(getattr(source, "chat_id", "") or ""),
                         str(getattr(source, "user_id", "") or getattr(source, "chat_id", "") or ""),
                     )
