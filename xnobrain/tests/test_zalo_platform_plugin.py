@@ -580,10 +580,38 @@ class ZaloAdapterPluginTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(fake.calls[-1]["json"]["threadType"], "group")
 
-    async def test_seen_is_posted_after_the_event(self):
+    async def test_auto_reply_is_off_by_default(self):
         session = self._session_dir()
         (session / "bridge.token").write_text("token-1", encoding="utf-8")
         adapter = self._build_adapter(session, bridge_port=3216)
+        fake = _FakeHTTP(payload={"success": True})
+        adapter._running = True
+        adapter._http_session = fake
+
+        with mock.patch.dict(sys.modules, {"aiohttp": _fake_aiohttp(fake)}):
+            await adapter._route_messages(
+                [
+                    {
+                        "messageId": "m1",
+                        "threadId": "555",
+                        "threadType": "group",
+                        "senderId": "9",
+                        "senderName": "Nam",
+                        "text": "hi",
+                        "mentionsSelf": True,
+                    }
+                ]
+            )
+
+        self.assertEqual(adapter.handled, [])
+        self.assertEqual(fake.calls, [])
+        # The thread kind is still remembered for approved tool sends.
+        self.assertEqual(adapter._thread_type_for("555"), "group")
+
+    async def test_seen_is_posted_after_the_event(self):
+        session = self._session_dir()
+        (session / "bridge.token").write_text("token-1", encoding="utf-8")
+        adapter = self._build_adapter(session, bridge_port=3216, auto_reply=True)
         fake = _FakeHTTP(payload={"success": True})
         adapter._running = True
         adapter._http_session = fake

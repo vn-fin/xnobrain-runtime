@@ -6,9 +6,11 @@ zca-js) owns the Zalo Web session and exposes a loopback-only HTTP API. The
 Python adapter spawns the bridge, polls ``GET /messages`` for inbound messages,
 and sends replies through ``POST /send``.
 
-Scope: direct (1:1) messages and owner-approved groups. Group messages are
-mention-gated by default and skipped mentions are replayed with the next
-addressed message. Inbound media is announced as a text note; the adapter never
+Auto-reply is off by default (``extra.auto_reply``): inbound messages start no
+agent turn, so the personal account only acts through owner-approved tools.
+When it is on, the scope is direct (1:1) messages and owner-approved groups;
+group messages are mention-gated by default and skipped mentions are replayed
+with the next addressed message. Inbound media is announced as a text note; the adapter never
 downloads it. Every bridge request except ``GET /health`` carries the bearer
 token the bridge writes to ``<session dir>/bridge.token``.
 """
@@ -1033,6 +1035,14 @@ class ZaloAdapter(BasePlatformAdapter):
             link = links.get(thread_id)
             if link is not None:
                 await self._deliver_linked(data, link)
+                continue
+            if not self._extra_flag("auto_reply", False):
+                # Personal accounts do not answer on their own by default: no
+                # agent turn, no seen receipt. Remember the thread kind so
+                # owner-approved tool sends still reach groups.
+                self._remember_thread(
+                    thread_id, _thread_type_value(data.get("threadType"))
+                )
                 continue
             event = self._build_message_event(data)
             if event:

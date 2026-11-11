@@ -901,6 +901,12 @@ cannot list friends or groups (`channel_thread_out_of_scope`). Images must be
 JPEG, PNG, GIF, or WebP, stay inside the agent workspace, and respect the
 profile's `platforms.zalo.extra.media_max_mb` cap (default `10`).
 
+Personal `zalo` does not answer inbound messages on its own unless
+`platforms.zalo.extra.auto_reply` is `true` (default `false`). While it is off,
+inbound DMs and group messages start no agent turn and send no seen receipt;
+linked threads still append to their conversation, and the tools above still
+work after approval.
+
 ### Private gateway turns
 
 `POST /xnobrain/api/runtime/v1/internal/channels/turn` runs one
