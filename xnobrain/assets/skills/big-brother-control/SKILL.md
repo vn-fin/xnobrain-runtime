@@ -114,7 +114,11 @@ Use the complete XNOBrain CLI when required, including:
 - `agent mcp`, `plugins`, `hooks`, and `tools` for integrations.
 
 To add or sign in to an MCP server or plugin MCP, call
-`xnobrain_integration_connect` so the chat shows a connect card. For Zalo
+`xnobrain_integration_connect` so the chat shows a connect card. Try
+`kind="catalog_mcp"` with the lowercase app name as `catalog_id` first; the
+XNOBrain catalog is separate from the Hermes plugin index, so a miss in
+`hermes plugins search` means nothing. On `catalog_unknown`, retry with a
+returned candidate, and use `kind="custom_mcp"` only when none fits. For Zalo
 Personal or Zalo Bot, call the same tool with `kind="channel"` and
 `platform="zalo"` or `platform="zalo_bot"`; the server derives the QR/token
 step and display name. Never ask the user to paste API keys, tokens, QR
