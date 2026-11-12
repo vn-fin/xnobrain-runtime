@@ -880,32 +880,36 @@ registered in the `xnobrain_channels` toolset, gated by
 `FT_ENABLE_AGENT_CHANNELS`, and installed only for a run whose profile enables
 the platform.
 
-| Tool | Action | Approval |
+| Tool | Action | Confirmation |
 |---|---|---|
-| `send_channel_message` | text to `zalo` (DM or approved group) or `zalo_bot` | every send |
+| `send_channel_message` | text to `zalo` (DM or approved group) or `zalo_bot` | in chat, before every send |
 | `zalo_status`, `zalo_me` | bridge status / own profile | none |
 | `zalo_list_friends`, `zalo_list_groups` | friend and group listings | none |
-| `zalo_send_image` | image from `<profile>/workspace` | every send |
-| `zalo_send_link` | http/https link | every send |
-| `zalo_react` | reaction on a recent inbound message | every reaction |
+| `zalo_send_image` | image from `<profile>/workspace` | in chat, before every send |
+| `zalo_send_link` | http/https link | in chat, before every send |
+| `zalo_react` | reaction on a recent inbound message | in chat, before every reaction |
+
+No Zalo or Zalo Bot tool uses the approval card. The agent must show the user
+the recipient (or group) and the exact payload (or new values) and wait for
+explicit confirmation in chat before calling a send or group-settings tool;
+every group must still be approved first. `zalo_bot_group_settings` may change
+only the run's own group in a channel-originated run.
 
 Personal `zalo` group sends and reactions accept an exact approved group id or
 an exact approved group name; unapproved groups return
 `channel_group_not_approved` and duplicate names return
-`channel_recipient_ambiguous`. `send_channel_message` uses the
-`zalo.send_group_message` approval pattern for personal groups and
-`zalo.send_message` for DMs; the other send tools use `zalo.send_image`,
-`zalo.send_link`, and `zalo.react`. Friends, groups, and their names are
-returned as untrusted external data. A run started from a channel thread
-cannot list friends or groups (`channel_thread_out_of_scope`). Images must be
-JPEG, PNG, GIF, or WebP, stay inside the agent workspace, and respect the
-profile's `platforms.zalo.extra.media_max_mb` cap (default `10`).
+`channel_recipient_ambiguous`. Friends, groups, and their names are returned as
+untrusted external data. A run started from a channel thread cannot list
+friends or groups, and a send may target only the run's own thread
+(`channel_thread_out_of_scope`); web runs may send to any allowed recipient.
+Images must be JPEG, PNG, GIF, or WebP, stay inside the agent workspace, and
+respect the profile's `platforms.zalo.extra.media_max_mb` cap (default `10`).
 
 Personal `zalo` does not answer inbound messages on its own unless
 `platforms.zalo.extra.auto_reply` is `true` (default `false`). While it is off,
 inbound DMs and group messages start no agent turn and send no seen receipt;
 linked threads still append to their conversation, and the tools above still
-work after approval.
+work.
 
 ### Private gateway turns
 

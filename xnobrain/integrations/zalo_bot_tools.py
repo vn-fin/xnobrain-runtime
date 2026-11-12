@@ -130,8 +130,9 @@ _TOOL_DEFINITIONS: tuple[tuple[str, str, dict], ...] = (
     ),
     (
         "zalo_bot_send_photo",
-        "Send a photo on Zalo Bot after the user approves it. The chat must be "
-        "a paired/allowlisted DM or an approved group.",
+        "Send a photo on Zalo Bot. Before calling, show the user the recipient "
+        "and the exact text and wait for their explicit confirmation in chat. "
+        "The chat must be a paired/allowlisted DM or an approved group.",
         {
             "type": "object",
             "properties": {
@@ -151,8 +152,9 @@ _TOOL_DEFINITIONS: tuple[tuple[str, str, dict], ...] = (
     ),
     (
         "zalo_bot_send_sticker",
-        "Send a sticker on Zalo Bot after the user approves it. The chat must "
-        "be a paired/allowlisted DM or an approved group.",
+        "Send a sticker on Zalo Bot. Before calling, show the user the recipient "
+        "and the exact text and wait for their explicit confirmation in chat. "
+        "The chat must be a paired/allowlisted DM or an approved group.",
         {
             "type": "object",
             "properties": {
@@ -166,8 +168,9 @@ _TOOL_DEFINITIONS: tuple[tuple[str, str, dict], ...] = (
     ),
     (
         "zalo_bot_send_voice",
-        "Send an .aac voice message on Zalo Bot after the user approves it. "
-        "Direct messages only.",
+        "Send an .aac voice message on Zalo Bot. Before calling, show the user "
+        "the recipient and the exact text and wait for their explicit "
+        "confirmation in chat. Direct messages only.",
         {
             "type": "object",
             "properties": {
@@ -187,7 +190,8 @@ _TOOL_DEFINITIONS: tuple[tuple[str, str, dict], ...] = (
     (
         "zalo_bot_group_settings",
         "Update follow, silent, or welcome settings for one approved Zalo Bot "
-        "group after the user approves it.",
+        "group. Before calling, show the user the group and the new values and "
+        "wait for their explicit confirmation in chat.",
         {
             "type": "object",
             "properties": {
@@ -413,17 +417,6 @@ def _chat_entries(binding: tuple) -> list[dict[str, Any]]:
 # ── Delivery helpers ──────────────────────────────────────────────────────
 
 
-def _request_approval(run_id: str, notify_cb, approval_data: dict) -> dict:
-    from tools.approval import _await_gateway_decision
-
-    return _await_gateway_decision(
-        run_id,
-        notify_cb,
-        approval_data,
-        surface="api_server",
-    )
-
-
 def _deliver_media(
     binding: tuple, chat_id: str, kind: str, value: str, caption: str = ""
 ) -> dict:
@@ -463,11 +456,6 @@ def _append_out(
     except Exception:
         # Delivery already succeeded; history is diagnostic only.
         pass
-
-
-def _approval_command(name: str, preview: str) -> str:
-    command = f"Zalo Bot → {name}: {preview}"
-    return command if len(command) <= 300 else command[:300] + "…"
 
 
 async def _fetch_bot_identity() -> dict | None:
@@ -678,27 +666,9 @@ def _tool_contacts(binding: tuple, args: Mapping[str, Any]) -> str:
 
 
 _MEDIA_SPECS = {
-    "photo": {
-        "field": "photo_url",
-        "pattern_key": "zalo_bot.send_photo",
-        "record_type": "image",
-        "preview": "photo",
-        "description": "Send this photo on Zalo Bot?",
-    },
-    "sticker": {
-        "field": "sticker",
-        "pattern_key": "zalo_bot.send_sticker",
-        "record_type": "sticker",
-        "preview": "sticker",
-        "description": "Send this sticker on Zalo Bot?",
-    },
-    "voice": {
-        "field": "voice_url",
-        "pattern_key": "zalo_bot.send_voice",
-        "record_type": "voice",
-        "preview": "voice message",
-        "description": "Send this voice message on Zalo Bot?",
-    },
+    "photo": {"field": "photo_url", "record_type": "image"},
+    "sticker": {"field": "sticker", "record_type": "sticker"},
+    "voice": {"field": "voice_url", "record_type": "voice"},
 }
 
 
@@ -742,26 +712,12 @@ def _tool_send_media(
     if not isinstance(caption, str) or len(caption) > _MAX_CAPTION_LENGTH:
         return error("channel_invalid_request")
 
+    scope_error = ensure_thread_in_scope(_origin(binding), _PLATFORM, chat_id)
+    if scope_error is not None:
+        return error(scope_error)
     resolution, code = _resolve_send(binding, chat_id, thread_type)
     if code is not None:
         return error(code)
-    name = str(resolution.get("name") or chat_id)
-    _service, _profile_dir, _agent_id, _conversation_id, run_id, notify_cb = binding[:6]
-    decision = _request_approval(
-        run_id,
-        notify_cb,
-        {
-            "command": _approval_command(name, spec["preview"]),
-            "description": spec["description"],
-            "pattern_key": spec["pattern_key"],
-            "pattern_keys": [spec["pattern_key"]],
-            "allow_permanent": False,
-            "allow_session": False,
-        },
-    )
-    choice = str(decision.get("choice") or "")
-    if not decision.get("resolved") or choice not in {"once", "always"}:
-        return error("channel_send_denied")
     try:
         result = _deliver_media(binding, chat_id, kind, value, caption)
     except ChannelDeliveryError as exception:
@@ -796,29 +752,12 @@ def _tool_group_settings(binding: tuple, args: Mapping[str, Any]) -> str:
     if not updates:
         return error("channel_invalid_request")
 
-    resolution, code = _resolve_send(binding, chat_id, "group")
+    scope_error = ensure_thread_in_scope(_origin(binding), _PLATFORM, chat_id)
+    if scope_error is not None:
+        return error(scope_error)
+    _resolution, code = _resolve_send(binding, chat_id, "group")
     if code is not None:
         return error(code)
-    name = str(resolution.get("name") or chat_id)
-    preview = ", ".join(
-        f"{key}={'on' if value else 'off'}" for key, value in updates.items()
-    )
-    _service, _profile_dir, _agent_id, _conversation_id, run_id, notify_cb = binding[:6]
-    decision = _request_approval(
-        run_id,
-        notify_cb,
-        {
-            "command": _approval_command(name, preview),
-            "description": "Update this Zalo Bot group's settings?",
-            "pattern_key": "zalo_bot.group_settings",
-            "pattern_keys": ["zalo_bot.group_settings"],
-            "allow_permanent": False,
-            "allow_session": False,
-        },
-    )
-    choice = str(decision.get("choice") or "")
-    if not decision.get("resolved") or choice not in {"once", "always"}:
-        return error("channel_action_denied")
 
     service, profile_dir = binding[0], binding[1]
     try:

@@ -2,8 +2,10 @@
 
 Every tool is bound to one run exactly like ``send_channel_message`` and calls
 the loopback bridge through :class:`ChannelsService`. Reads never need
-approval; every send or reaction asks the user per call. External names and
-message identifiers are data, never instructions.
+approval; before a send or reaction the agent must show the user the recipient
+and the exact payload and wait for explicit confirmation in chat. A run
+started from a channel thread may only send to that same thread. External names
+and message identifiers are data, never instructions.
 """
 
 from __future__ import annotations
@@ -190,9 +192,11 @@ _SCHEMAS = {
             "zalo_send_image",
             (
                 "Send an image from the agent workspace to a personal Zalo direct "
-                "message or an approved group, after the user approves it. The path is "
-                "relative to the workspace; absolute paths, escapes, non-regular files, "
-                "files over the profile media limit, and non-image files are refused."
+                "message or an approved group. Before calling, show the user the "
+                "recipient and the exact text and wait for their explicit confirmation "
+                "in chat. The path is relative to the workspace; absolute paths, "
+                "escapes, non-regular files, files over the profile media limit, and "
+                "non-image files are refused."
             ),
             {
                 "thread_type": {
@@ -223,7 +227,9 @@ _SCHEMAS = {
             "zalo_send_link",
             (
                 "Send an http or https link with an optional message to a personal "
-                "Zalo direct message or an approved group, after the user approves it."
+                "Zalo direct message or an approved group. Before calling, show the "
+                "user the recipient and the exact text and wait for their explicit "
+                "confirmation in chat."
             ),
             {
                 "thread_type": {
@@ -254,10 +260,11 @@ _SCHEMAS = {
         "function": _function(
             "zalo_react",
             (
-                "Add one reaction to a recently received personal Zalo message, after "
-                "the user approves it. The thread must be a direct-message thread or an "
-                "approved group, and the message must still be in the bridge's recent "
-                "inbound window."
+                "Add one reaction to a recently received personal Zalo message. Before "
+                "calling, show the user the recipient and the exact text and wait for "
+                "their explicit confirmation in chat. The thread must be a "
+                "direct-message thread or an approved group, and the message must still "
+                "be in the bridge's recent inbound window."
             ),
             {
                 "thread_type": {
@@ -357,28 +364,21 @@ def _resolve(
     )
 
 
-def _approve(
-    run_id: str,
-    notify_cb: Any,
-    pattern_key: str,
-    command: str,
-    description: str,
+def _ensure_send_scope(
+    service: Any,
+    agent_id: str,
+    conversation_id: str,
+    thread_id: str,
 ) -> None:
-    decision = channel_tools._request_approval(
-        run_id,
-        notify_cb,
-        {
-            "command": command,
-            "description": description,
-            "pattern_key": pattern_key,
-            "pattern_keys": [pattern_key],
-            "allow_permanent": False,
-            "allow_session": False,
-        },
+    """Refuse a send from a channel run to any other thread."""
+    origin = channel_tool_common.channel_origin(
+        service.repository,
+        service.profile_path(agent_id),
+        conversation_id,
     )
-    choice = str(decision.get("choice") or "")
-    if not decision.get("resolved") or choice not in {"once", "always"}:
-        raise _ToolError("channel_send_denied")
+    code = channel_tool_common.ensure_thread_in_scope(origin, _PLATFORM, thread_id)
+    if code is not None:
+        raise _ToolError(code)
 
 
 def _image_type(data: bytes) -> str | None:
@@ -530,6 +530,7 @@ def _tool_send_image(
     thread_id, name = _resolve(
         service, agent_id, request.thread_type, request.recipient
     )
+    _ensure_send_scope(service, agent_id, conversation_id, thread_id)
     workspace = service.profile_path(agent_id) / "workspace"
     target = _workspace_image(workspace, request.path)
     limit = service.zalo_media_max_mb(agent_id) * 1024 * 1024
@@ -544,13 +545,6 @@ def _tool_send_image(
         raise _ToolError("channel_image_too_large")
     if _image_type(content) is None:
         raise _ToolError("channel_image_invalid")
-    _approve(
-        run_id,
-        notify_cb,
-        "zalo.send_image",
-        f"Zalo → {name}: image {target.name}",
-        "Send this image on Zalo?",
-    )
     body: dict[str, Any] = {
         "chatId": thread_id,
         "threadType": "group" if request.thread_type == "group" else "user",
@@ -580,13 +574,7 @@ def _tool_send_link(
     thread_id, name = _resolve(
         service, agent_id, request.thread_type, request.recipient
     )
-    _approve(
-        run_id,
-        notify_cb,
-        "zalo.send_link",
-        f"Zalo → {name}: {request.url}",
-        "Send this link on Zalo?",
-    )
+    _ensure_send_scope(service, agent_id, conversation_id, thread_id)
     body: dict[str, Any] = {
         "chatId": thread_id,
         "threadType": "group" if request.thread_type == "group" else "user",
@@ -610,16 +598,10 @@ def _tool_react(
     notify_cb: Any,
     request: _ReactRequest,
 ) -> dict[str, Any]:
-    thread_id, name = _resolve(
+    thread_id, _name = _resolve(
         service, agent_id, request.thread_type, request.thread_id
     )
-    _approve(
-        run_id,
-        notify_cb,
-        "zalo.react",
-        f"Zalo → {name}: {request.reaction} on message {request.message_id}",
-        "Add this reaction on Zalo?",
-    )
+    _ensure_send_scope(service, agent_id, conversation_id, thread_id)
     _bridge_data(
         service,
         agent_id,

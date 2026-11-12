@@ -21,7 +21,7 @@ Three tracks:
 
 | Fact | Where |
 |---|---|
-| Agent tools for Zalo: `xnobrain_integration_connect`, `send_channel_message` (platform `zalo` only, DM, text ≤ 2000, approval per send) | `xnobrain/integrations/channel_tools.py`, `integration_connect_tools.py` |
+| Agent tools for Zalo: `xnobrain_integration_connect`, `send_channel_message` (platform `zalo` only, DM, text ≤ 2000, confirmation in chat per send) | `xnobrain/integrations/channel_tools.py`, `integration_connect_tools.py` |
 | Personal bridge handles DMs only; group messages are dropped | `runtime/hermes-plugins/platforms/zalo/bridge/bridge.js` (header, `ThreadType.User` checks) |
 | Bridge endpoints: `/health`, `/login`, `/messages`, `/send`; inbound history `history.jsonl`, 30-day retention | `bridge.js`, `bridge/lib.js` |
 | Runtime reaches the bridge on `127.0.0.1` (gateway shares the Runtime network namespace) | `docker-compose.dev.yaml` `runtime-gateway.network_mode`, `zalo_channels.bridge_health` |
@@ -69,14 +69,19 @@ no history-reading tool.
 | Class | Examples | Web run | Channel-originated run |
 |---|---|---|---|
 | Read | list chats, read history, group info | no approval | **current thread only** |
-| Send / react | send text, image, link, react | approve every call | denied (019 auto-deny) |
-| Group utility | poll, note, reminder, pin | approve every call | denied |
-| Admin | add/remove member, roles, settings | approve every call, warning text | denied |
+| Send / react | send text, image, link, react | no approval card; the agent confirms the recipient and exact payload in chat | **current thread only** |
+| Group utility | poll, note, reminder, pin | no approval card; in-chat confirmation | denied |
+| Admin | add/remove member, roles, settings | no approval card; in-chat confirmation, warning text | denied |
 | Never exposed | delete chat, disperse group, bank, profile, cookies | — | — |
+
+No Zalo or Zalo Bot tool shows an approval card: before calling a send or
+group-settings tool the agent shows the user the recipient (or group) and the
+exact payload (or new values) and waits for explicit confirmation in chat;
+every group must still be approved first.
 
 The channel-turn restriction matters: every channel turn runs with the
 owner's authority (019), so without it any paired Zalo user could ask the bot
-to read another chat's history.
+to read another chat's history or send into another chat.
 
 ### D4 — External content is data
 
@@ -133,8 +138,8 @@ Tools:
 
 Done when: an approved group can talk to the agent with mention gating; the
 agent can list friends and groups and send text, image and link to a DM or an
-approved group after approval; unit tests and bridge tests cover each
-endpoint.
+approved group after the user confirms in chat, within the current thread for
+channel runs; unit tests and bridge tests cover each endpoint.
 
 ## Track P-B — Personal, full toolset
 
@@ -191,7 +196,7 @@ group is its own PR.
 Done when: the agent can summarize the last N messages of an approved group
 (including messages from before the bridge connected, as far as
 `getGroupChatHistory` reaches) and every tool above has a schema test, a
-bridge validation test and an approval test.
+bridge validation test and a send-scope or approval test as applicable.
 
 ## Track B — Zalo Bot
 
@@ -229,22 +234,23 @@ IPC.
 
 ### B2 — Tools
 
-| Tool | Source | Approval |
+| Tool | Source | Confirmation |
 |---|---|---|
 | `zalo_bot_status` | `getMe`, `getWebhookInfo` | no |
 | `zalo_bot_list_chats` | stored history index + approved groups | no |
 | `zalo_bot_read_history` | stored history, `since` / `limit` | no |
 | `zalo_bot_search_messages` | stored history | no |
 | `zalo_bot_contacts` | `_CRMContacts` data | no |
-| `send_channel_message` (+ `platform: zalo_bot`) | `standalone_sender_fn` → `sendMessage` | every call |
-| `zalo_bot_send_photo` | `sendPhoto` | every call |
-| `zalo_bot_send_sticker` | `sendSticker` | every call |
-| `zalo_bot_send_voice` (DM only) | `sendVoice` | every call |
-| `zalo_bot_warn_user` | adapter warn store | every call |
-| `zalo_bot_group_settings` (follow, silent, welcome) | adapter group settings | every call |
+| `send_channel_message` (+ `platform: zalo_bot`) | `standalone_sender_fn` → `sendMessage` | in chat |
+| `zalo_bot_send_photo` | `sendPhoto` | in chat |
+| `zalo_bot_send_sticker` | `sendSticker` | in chat |
+| `zalo_bot_send_voice` (DM only) | `sendVoice` | in chat |
+| `zalo_bot_warn_user` | adapter warn store | in chat |
+| `zalo_bot_group_settings` (follow, silent, welcome) | adapter group settings | in chat |
 
-Sends go only to chat IDs that appear in the store or the approved group list.
-D3 and D4 apply unchanged.
+Sends go only to chat IDs that appear in the store or the approved group list;
+in a channel-originated run they may target only that run's own thread, and
+group settings may change only that run's own group. D3 and D4 apply unchanged.
 
 ### B3 — Verify the undocumented group endpoints
 
@@ -297,8 +303,8 @@ Run inside the Runtime dev container:
 
 ## Security fixes from the live test (2026-11-11)
 
-The Zalo Bot live test with Big Brother found two holes. Both must be closed
-before more tools ship.
+The Zalo Bot live test with Big Brother found two holes. F1 must be closed
+before more tools ship; F2 was dropped by product decision.
 
 ### Findings
 
@@ -329,15 +335,18 @@ before more tools ship.
   bridge token or other sessions. Tests assert that the run body carries the
   allowlist for group and DM turns, and that a channel run's tool list
   excludes `session_search`, `terminal` and MCP tools.
-- **F2: `agent send` refuses inside agent runs (S1, web runs).** In the CLI
-  entry, when `HERMES_AGENT=true` (set on every terminal subprocess) and the
-  command is `send` to a channel platform, exit non-zero with "use
-  send_channel_message, which asks the owner first". Cron and kanban
-  delivery call the Python transport directly and are not affected. Add an
-  `approvals.deny` entry for `agent send*` and `hermes send*` as a second
-  layer. Limit: a web run that keeps terminal access can still reach the
-  transport another way (for example `python -c`); F2 closes the documented
-  and learned path, and the owner is present in web runs.
+- **F2: dropped by product decision (S1, web runs).** Sends via `agent send`
+  are allowed, and the confirmation requirement moves to the skill: the agent
+  shows the user the recipient and the exact payload and waits for explicit
+  confirmation in chat before sending. See the replacement guard below.
+- **F2 replacement: channel-origin send scope.** In a channel-originated run,
+  every send tool (`send_channel_message`, the personal Zalo image, link and
+  reaction tools, and the Zalo Bot photo, sticker and voice tools) may target
+  only that run's own thread. The check compares the resolved thread id and
+  platform (`channel_origin` / `ensure_thread_in_scope`) and returns
+  `channel_thread_out_of_scope` otherwise. Web runs may send to any allowed
+  recipient. `zalo_bot_group_settings` also applies directly after in-chat
+  confirmation and may change only the run's own group.
 - **F3: remove the learned recipe.** Rewrite the Big Brother profile skill
   `messaging-channels` to point at `send_channel_message` and drop the
   `agent send --to` lines (profile data, done with the owner's consent).

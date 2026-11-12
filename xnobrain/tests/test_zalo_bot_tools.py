@@ -1,4 +1,4 @@
-"""Zalo Bot agent tools: schemas, scope, approval, media, and storage."""
+"""Zalo Bot agent tools: schemas, scope, sends, media, and storage."""
 
 from __future__ import annotations
 
@@ -527,21 +527,19 @@ class ZaloBotToolFixture(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(record["chat_type"], "dm")
         self.assertEqual(record["message_id"], "m-text")
 
-    async def test_media_sends_request_approval_and_store_out_records(self):
+    async def test_media_sends_store_out_records_without_approval(self):
         self._bind()
         cases = (
             (
                 "zalo_bot_send_photo",
                 {"chat_id": "chat_dm", "thread_type": "dm",
                  "photo_url": "https://cdn.example/photo.jpg", "caption": "look"},
-                "zalo_bot.send_photo",
                 ("chat_dm", "photo", "https://cdn.example/photo.jpg", "look"),
                 "image",
             ),
             (
                 "zalo_bot_send_sticker",
                 {"chat_id": "chat_dm", "thread_type": "dm", "sticker": "st-1"},
-                "zalo_bot.send_sticker",
                 ("chat_dm", "sticker", "st-1", ""),
                 "sticker",
             ),
@@ -549,20 +547,17 @@ class ZaloBotToolFixture(unittest.IsolatedAsyncioTestCase):
                 "zalo_bot_send_voice",
                 {"chat_id": "chat_dm", "thread_type": "dm",
                  "voice_url": "https://cdn.example/voice.aac"},
-                "zalo_bot.send_voice",
                 ("chat_dm", "voice", "https://cdn.example/voice.aac", ""),
                 "voice",
             ),
         )
-        for name, args, pattern, delivered, record_type in cases:
+        for name, args, delivered, record_type in cases:
             with self.subTest(tool=name):
                 history = self.profile / "zalo_bot" / "history" / "chat_dm.jsonl"
                 if history.exists():
                     history.unlink()
-                with mock.patch.object(
-                    zalo_bot_tools,
-                    "_request_approval",
-                    return_value={"resolved": True, "choice": "once"},
+                with mock.patch(
+                    "tools.approval._await_gateway_decision"
                 ) as approval, mock.patch.object(
                     zalo_bot_tools,
                     "_deliver_media",
@@ -572,22 +567,61 @@ class ZaloBotToolFixture(unittest.IsolatedAsyncioTestCase):
 
                 self.assertTrue(result["success"], result)
                 self.assertEqual(result["data"]["message_id"], "sent-1")
-                self.assertEqual(
-                    approval.call_args.args[2]["pattern_key"], pattern
-                )
+                approval.assert_not_called()
                 deliver.assert_called_once_with(
                     mock.ANY, *delivered
                 )
                 record = self._assert_out_record("chat_dm", record_type)
                 self.assertEqual(record["media_url"], delivered[2])
 
-    async def test_denied_media_send_stores_nothing(self):
+    async def test_channel_run_send_to_another_chat_is_out_of_scope(self):
+        self._write_history("chat_dm", [self._record("own")])
+        self.service.repository.write_thread(
+            self.profile,
+            "zalo_bot",
+            "chat_dm",
+            agent_id="agent-1",
+            conversation_id="conv-1",
+            title="Thread",
+            sender_id="sender-1",
+            timestamp=time.time(),
+        )
+        self._bind()
+        with mock.patch.object(zalo_bot_tools, "_deliver_media") as deliver:
+            result = self._call(
+                "zalo_bot_send_photo",
+                {
+                    "chat_id": "chat_second",
+                    "thread_type": "dm",
+                    "photo_url": "https://cdn.example/photo.jpg",
+                },
+            )
+        self.assertEqual(result["error"]["code"], "channel_thread_out_of_scope")
+        deliver.assert_not_called()
+        self.assertFalse(
+            (
+                self.profile / "zalo_bot" / "history" / "chat_second.jsonl"
+            ).exists()
+        )
+
+    async def test_channel_run_send_to_its_own_chat_is_delivered(self):
+        self._write_history("chat_dm", [self._record("own")])
+        self.service.repository.write_thread(
+            self.profile,
+            "zalo_bot",
+            "chat_dm",
+            agent_id="agent-1",
+            conversation_id="conv-1",
+            title="Thread",
+            sender_id="sender-1",
+            timestamp=time.time(),
+        )
         self._bind()
         with mock.patch.object(
             zalo_bot_tools,
-            "_request_approval",
-            return_value={"resolved": True, "choice": "deny"},
-        ), mock.patch.object(zalo_bot_tools, "_deliver_media") as deliver:
+            "_deliver_media",
+            return_value={"message_id": "sent-2"},
+        ) as deliver:
             result = self._call(
                 "zalo_bot_send_photo",
                 {
@@ -596,17 +630,12 @@ class ZaloBotToolFixture(unittest.IsolatedAsyncioTestCase):
                     "photo_url": "https://cdn.example/photo.jpg",
                 },
             )
-        self.assertEqual(result["error"]["code"], "channel_send_denied")
-        deliver.assert_not_called()
-        self.assertFalse(
-            (
-                self.profile / "zalo_bot" / "history" / "chat_dm.jsonl"
-            ).exists()
-        )
+        self.assertTrue(result["success"], result)
+        deliver.assert_called_once()
 
-    async def test_voice_to_a_group_is_refused_before_approval(self):
+    async def test_voice_to_a_group_is_refused_before_send(self):
         self._bind()
-        with mock.patch.object(zalo_bot_tools, "_request_approval") as approval:
+        with mock.patch.object(zalo_bot_tools, "_deliver_media") as deliver:
             result = self._call(
                 "zalo_bot_send_voice",
                 {
@@ -616,12 +645,12 @@ class ZaloBotToolFixture(unittest.IsolatedAsyncioTestCase):
                 },
             )
         self.assertEqual(result["error"]["code"], "channel_group_unsupported")
-        approval.assert_not_called()
+        deliver.assert_not_called()
 
     async def test_voice_to_a_group_id_is_refused_even_as_a_dm(self):
         self._write_groups({"group_1": {"status": "approved"}})
         self._bind()
-        with mock.patch.object(zalo_bot_tools, "_request_approval") as approval:
+        with mock.patch.object(zalo_bot_tools, "_deliver_media") as deliver:
             result = self._call(
                 "zalo_bot_send_voice",
                 {
@@ -631,12 +660,12 @@ class ZaloBotToolFixture(unittest.IsolatedAsyncioTestCase):
                 },
             )
         self.assertEqual(result["error"]["code"], "channel_group_unsupported")
-        approval.assert_not_called()
+        deliver.assert_not_called()
 
     async def test_media_to_an_unapproved_group_is_refused(self):
         self._write_groups({"group_1": {"status": "pending"}})
         self._bind()
-        with mock.patch.object(zalo_bot_tools, "_request_approval") as approval:
+        with mock.patch.object(zalo_bot_tools, "_deliver_media") as deliver:
             result = self._call(
                 "zalo_bot_send_photo",
                 {
@@ -646,15 +675,11 @@ class ZaloBotToolFixture(unittest.IsolatedAsyncioTestCase):
                 },
             )
         self.assertEqual(result["error"]["code"], "channel_group_not_approved")
-        approval.assert_not_called()
+        deliver.assert_not_called()
 
     async def test_media_send_failure_returns_a_content_free_code(self):
         self._bind()
         with mock.patch.object(
-            zalo_bot_tools,
-            "_request_approval",
-            return_value={"resolved": True, "choice": "once"},
-        ), mock.patch.object(
             zalo_bot_tools,
             "_deliver_media",
             side_effect=zalo_channels.ChannelDeliveryError("channel_send_failed"),
@@ -672,13 +697,11 @@ class ZaloBotToolFixture(unittest.IsolatedAsyncioTestCase):
 
     # ── Group settings ────────────────────────────────────────────────
 
-    async def test_group_settings_write_the_plugin_file(self):
+    async def test_group_settings_apply_without_approval(self):
         self._write_groups({"group_1": {"status": "approved", "name": "One"}})
         self._bind()
-        with mock.patch.object(
-            zalo_bot_tools,
-            "_request_approval",
-            return_value={"resolved": True, "choice": "once"},
+        with mock.patch(
+            "tools.approval._await_gateway_decision"
         ) as approval:
             result = self._call(
                 "zalo_bot_group_settings",
@@ -686,9 +709,7 @@ class ZaloBotToolFixture(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertTrue(result["success"])
-        self.assertEqual(
-            approval.call_args.args[2]["pattern_key"], "zalo_bot.group_settings"
-        )
+        approval.assert_not_called()
         path = self.profile / "zalo-bot-settings" / "group_1.json"
         self.assertEqual(
             json.loads(path.read_text(encoding="utf-8")),
@@ -696,48 +717,58 @@ class ZaloBotToolFixture(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(path.stat().st_mode & 0o777, 0o600)
 
-    async def test_group_settings_follow_off_deletes_history(self):
-        self._write_groups({"group_1": {"status": "approved"}})
-        path = self._write_history(
-            "group_1", [self._record("hi", chat_type="group")]
+    async def test_channel_run_group_settings_to_another_group_is_out_of_scope(self):
+        self._write_groups(
+            {
+                "group_1": {"status": "approved", "name": "One"},
+                "group_2": {"status": "approved", "name": "Two"},
+            }
+        )
+        self.service.repository.write_thread(
+            self.profile,
+            "zalo_bot",
+            "group_1",
+            agent_id="agent-1",
+            conversation_id="conv-1",
+            title="Thread",
+            sender_id="sender-1",
+            timestamp=time.time(),
         )
         self._bind()
-        with mock.patch.object(
-            zalo_bot_tools,
-            "_request_approval",
-            return_value={"resolved": True, "choice": "always"},
-        ):
-            result = self._call(
-                "zalo_bot_group_settings", {"chat_id": "group_1", "follow": False}
-            )
 
-        self.assertTrue(result["success"])
-        self.assertFalse(path.exists())
+        result = self._call(
+            "zalo_bot_group_settings", {"chat_id": "group_2", "silent": True}
+        )
 
-    async def test_denied_group_settings_leave_files_unchanged(self):
+        self.assertEqual(result["error"]["code"], "channel_thread_out_of_scope")
+        self.assertFalse(
+            (self.profile / "zalo-bot-settings" / "group_2.json").exists()
+        )
+
+    async def test_channel_run_group_settings_to_its_own_group_is_applied(self):
         self._write_groups({"group_1": {"status": "approved"}})
-        settings_dir = self.profile / "zalo-bot-settings"
-        settings_dir.mkdir()
-        settings_path = settings_dir / "group_1.json"
-        settings_path.write_text('{"follow": true}\n', encoding="utf-8")
         history_path = self._write_history(
             "group_1", [self._record("hi", chat_type="group")]
         )
-        self._bind()
-        with mock.patch.object(
-            zalo_bot_tools,
-            "_request_approval",
-            return_value={"resolved": True, "choice": "deny"},
-        ):
-            result = self._call(
-                "zalo_bot_group_settings", {"chat_id": "group_1", "follow": False}
-            )
-
-        self.assertEqual(result["error"]["code"], "channel_action_denied")
-        self.assertEqual(
-            json.loads(settings_path.read_text(encoding="utf-8")), {"follow": True}
+        self.service.repository.write_thread(
+            self.profile,
+            "zalo_bot",
+            "group_1",
+            agent_id="agent-1",
+            conversation_id="conv-1",
+            title="Thread",
+            sender_id="sender-1",
+            timestamp=time.time(),
         )
-        self.assertTrue(history_path.exists())
+        self._bind()
+
+        result = self._call(
+            "zalo_bot_group_settings", {"chat_id": "group_1", "follow": False}
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["data"]["settings"], {"follow": False})
+        self.assertFalse(history_path.exists())
 
     # ── Status ────────────────────────────────────────────────────────
 

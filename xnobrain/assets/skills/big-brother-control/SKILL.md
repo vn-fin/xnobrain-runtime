@@ -121,6 +121,14 @@ step and display name. Never ask the user to paste API keys, tokens, QR
 callback values or other credentials in chat, and never use the CLI, `.env`,
 config edits or `agent mcp add` for a channel connection.
 
+Zalo and Zalo Bot tools have no approval button. Before every send
+(`send_channel_message`, the Zalo media tools, or `agent send`), show the user
+the platform, the exact recipient and the exact text or file; before every bot
+group settings change (`zalo_bot_group_settings`), show the group and the new
+values. Act only after their explicit yes in this chat; the request itself is
+not that confirmation. In a run that started from a Zalo chat, reply only to
+that chat and never send to or change another chat.
+
 Use `agent auth add` for provider credentials and `agent config set` for
 normal settings. If a setting is unfamiliar, inspect `--help` and the existing
 configuration first. Never echo, dump, or return secret values.

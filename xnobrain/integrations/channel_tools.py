@@ -31,17 +31,6 @@ def _error(code: str, **extra) -> str:
     return json.dumps(payload, ensure_ascii=False)
 
 
-def _request_approval(run_id: str, notify_cb, approval_data: dict) -> dict:
-    from tools.approval import _await_gateway_decision
-
-    return _await_gateway_decision(
-        run_id,
-        notify_cb,
-        approval_data,
-        surface="api_server",
-    )
-
-
 def _deliver(
     binding: tuple,
     thread_id: str,
@@ -89,12 +78,13 @@ def register_tools(profile_dir) -> None:
         function = {
             "name": TOOL_NAME,
             "description": (
-                "Send plain text on a messaging channel after the user approves it. "
-                "Platforms: 'zalo' (personal account, direct messages or approved "
-                "groups) and 'zalo_bot' (bot, direct messages or approved groups). "
-                "Pass an exact Zalo thread id or an exact contact name seen in the "
-                "agent's Zalo history; bot sends require an exact chat id. The user "
-                "must approve every send, and every group must be approved first."
+                "Send plain text on a messaging channel. Platforms: 'zalo' "
+                "(personal account, direct messages or approved groups) and "
+                "'zalo_bot' (bot, direct messages or approved groups). Pass an exact "
+                "Zalo thread id or an exact contact name seen in the agent's Zalo "
+                "history; bot sends require an exact chat id. Before calling, show "
+                "the user the recipient and the exact text and wait for their "
+                "explicit confirmation in chat. Every group must be approved first."
             ),
             "parameters": {
                 "type": "object",
@@ -237,7 +227,7 @@ def call(args, **kwargs):
     platform = request.platform
     if platform not in platforms:
         return _error("channel_platform_not_configured")
-    service, agent_id, _conversation_id, run_id, notify_cb, _loop = binding
+    service, agent_id, conversation_id, _run_id, _notify_cb, _loop = binding
     try:
         if platform == zalo_channels.ZALO_PLATFORM:
             if request.thread_type == "group":
@@ -278,30 +268,16 @@ def call(args, **kwargs):
     limit = zalo_channels.max_message_length(platform)
     if len(request.text) > limit:
         return _error("channel_message_too_long")
-    if platform == zalo_channels.ZALO_PLATFORM:
-        group_send = request.thread_type == "group"
-        label = "Zalo group" if group_send else "Zalo"
-        pattern_key = "zalo.send_group_message" if group_send else "zalo.send_message"
-    else:
-        label = "Zalo Bot"
-        pattern_key = "zalo_bot.send_message"
-    preview = request.text if len(request.text) <= 300 else request.text[:300] + "…"
-    preview = " ".join(preview.split())
-    decision = _request_approval(
-        run_id,
-        notify_cb,
-        {
-            "command": f"{label} → {name}: {preview}",
-            "description": f"Send this message on {label}?",
-            "pattern_key": pattern_key,
-            "pattern_keys": [pattern_key],
-            "allow_permanent": False,
-            "allow_session": False,
-        },
+    origin = channel_tool_common.channel_origin(
+        service.repository,
+        service.profile_path(agent_id),
+        conversation_id,
     )
-    choice = str(decision.get("choice") or "")
-    if not decision.get("resolved") or choice not in {"once", "always"}:
-        return _error("channel_send_denied")
+    scope_error = channel_tool_common.ensure_thread_in_scope(
+        origin, platform, thread_id
+    )
+    if scope_error is not None:
+        return _error(scope_error)
     try:
         result = _deliver(
             binding,

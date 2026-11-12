@@ -1,4 +1,4 @@
-"""Channel recipient resolution, tool approval flow, and link persistence."""
+"""Channel recipient resolution, tool delivery scope, and link persistence."""
 
 import asyncio
 import io
@@ -37,6 +37,8 @@ class _FakeService:
         self.calls = []
         self.bot_calls = []
         self.group_calls = []
+        self.threads = {}
+        self.repository = SimpleNamespace(threads=lambda profile: self.threads)
 
     def resolve_recipient(self, agent_id, recipient):
         return self.resolution
@@ -457,21 +459,22 @@ class ChannelToolCallTests(unittest.IsolatedAsyncioTestCase):
     def _call(self, args):
         return json.loads(channel_tools.call(args, session_id="conv-1"))
 
-    async def test_deny_sends_nothing(self):
+    async def test_web_run_send_delivers_without_approval(self):
         service = _FakeService({"status": "ok", "thread_id": "111", "name": "Nam"})
         self._bind(service)
-        with mock.patch.object(
-            channel_tools,
-            "_request_approval",
-            return_value={"resolved": True, "choice": "deny"},
-        ), mock.patch.object(channel_tools, "_deliver") as deliver:
+        with mock.patch(
+            "tools.approval._await_gateway_decision"
+        ) as approval, mock.patch.object(
+            channel_tools, "_deliver", return_value={"message_id": "sent-1"}
+        ) as deliver:
             result = self._call({"recipient": "Nam", "text": "hello"})
 
-        self.assertEqual(result["error"]["code"], "channel_send_denied")
-        self.assertEqual(service.calls, [])
-        deliver.assert_not_called()
+        self.assertTrue(result["success"])
+        self.assertEqual(result["data"]["thread_id"], "111")
+        deliver.assert_called_once()
+        approval.assert_not_called()
 
-    async def test_approval_sends_and_returns_the_link_identity(self):
+    async def test_send_returns_the_link_identity(self):
         service = _FakeService({"status": "ok", "thread_id": "111", "name": "Nam"})
         self._bind(service)
 
@@ -479,20 +482,51 @@ class ChannelToolCallTests(unittest.IsolatedAsyncioTestCase):
             service.calls.append(("agent-1", "conv-1", thread_id, name, text))
             return {"message_id": "sent-1"}
 
-        with mock.patch.object(
-            channel_tools,
-            "_request_approval",
-            return_value={"resolved": True, "choice": "once"},
-        ) as approval, mock.patch.object(channel_tools, "_deliver", side_effect=deliver):
+        with mock.patch.object(channel_tools, "_deliver", side_effect=deliver):
             result = self._call({"recipient": "Nam", "text": "hello"})
 
         self.assertTrue(result["success"])
         self.assertEqual(result["data"]["thread_id"], "111")
         self.assertEqual(service.calls, [("agent-1", "conv-1", "111", "Nam", "hello")])
-        approval.assert_called_once()
-        self.assertEqual(approval.call_args.args[2]["pattern_key"], "zalo.send_message")
 
-    async def test_ambiguous_recipient_never_asks_for_approval(self):
+    async def test_channel_run_send_to_another_thread_is_out_of_scope(self):
+        service = _FakeService({"status": "ok", "thread_id": "111", "name": "Nam"})
+        service.threads = {"zalo": {"222": {"conversation_id": "conv-1"}}}
+        self._bind(service)
+        with mock.patch.object(channel_tools, "_deliver") as deliver:
+            result = self._call({"recipient": "Nam", "text": "hello"})
+
+        self.assertEqual(result["error"]["code"], "channel_thread_out_of_scope")
+        deliver.assert_not_called()
+
+    async def test_channel_run_send_to_its_own_thread_is_delivered(self):
+        service = _FakeService({"status": "ok", "thread_id": "111", "name": "Nam"})
+        service.threads = {"zalo": {"111": {"conversation_id": "conv-1"}}}
+        self._bind(service)
+        with mock.patch.object(
+            channel_tools, "_deliver", return_value={"message_id": "sent-1"}
+        ) as deliver:
+            result = self._call({"recipient": "Nam", "text": "hello"})
+
+        self.assertTrue(result["success"])
+        deliver.assert_called_once()
+
+    async def test_channel_run_send_scope_compares_the_platform(self):
+        service = _FakeService(
+            {"status": "ok"},
+            bot_resolution={"status": "ok", "thread_id": "chat_1", "name": "Nam"},
+        )
+        service.threads = {"zalo": {"111": {"conversation_id": "conv-1"}}}
+        self._bind(service, platforms={"zalo", "zalo_bot"})
+        with mock.patch.object(channel_tools, "_deliver") as deliver:
+            result = self._call(
+                {"platform": "zalo_bot", "recipient": "chat_1", "text": "hello"}
+            )
+
+        self.assertEqual(result["error"]["code"], "channel_thread_out_of_scope")
+        deliver.assert_not_called()
+
+    async def test_ambiguous_recipient_is_refused_without_delivery(self):
         service = _FakeService(
             {
                 "status": "ambiguous",
@@ -503,23 +537,23 @@ class ChannelToolCallTests(unittest.IsolatedAsyncioTestCase):
             }
         )
         self._bind(service)
-        with mock.patch.object(channel_tools, "_request_approval") as approval:
+        with mock.patch.object(channel_tools, "_deliver") as deliver:
             result = self._call({"recipient": "Nam", "text": "hello"})
 
         self.assertEqual(result["error"]["code"], "channel_recipient_ambiguous")
-        approval.assert_not_called()
+        deliver.assert_not_called()
 
     async def test_unknown_recipient_returns_known_names(self):
         service = _FakeService({"status": "not_found", "known_names": ["Lan", "Nam"]})
         self._bind(service)
-        with mock.patch.object(channel_tools, "_request_approval") as approval:
+        with mock.patch.object(channel_tools, "_deliver") as deliver:
             result = self._call({"recipient": "Nobody", "text": "hello"})
 
         self.assertEqual(result["error"]["code"], "channel_recipient_not_found")
         self.assertEqual(result["known_names"], ["Lan", "Nam"])
-        approval.assert_not_called()
+        deliver.assert_not_called()
 
-    async def test_bot_dm_to_a_paired_user_is_approved_and_delivered(self):
+    async def test_bot_dm_to_a_paired_user_is_delivered(self):
         service = _FakeService(
             {"status": "ok"},
             bot_resolution={"status": "ok", "thread_id": "chat_1", "name": "Nam"},
@@ -531,13 +565,7 @@ class ChannelToolCallTests(unittest.IsolatedAsyncioTestCase):
             delivered.append((thread_id, name, text, platform))
             return {"message_id": "sent-9"}
 
-        with mock.patch.object(
-            channel_tools,
-            "_request_approval",
-            return_value={"resolved": True, "choice": "once"},
-        ) as approval, mock.patch.object(
-            channel_tools, "_deliver", side_effect=deliver
-        ):
+        with mock.patch.object(channel_tools, "_deliver", side_effect=deliver):
             result = self._call(
                 {"platform": "zalo_bot", "recipient": "chat_1", "text": "hello"}
             )
@@ -546,8 +574,6 @@ class ChannelToolCallTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["data"]["message_id"], "sent-9")
         self.assertEqual(service.bot_calls, [("chat_1", "dm")])
         self.assertEqual(delivered, [("chat_1", "Nam", "hello", "zalo_bot")])
-        self.assertEqual(approval.call_args.args[2]["pattern_key"], "zalo_bot.send_message")
-        self.assertIn("Zalo Bot", approval.call_args.args[2]["command"])
 
     async def test_bot_group_requires_owner_approval(self):
         service = _FakeService(
@@ -555,7 +581,7 @@ class ChannelToolCallTests(unittest.IsolatedAsyncioTestCase):
             bot_resolution={"status": "group_not_approved", "thread_id": "group_1"},
         )
         self._bind(service, platforms={"zalo_bot"})
-        with mock.patch.object(channel_tools, "_request_approval") as approval:
+        with mock.patch.object(channel_tools, "_deliver") as deliver:
             result = self._call(
                 {
                     "platform": "zalo_bot",
@@ -566,7 +592,7 @@ class ChannelToolCallTests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(result["error"]["code"], "channel_group_not_approved")
-        approval.assert_not_called()
+        deliver.assert_not_called()
 
     async def test_approved_bot_group_is_delivered(self):
         service = _FakeService(
@@ -584,11 +610,7 @@ class ChannelToolCallTests(unittest.IsolatedAsyncioTestCase):
             delivered.append((thread_id, name, text, platform))
             return {"message_id": "sent-10"}
 
-        with mock.patch.object(
-            channel_tools,
-            "_request_approval",
-            return_value={"resolved": True, "choice": "always"},
-        ), mock.patch.object(channel_tools, "_deliver", side_effect=deliver):
+        with mock.patch.object(channel_tools, "_deliver", side_effect=deliver):
             result = self._call(
                 {
                     "platform": "zalo_bot",
@@ -614,10 +636,6 @@ class ChannelToolCallTests(unittest.IsolatedAsyncioTestCase):
         )
         self._bind(service, platforms={"zalo"})
         with mock.patch.object(
-            channel_tools,
-            "_request_approval",
-            return_value={"resolved": True, "choice": "once"},
-        ) as approval, mock.patch.object(
             channel_tools, "_deliver", return_value={"message_id": "sent-3"}
         ) as deliver:
             result = self._call(
@@ -635,16 +653,14 @@ class ChannelToolCallTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(deliver.call_args.args[1:4], ("123", "Team One", "hello"))
         self.assertEqual(deliver.call_args.kwargs["platform"], "zalo")
         self.assertEqual(deliver.call_args.kwargs["thread_type"], "group")
-        self.assertEqual(approval.call_args.args[2]["pattern_key"], "zalo.send_group_message")
-        self.assertIn("Zalo group → Team One", approval.call_args.args[2]["command"])
 
-    async def test_personal_zalo_unapproved_group_is_refused_before_approval(self):
+    async def test_personal_zalo_unapproved_group_is_refused_before_delivery(self):
         service = _FakeService(
             {"status": "ok"},
             group_resolution={"status": "group_not_approved", "thread_id": "123"},
         )
         self._bind(service, platforms={"zalo"})
-        with mock.patch.object(channel_tools, "_request_approval") as approval:
+        with mock.patch.object(channel_tools, "_deliver") as deliver:
             result = self._call(
                 {
                     "platform": "zalo",
@@ -655,7 +671,7 @@ class ChannelToolCallTests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(result["error"]["code"], "channel_group_not_approved")
-        approval.assert_not_called()
+        deliver.assert_not_called()
 
     async def test_personal_zalo_ambiguous_group_name_is_refused(self):
         service = _FakeService(
@@ -669,7 +685,7 @@ class ChannelToolCallTests(unittest.IsolatedAsyncioTestCase):
             },
         )
         self._bind(service, platforms={"zalo"})
-        with mock.patch.object(channel_tools, "_request_approval") as approval:
+        with mock.patch.object(channel_tools, "_deliver") as deliver:
             result = self._call(
                 {
                     "platform": "zalo",
@@ -680,18 +696,18 @@ class ChannelToolCallTests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(result["error"]["code"], "channel_recipient_ambiguous")
-        approval.assert_not_called()
+        deliver.assert_not_called()
 
     async def test_platform_that_is_not_enabled_is_refused(self):
         service = _FakeService({"status": "ok"})
         self._bind(service, platforms={"zalo"})
-        with mock.patch.object(channel_tools, "_request_approval") as approval:
+        with mock.patch.object(channel_tools, "_deliver") as deliver:
             result = self._call(
                 {"platform": "zalo_bot", "recipient": "chat_1", "text": "hi"}
             )
 
         self.assertEqual(result["error"]["code"], "channel_platform_not_configured")
-        approval.assert_not_called()
+        deliver.assert_not_called()
 
     async def test_bind_requires_an_enabled_profile_and_registered_plugin(self):
         temporary = tempfile.TemporaryDirectory()

@@ -1,4 +1,4 @@
-"""Run-scoped personal Zalo tools: schemas, scope, approvals, and bridge calls."""
+"""Run-scoped personal Zalo tools: schemas, scope, sends, and bridge calls."""
 
 import base64
 import json
@@ -267,7 +267,7 @@ class ZaloToolCallTests(unittest.TestCase):
         self.assertTrue(status["success"])
         self.assertTrue(me["success"])
 
-    def test_approved_image_send_is_delivered_after_approval(self):
+    def test_image_send_is_delivered_without_approval(self):
         self._bind()
         self._write_image()
         self.service.bridge_result = {
@@ -276,10 +276,8 @@ class ZaloToolCallTests(unittest.TestCase):
             "data": {"success": True, "messageId": "9"},
         }
 
-        with mock.patch.object(
-            channel_tools,
-            "_request_approval",
-            return_value={"resolved": True, "choice": "once"},
+        with mock.patch(
+            "tools.approval._await_gateway_decision"
         ) as approval:
             result = self._call(
                 "zalo_send_image",
@@ -294,65 +292,63 @@ class ZaloToolCallTests(unittest.TestCase):
         self.assertEqual(body["fileName"], "pic.png")
         self.assertEqual(body["caption"], "look")
         self.assertEqual(base64.b64decode(body["contentBase64"]), _PNG)
-        self.assertEqual(approval.call_args.args[2]["pattern_key"], "zalo.send_image")
-        self.assertFalse(approval.call_args.args[2]["allow_permanent"])
-        self.assertFalse(approval.call_args.args[2]["allow_session"])
+        approval.assert_not_called()
 
     def test_group_image_send_uses_the_group_thread_type(self):
         self._bind()
         self._write_image()
 
-        with mock.patch.object(
-            channel_tools,
-            "_request_approval",
-            return_value={"resolved": True, "choice": "always"},
-        ):
-            result = self._call(
-                "zalo_send_image",
-                {
-                    "thread_type": "group",
-                    "recipient": "Team One",
-                    "path": "pic.png",
-                },
-            )
+        result = self._call(
+            "zalo_send_image",
+            {
+                "thread_type": "group",
+                "recipient": "Team One",
+                "path": "pic.png",
+            },
+        )
 
         self.assertTrue(result["success"])
         self.assertEqual(self.service.bridge_calls[0][2]["threadType"], "group")
 
-    def test_denied_image_send_never_calls_the_bridge(self):
-        self._bind()
+    def test_channel_run_send_to_another_thread_is_out_of_scope(self):
+        self._bind(threads={"zalo": {"999": {"conversation_id": "conv-1"}}})
         self._write_image()
 
-        with mock.patch.object(
-            channel_tools,
-            "_request_approval",
-            return_value={"resolved": True, "choice": "deny"},
-        ):
-            result = self._call(
-                "zalo_send_image",
-                {"recipient": "Nam", "path": "pic.png"},
-            )
+        result = self._call(
+            "zalo_send_image",
+            {"recipient": "Nam", "path": "pic.png"},
+        )
 
-        self.assertEqual(result["error"]["code"], "channel_send_denied")
+        self.assertEqual(result["error"]["code"], "channel_thread_out_of_scope")
         self.assertEqual(self.service.bridge_calls, [])
 
-    def test_unapproved_group_image_is_refused_before_approval(self):
+    def test_channel_run_send_to_its_own_thread_is_delivered(self):
+        self._bind(threads={"zalo": {"111": {"conversation_id": "conv-1"}}})
+        self._write_image()
+
+        result = self._call(
+            "zalo_send_image",
+            {"recipient": "Nam", "path": "pic.png"},
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(self.service.bridge_calls[0][0], "/send-media")
+
+    def test_unapproved_group_image_is_refused_before_send(self):
         self._bind()
         self._write_image()
         self.service.group = {"status": "group_not_approved", "thread_id": "123"}
 
-        with mock.patch.object(channel_tools, "_request_approval") as approval:
-            result = self._call(
-                "zalo_send_image",
-                {
-                    "thread_type": "group",
-                    "recipient": "123",
-                    "path": "pic.png",
-                },
-            )
+        result = self._call(
+            "zalo_send_image",
+            {
+                "thread_type": "group",
+                "recipient": "123",
+                "path": "pic.png",
+            },
+        )
 
         self.assertEqual(result["error"]["code"], "channel_group_not_approved")
-        approval.assert_not_called()
         self.assertEqual(self.service.bridge_calls, [])
 
     def test_unsafe_image_paths_are_refused(self):
@@ -368,38 +364,31 @@ class ZaloToolCallTests(unittest.TestCase):
             ("link.png", "channel_path_unsafe"),
         ]
         for path, expected in cases:
-            with self.subTest(path=path), mock.patch.object(
-                channel_tools, "_request_approval"
-            ) as approval:
+            with self.subTest(path=path):
                 result = self._call(
                     "zalo_send_image", {"recipient": "Nam", "path": path}
                 )
                 self.assertEqual(result["error"]["code"], expected)
-                approval.assert_not_called()
         self.assertEqual(self.service.bridge_calls, [])
 
     def test_non_image_and_oversized_files_are_refused(self):
         self._bind()
         self._write_image("notes.png", b"not an image")
 
-        with mock.patch.object(channel_tools, "_request_approval") as approval:
-            invalid = self._call(
-                "zalo_send_image", {"recipient": "Nam", "path": "notes.png"}
-            )
+        invalid = self._call(
+            "zalo_send_image", {"recipient": "Nam", "path": "notes.png"}
+        )
         self.assertEqual(invalid["error"]["code"], "channel_image_invalid")
-        approval.assert_not_called()
 
         self._write_image("big.png")
         self.service.media_max_mb = 0.0
-        with mock.patch.object(channel_tools, "_request_approval") as approval:
-            oversized = self._call(
-                "zalo_send_image", {"recipient": "Nam", "path": "big.png"}
-            )
+        oversized = self._call(
+            "zalo_send_image", {"recipient": "Nam", "path": "big.png"}
+        )
         self.assertEqual(oversized["error"]["code"], "channel_image_too_large")
-        approval.assert_not_called()
         self.assertEqual(self.service.bridge_calls, [])
 
-    def test_link_send_is_approved_and_delivered(self):
+    def test_link_send_is_delivered(self):
         self._bind()
         self.service.bridge_result = {
             "ok": True,
@@ -407,80 +396,62 @@ class ZaloToolCallTests(unittest.TestCase):
             "data": {"success": True, "messageId": "10"},
         }
 
-        with mock.patch.object(
-            channel_tools,
-            "_request_approval",
-            return_value={"resolved": True, "choice": "once"},
-        ) as approval:
-            result = self._call(
-                "zalo_send_link",
-                {
-                    "recipient": "Nam",
-                    "url": "https://example.com/report",
-                    "message": "Report",
-                },
-            )
+        result = self._call(
+            "zalo_send_link",
+            {
+                "recipient": "Nam",
+                "url": "https://example.com/report",
+                "message": "Report",
+            },
+        )
 
         self.assertTrue(result["success"])
         _, method, body = self.service.bridge_calls[0]
         self.assertEqual(method, "POST")
         self.assertEqual(body["url"], "https://example.com/report")
         self.assertEqual(body["message"], "Report")
-        self.assertEqual(approval.call_args.args[2]["pattern_key"], "zalo.send_link")
 
-    def test_invalid_link_is_rejected_before_approval(self):
+    def test_invalid_link_is_rejected_before_send(self):
         self._bind()
 
-        with mock.patch.object(channel_tools, "_request_approval") as approval:
-            result = self._call(
-                "zalo_send_link",
-                {"recipient": "Nam", "url": "file:///etc/passwd"},
-            )
+        result = self._call(
+            "zalo_send_link",
+            {"recipient": "Nam", "url": "file:///etc/passwd"},
+        )
 
         self.assertEqual(result["error"]["code"], "channel_invalid_request")
-        approval.assert_not_called()
+        self.assertEqual(self.service.bridge_calls, [])
 
-    def test_react_requires_approval_and_sends_the_message_id(self):
+    def test_react_sends_the_message_id(self):
         self._bind()
 
-        with mock.patch.object(
-            channel_tools,
-            "_request_approval",
-            return_value={"resolved": True, "choice": "once"},
-        ) as approval:
-            result = self._call(
-                "zalo_react",
-                {
-                    "thread_id": "111",
-                    "message_id": "555",
-                    "reaction": "HEART",
-                },
-            )
+        result = self._call(
+            "zalo_react",
+            {
+                "thread_id": "111",
+                "message_id": "555",
+                "reaction": "HEART",
+            },
+        )
 
         self.assertTrue(result["success"])
         _, method, body = self.service.bridge_calls[0]
         self.assertEqual(method, "POST")
         self.assertEqual(body["messageId"], "555")
         self.assertEqual(body["reaction"], "HEART")
-        self.assertEqual(approval.call_args.args[2]["pattern_key"], "zalo.react")
 
     def test_group_react_uses_the_resolved_group(self):
         self._bind()
 
-        with mock.patch.object(
-            channel_tools,
-            "_request_approval",
-            return_value={"resolved": True, "choice": "once"},
-        ):
-            result = self._call(
-                "zalo_react",
-                {
-                    "thread_type": "group",
-                    "thread_id": "Team One",
-                    "message_id": "555",
-                    "reaction": "LIKE",
-                },
-            )
+        result = self._call(
+            "zalo_react",
+            {
+                "thread_type": "group",
+                "thread_id": "Team One",
+                "message_id": "555",
+                "reaction": "LIKE",
+            },
+        )
 
         self.assertTrue(result["success"])
         self.assertEqual(self.service.bridge_calls[0][2]["threadType"], "group")
@@ -494,15 +465,10 @@ class ZaloToolCallTests(unittest.TestCase):
             "error": "not_found",
         }
 
-        with mock.patch.object(
-            channel_tools,
-            "_request_approval",
-            return_value={"resolved": True, "choice": "once"},
-        ):
-            result = self._call(
-                "zalo_react",
-                {"thread_id": "111", "message_id": "555", "reaction": "LIKE"},
-            )
+        result = self._call(
+            "zalo_react",
+            {"thread_id": "111", "message_id": "555", "reaction": "LIKE"},
+        )
 
         self.assertEqual(result["error"]["code"], "channel_message_not_found")
 
@@ -514,20 +480,15 @@ class ZaloToolCallTests(unittest.TestCase):
         self.assertEqual(result["error"]["code"], "channel_invalid_request")
         self.assertEqual(self.service.bridge_calls, [])
 
-    def test_denied_react_never_calls_the_bridge(self):
-        self._bind()
+    def test_channel_run_react_to_another_thread_is_out_of_scope(self):
+        self._bind(threads={"zalo": {"999": {"conversation_id": "conv-1"}}})
 
-        with mock.patch.object(
-            channel_tools,
-            "_request_approval",
-            return_value={"resolved": True, "choice": "deny"},
-        ):
-            result = self._call(
-                "zalo_react",
-                {"thread_id": "111", "message_id": "555", "reaction": "LIKE"},
-            )
+        result = self._call(
+            "zalo_react",
+            {"thread_id": "111", "message_id": "555", "reaction": "LIKE"},
+        )
 
-        self.assertEqual(result["error"]["code"], "channel_send_denied")
+        self.assertEqual(result["error"]["code"], "channel_thread_out_of_scope")
         self.assertEqual(self.service.bridge_calls, [])
 
 
