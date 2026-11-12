@@ -1395,13 +1395,13 @@
       "publisher_kind": "official",
       "category": "automation",
       "summary": {
-        "en": "Connect apps through a Composio-hosted MCP endpoint and API key.",
-        "vi": "Kết nối ứng dụng qua MCP endpoint của Composio và API key.",
-        "zh": "通过 Composio 托管的 MCP 端点和 API key 连接应用。",
-        "es": "Conecta aplicaciones mediante un endpoint MCP alojado por Composio y una clave API.",
-        "fr": "Connectez des applications via un endpoint MCP hébergé par Composio et une clé API.",
-        "de": "Verbinden Sie Apps über einen von Composio gehosteten MCP-Endpunkt und einen API-Schlüssel.",
-        "ja": "ComposioがホストするMCPエンドポイントとAPIキーでアプリを接続します。"
+        "en": "Connect apps through Composio Connect with your consumer API key.",
+        "vi": "Kết nối ứng dụng qua Composio Connect bằng consumer API key của bạn.",
+        "zh": "使用你的 consumer API key 通过 Composio Connect 连接应用。",
+        "es": "Conecta aplicaciones mediante Composio Connect con tu clave API de consumidor.",
+        "fr": "Connectez des applications via Composio Connect avec votre clé API consommateur.",
+        "de": "Verbinden Sie Apps über Composio Connect mit Ihrem Consumer-API-Schlüssel.",
+        "ja": "コンシューマー APIキーを使ってComposio Connectでアプリを接続します。"
       },
       "examples": {
         "en": [
@@ -1424,11 +1424,11 @@
       "documentation": "https://docs.composio.dev/docs/mcp",
       "iconUrl": "https://composio.dev/apple-touch-icon.png",
       "installability": "installable",
-      "reason_code": "compatible_endpoint_policy",
+      "reason_code": "compatible",
       "mcp": {
         "transport": "http",
-        "endpoint_mode": "user_configured",
-        "url_policy": "https_only_public_composio_host",
+        "endpoint_mode": "static",
+        "url": "https://connect.composio.dev/mcp",
         "auth": {
           "kind": "api_key",
           "field": "api_key",
@@ -1437,7 +1437,7 @@
           "prefix": ""
         }
       },
-      "recipe_revision": 1
+      "recipe_revision": 2
     },
     {
       "id": "clickup",

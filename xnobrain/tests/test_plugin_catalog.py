@@ -85,6 +85,7 @@ class PluginCatalogTests(unittest.TestCase):
                     "airtable",
                     "resend",
                     "firecrawl",
+                    "composio",
                 }
                 else 1,
             )
@@ -145,10 +146,6 @@ class PluginCatalogTests(unittest.TestCase):
         unpinned_stdio_install["entries"][27]["installability"] = "installable"
         cases.append(unpinned_stdio_install)
 
-        unsafe_composio = copy.deepcopy(catalog)
-        unsafe_composio["entries"][-2]["mcp"]["url_policy"] = "any_https_host"
-        cases.append(unsafe_composio)
-
         missing_recipe_revision = copy.deepcopy(catalog)
         missing_recipe_revision["entries"][0].pop("recipe_revision")
         cases.append(missing_recipe_revision)
@@ -208,6 +205,28 @@ class PluginCatalogTests(unittest.TestCase):
             self.assertEqual(entry["mcp"]["auth"]["kind"], "oauth")
             self.assertTrue(entry["mcp"]["url"].startswith("https://"))
         self.assertEqual(by_id["cobrain"]["installability"], "unsupported")
+
+    def test_composio_uses_the_static_connect_endpoint(self) -> None:
+        catalog = load_plugin_catalog()
+        by_id = {entry["id"]: entry for entry in catalog["entries"]}
+        entry = by_id["composio"]
+        self.assertEqual(entry["installability"], "installable")
+        self.assertEqual(entry["reason_code"], "compatible")
+        self.assertEqual(entry["recipe_revision"], 2)
+        self.assertEqual(entry["mcp"]["transport"], "http")
+        self.assertEqual(entry["mcp"]["endpoint_mode"], "static")
+        self.assertEqual(entry["mcp"]["url"], "https://connect.composio.dev/mcp")
+        self.assertEqual(
+            entry["mcp"]["auth"],
+            {
+                "kind": "api_key",
+                "field": "api_key",
+                "delivery": "header",
+                "header": "x-consumer-api-key",
+                "prefix": "",
+            },
+        )
+        self.assertNotIn("url_policy", entry["mcp"])
 
     def test_unreviewed_stdio_package_publishers_cannot_be_official(self) -> None:
         catalog = load_plugin_catalog()

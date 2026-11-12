@@ -256,15 +256,6 @@ def _validate_installable_entry(
         if endpoint_mode != "static" or auth["kind"] != "oauth" or reason != "compatible":
             raise ValueError(f"{entry_id}: OAuth endpoints must be static and compatible")
         _validate_public_https_url(url, entry_id, "mcp.url")
-    elif entry_id == "composio":
-        if (
-            endpoint_mode != "user_configured"
-            or mcp.get("url_policy") != "https_only_public_composio_host"
-            or reason != "compatible_endpoint_policy"
-        ):
-            raise ValueError(
-                "composio: user-provided endpoints require the public HTTPS host policy"
-            )
     else:
         if endpoint_mode != "static" or reason != "compatible":
             raise ValueError(
