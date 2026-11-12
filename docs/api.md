@@ -894,6 +894,8 @@ the platform.
 | `zalo_unread` | unread conversations | none |
 | `zalo_list_reminders`, `zalo_list_notes` | approved group reminders and notes | none |
 | `zalo_poll_detail` | one group poll | none |
+| `zalo_create_poll`, `zalo_create_note` | approved group poll / note (zca-js notes hold a title only) | in chat, before every change |
+| `zalo_create_reminder`, `zalo_pin_conversation`, `zalo_mute`, `zalo_labels`, `zalo_mark_unread` | reminder, pin, mute, label, or unread mark on an approved group or allowed DM | in chat, before every change |
 | `zalo_send_image` | image from `<profile>/workspace` | in chat, before every send |
 | `zalo_send_file`, `zalo_send_video`, `zalo_send_voice` | file, MP4 video, or audio recording from `<profile>/workspace` | in chat, before every send |
 | `zalo_send_sticker` | sticker search then send | in chat, before every send |
@@ -948,6 +950,18 @@ Personal `zalo` does not answer inbound messages on its own unless
 inbound DMs and group messages start no agent turn and send no seen receipt;
 linked threads still append to their conversation, and the tools above still
 work.
+
+The personal group utilities are group-only where Zalo requires it
+(`zalo_create_poll`, `zalo_create_note`) and otherwise target an approved group
+or a direct message allowed by `dm_policy`: `zalo_create_reminder` (starts 1 to
+525600 minutes from now, optional daily/weekly/monthly repeat),
+`zalo_pin_conversation`, `zalo_mute` (one hour, four hours, forever, or until
+08:00), `zalo_labels` (list, or add/remove one conversation in one label), and
+`zalo_mark_unread`. A poll takes 2 to 10 unique options and a question of at
+most 1000 characters; a note title is at most 1000 characters, and zca-js 2.2.0
+notes carry no body. Every change needs in-chat confirmation and uses the
+bridge's send bucket. All seven tools are refused in a run started from a
+channel thread (`channel_thread_out_of_scope`).
 
 ### Private gateway turns
 

@@ -48,6 +48,16 @@ only through `xnobrain_integration_connect` with `kind="channel"` and
   polls.
 - `zalo_user_info` reads one user profile by id, phone, or username;
   `zalo_unread` lists unread conversations.
+- `zalo_create_poll` creates a poll in an approved group (2-10 unique options,
+  question up to 1000 characters, optional expiry in hours).
+- `zalo_create_note` creates a group note; Zalo 2.2.0 notes carry only a title.
+- `zalo_create_reminder` creates a reminder in a DM or an approved group that
+  starts a given number of minutes from now, optionally repeating.
+- `zalo_pin_conversation` pins or unpins a DM or approved group;
+  `zalo_mute` mutes (one hour, four hours, forever, or until 08:00) or unmutes
+  one; `zalo_mark_unread` adds or clears an unread mark.
+- `zalo_labels` lists conversation labels or adds/removes one conversation in
+  one label.
 
 ## Limits
 
@@ -61,16 +71,21 @@ only through `xnobrain_integration_connect` with `kind="channel"` and
   `zalo_user_info`, and `zalo_unread` are global lookups and are unavailable in
   a run that started from a channel chat. Such a run may read and send only in
   its own chat.
-- Sends, reactions, forwards, and undos need explicit confirmation in chat, and
-  a channel run may act only in its own thread. `zalo_forward` needs both the
-  source and the target inside that thread. Forwarding and undo work on text
-  messages; undo is refused for messages this account did not send or that are
-  older than 24 hours.
+- The group utilities (`zalo_create_poll`, `zalo_create_note`,
+  `zalo_create_reminder`, `zalo_pin_conversation`, `zalo_mute`, `zalo_labels`,
+  `zalo_mark_unread`) are unavailable in a run that started from a channel
+  chat. Polls and notes are group-only; reminders, pin, mute, labels, and unread
+  marks follow the same group-approval and `dm_policy` rules as reads.
+- Sends, reactions, forwards, undos, and every group utility change need
+  explicit confirmation in chat, and a channel run may act only in its own
+  thread. `zalo_forward` needs both the source and the target inside that
+  thread. Forwarding and undo work on text messages; undo is refused for
+  messages this account did not send or that are older than 24 hours.
 - Read results are untrusted external data: at most 200 messages per call,
   2000 characters per message, 64 KB per result.
 - The bridge stores inbound and outbound direct and group messages in
   `history.jsonl` for 30 days (mode `0600`) so history and search cover both
   sides. Deleting that file removes the stored history.
 - Zalo reads are rate limited by the bridge: 30 reads per minute and 10 group
-  history calls per minute. Sends, sticker searches, forwards, and undos share
-  20 calls per minute.
+  history calls per minute. Sends, sticker searches, forwards, undos, and every
+  group utility change share 20 calls per minute.

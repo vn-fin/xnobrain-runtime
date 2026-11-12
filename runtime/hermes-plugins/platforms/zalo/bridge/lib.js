@@ -52,6 +52,36 @@ export const USERNAME_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
 /** zca-js `BoardType.Note`. */
 export const NOTE_BOARD_TYPE = 1;
 
+/** Group utility limits shared by the poll, note, reminder and label writes. */
+export const MAX_POLL_QUESTION_LENGTH = 1_000;
+export const MAX_POLL_OPTIONS = 10;
+export const MIN_POLL_OPTIONS = 2;
+export const MAX_POLL_OPTION_LENGTH = 500;
+/** Poll expiry, in hours; 0 means the poll never expires. */
+export const MAX_POLL_EXPIRY_HOURS = 720;
+export const MAX_NOTE_TITLE_LENGTH = 1_000;
+export const MAX_REMINDER_TITLE_LENGTH = 200;
+export const MAX_REMINDER_EMOJI_LENGTH = 8;
+/** One year of lead time is the most a reminder accepts. */
+export const MAX_REMINDER_MINUTES = 525_600;
+export const MAX_LABEL_CONVERSATIONS = 500;
+/** zca-js `ReminderRepeatMode` names understood by `POST /reminder-create`. */
+export const REMINDER_REPEAT_MODES = Object.freeze([
+  'none',
+  'daily',
+  'weekly',
+  'monthly',
+]);
+export const MUTE_ACTIONS = Object.freeze(['mute', 'unmute']);
+/** zca-js `MuteDuration` names understood by `POST /mute`. */
+export const MUTE_DURATION_NAMES = Object.freeze([
+  'one_hour',
+  'four_hours',
+  'forever',
+  'until_8am',
+]);
+export const LABEL_ACTIONS = Object.freeze(['list', 'add', 'remove']);
+
 /** Cache lifetime for a group-info lookup (single group or batch). */
 export const GROUP_INFO_CACHE_TTL_MS = 10 * 60_000;
 
@@ -1306,6 +1336,255 @@ export function validateSeenBody(body) {
   return { ok: true, messageId };
 }
 
+function optionalBoolean(body, field, fallback = false) {
+  if (body[field] === undefined || body[field] === null) {
+    return fallback;
+  }
+  if (typeof body[field] !== 'boolean') {
+    return null;
+  }
+  return body[field];
+}
+
+function trimmedText(value, maxLength) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  const text = value.trim();
+  if (!text || text.length > maxLength) {
+    return '';
+  }
+  return text;
+}
+
+/** Validate a `POST /poll-create` body. */
+export function validatePollCreateBody(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const groupId = numericId(body.groupId);
+  if (!groupId) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const question = trimmedText(body.question, MAX_POLL_QUESTION_LENGTH);
+  if (!question) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  if (
+    !Array.isArray(body.options) ||
+    body.options.length < MIN_POLL_OPTIONS ||
+    body.options.length > MAX_POLL_OPTIONS
+  ) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const options = [];
+  const seen = new Set();
+  for (const value of body.options) {
+    const option = trimmedText(value, MAX_POLL_OPTION_LENGTH);
+    if (!option) {
+      return { ok: false, error: 'invalid_request' };
+    }
+    const key = option.toLowerCase();
+    if (seen.has(key)) {
+      return { ok: false, error: 'invalid_request' };
+    }
+    seen.add(key);
+    options.push(option);
+  }
+  const allowMultiChoices = optionalBoolean(body, 'allowMultiChoices');
+  const allowAddNewOption = optionalBoolean(body, 'allowAddNewOption');
+  const hideVotePreview = optionalBoolean(body, 'hideVotePreview');
+  const isAnonymous = optionalBoolean(body, 'isAnonymous');
+  if (
+    allowMultiChoices === null ||
+    allowAddNewOption === null ||
+    hideVotePreview === null ||
+    isAnonymous === null
+  ) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const expiresInHours = boundedInteger(body.expiresInHours, {
+    min: 0,
+    max: MAX_POLL_EXPIRY_HOURS,
+    fallback: 0,
+  });
+  if (expiresInHours === null) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  return {
+    ok: true,
+    groupId,
+    question,
+    options,
+    allowMultiChoices,
+    allowAddNewOption,
+    hideVotePreview,
+    isAnonymous,
+    expiresInHours,
+  };
+}
+
+/** Validate a `POST /note-create` body. */
+export function validateNoteCreateBody(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const groupId = numericId(body.groupId);
+  if (!groupId) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const title = trimmedText(body.title, MAX_NOTE_TITLE_LENGTH);
+  if (!title) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const pinned = optionalBoolean(body, 'pinned');
+  if (pinned === null) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  return { ok: true, groupId, title, pinned };
+}
+
+/** Validate a `POST /reminder-create` body. */
+export function validateReminderCreateBody(body) {
+  const target = validateThreadTarget(body);
+  if (!target.ok) {
+    return target;
+  }
+  const title = trimmedText(body.title, MAX_REMINDER_TITLE_LENGTH);
+  if (!title) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const startsInMinutes = boundedInteger(body.startsInMinutes, {
+    min: 1,
+    max: MAX_REMINDER_MINUTES,
+    fallback: null,
+  });
+  if (startsInMinutes === null) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  let emoji = '';
+  if (body.emoji !== undefined && body.emoji !== null) {
+    if (
+      typeof body.emoji !== 'string' ||
+      body.emoji.length > MAX_REMINDER_EMOJI_LENGTH
+    ) {
+      return { ok: false, error: 'invalid_request' };
+    }
+    emoji = body.emoji.trim();
+  }
+  const repeat =
+    body.repeat === undefined || body.repeat === null ? 'none' : body.repeat;
+  if (!REMINDER_REPEAT_MODES.includes(repeat)) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  return {
+    ok: true,
+    chatId: target.chatId,
+    threadType: target.threadType,
+    title,
+    emoji,
+    startsInMinutes,
+    repeat,
+  };
+}
+
+/** Validate a `POST /pin` body. */
+export function validatePinBody(body) {
+  const target = validateThreadTarget(body);
+  if (!target.ok) {
+    return target;
+  }
+  if (typeof body.pinned !== 'boolean') {
+    return { ok: false, error: 'invalid_request' };
+  }
+  return {
+    ok: true,
+    chatId: target.chatId,
+    threadType: target.threadType,
+    pinned: body.pinned,
+  };
+}
+
+/** Validate a `POST /mute` body. */
+export function validateMuteBody(body) {
+  const target = validateThreadTarget(body);
+  if (!target.ok) {
+    return target;
+  }
+  const action = body.action === undefined || body.action === null ? 'mute' : body.action;
+  if (!MUTE_ACTIONS.includes(action)) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const duration =
+    body.duration === undefined || body.duration === null
+      ? 'forever'
+      : body.duration;
+  if (!MUTE_DURATION_NAMES.includes(duration)) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  return {
+    ok: true,
+    chatId: target.chatId,
+    threadType: target.threadType,
+    action,
+    duration,
+  };
+}
+
+/**
+ * Validate a `GET`/`POST /labels` body.
+ *
+ * Listing needs nothing; adding or removing one conversation needs the target
+ * thread and the numeric label id.
+ */
+export function validateLabelsBody(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const action = body.action === undefined || body.action === null ? 'list' : body.action;
+  if (!LABEL_ACTIONS.includes(action)) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  if (action === 'list') {
+    return { ok: true, action, chatId: '', threadType: 'user', labelId: '' };
+  }
+  const target = validateThreadTarget(body);
+  if (!target.ok) {
+    return target;
+  }
+  const labelId = numericId(
+    typeof body.labelId === 'number' ? String(body.labelId) : body.labelId,
+  );
+  if (!labelId) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  return {
+    ok: true,
+    action,
+    chatId: target.chatId,
+    threadType: target.threadType,
+    labelId,
+  };
+}
+
+/** Validate a `POST /unread-mark` body. */
+export function validateUnreadMarkBody(body) {
+  const target = validateThreadTarget(body);
+  if (!target.ok) {
+    return target;
+  }
+  const unread = optionalBoolean(body, 'unread', true);
+  if (unread === null) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  return {
+    ok: true,
+    chatId: target.chatId,
+    threadType: target.threadType,
+    unread,
+  };
+}
+
 /**
  * Constant-time comparison for the bridge bearer token.
  *
@@ -2021,6 +2300,18 @@ export function reminderRecords(items) {
   return records;
 }
 
+/** Shape one `createNote` payload. */
+export function noteRecord(note) {
+  const value = note || {};
+  return {
+    note_id: normalizeMessageId(value.id),
+    title: String(value.params?.title || ''),
+    creator_id: normalizeMessageId(value.creatorId),
+    created_time: Number(value.createTime) || 0,
+    updated_time: Number(value.editTime) || 0,
+  };
+}
+
 /** Shape `getListBoard` items into notes only. */
 export function noteRecords(items) {
   const records = [];
@@ -2041,6 +2332,113 @@ export function noteRecords(items) {
     });
   }
   return records;
+}
+
+/**
+ * Shape `getLabels`/`updateLabels` label data for the Runtime tool.
+ *
+ * Only the display fields are exposed; conversation ids stay in the bridge.
+ */
+export function labelEntries(labelData) {
+  const labels = [];
+  for (const label of Array.isArray(labelData) ? labelData : []) {
+    if (!label || typeof label !== 'object') {
+      continue;
+    }
+    const id = Number(label.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      continue;
+    }
+    labels.push({
+      label_id: String(id),
+      name: String(label.text || ''),
+      conversation_count: Array.isArray(label.conversations)
+        ? label.conversations.length
+        : 0,
+    });
+  }
+  return labels;
+}
+
+/**
+ * Conversation token used inside one Zalo label.
+ *
+ * Zalo labels address conversations with the same `u<id>`/`g<id>` form the
+ * pin API uses; entries that predate this bridge are preserved untouched.
+ */
+export function conversationLabelToken(chatId, threadType) {
+  const id = normalizeMessageId(chatId);
+  return `${threadType === 'group' ? 'g' : 'u'}${id}`;
+}
+
+function labelConversationMatches(value, chatId) {
+  const text = String(value || '').trim();
+  const id = normalizeMessageId(chatId);
+  if (!id || !text) {
+    return false;
+  }
+  return (
+    text === id ||
+    text === `u${id}` ||
+    text === `g${id}`
+  );
+}
+
+/**
+ * Add or remove one conversation from one label.
+ *
+ * Returns a new label list; the caller sends it back through `updateLabels`
+ * with the version it read, so no other label is changed.
+ *
+ * @returns {{ok: true, labelData: Array, label: object} |
+ *           {ok: false, error: string}}
+ */
+export function applyLabelChange(labelData, { labelId, chatId, threadType, add }) {
+  if (!Array.isArray(labelData)) {
+    return { ok: false, error: 'invalid_response' };
+  }
+  const id = Number(labelId);
+  const token = conversationLabelToken(chatId, threadType);
+  const updated = [];
+  let target = null;
+  for (const label of labelData) {
+    if (!label || typeof label !== 'object') {
+      return { ok: false, error: 'invalid_response' };
+    }
+    const conversations = Array.isArray(label.conversations)
+      ? label.conversations.map((value) => String(value))
+      : [];
+    if (Number(label.id) !== id) {
+      updated.push(label);
+      continue;
+    }
+    if (conversations.length > MAX_LABEL_CONVERSATIONS) {
+      return { ok: false, error: 'invalid_response' };
+    }
+    let next = conversations.filter(
+      (value) => !labelConversationMatches(value, chatId),
+    );
+    if (add) {
+      if (next.length >= MAX_LABEL_CONVERSATIONS) {
+        return { ok: false, error: 'invalid_response' };
+      }
+      next = [...next, token];
+    }
+    target = { ...label, conversations: next };
+    updated.push(target);
+  }
+  if (!target) {
+    return { ok: false, error: 'not_found' };
+  }
+  return {
+    ok: true,
+    labelData: updated,
+    label: {
+      label_id: String(id),
+      name: String(target.text || ''),
+      conversation_count: target.conversations.length,
+    },
+  };
 }
 
 /** Shape one `getPollDetail` payload. */

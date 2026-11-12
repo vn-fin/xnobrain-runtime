@@ -6,6 +6,11 @@ import {
   MAX_MEDIA_BYTES,
   MAX_MENTIONS,
   MAX_MESSAGE_LENGTH,
+  MAX_POLL_EXPIRY_HOURS,
+  MAX_POLL_OPTIONS,
+  MAX_POLL_OPTION_LENGTH,
+  MAX_REMINDER_EMOJI_LENGTH,
+  MAX_REMINDER_MINUTES,
   MAX_STICKER_SEARCH_LIMIT,
   READ_RATE_LIMIT_PER_MINUTE,
   REACTION_NAMES,
@@ -54,8 +59,14 @@ import {
   validateGroupHistoryBody,
   validateGroupInfoBody,
   validateHistoryBody,
+  validateLabelsBody,
+  validateMuteBody,
+  validateNoteCreateBody,
+  validatePinBody,
+  validatePollCreateBody,
   validatePollDetailBody,
   validateReactBody,
+  validateReminderCreateBody,
   validateSearchBody,
   validateSeenBody,
   validateSendBody,
@@ -67,6 +78,7 @@ import {
   validateThreadTarget,
   validateTypingBody,
   validateUndoBody,
+  validateUnreadMarkBody,
   validateUserInfoBody,
 } from './lib.js';
 
@@ -1236,6 +1248,227 @@ test('validatePollDetailBody requires both a group and a poll id', () => {
   });
   assert.equal(validatePollDetailBody({ groupId: '7' }).ok, false);
   assert.equal(validatePollDetailBody({ groupId: '7', pollId: 'x' }).ok, false);
+});
+
+test('validatePollCreateBody trims and bounds the question and options', () => {
+  assert.deepEqual(
+    validatePollCreateBody({
+      groupId: '7',
+      question: ' Lunch? ',
+      options: [' Pizza ', 'Pho'],
+      allowMultiChoices: true,
+      expiresInHours: 24,
+    }),
+    {
+      ok: true,
+      groupId: '7',
+      question: 'Lunch?',
+      options: ['Pizza', 'Pho'],
+      allowMultiChoices: true,
+      allowAddNewOption: false,
+      hideVotePreview: false,
+      isAnonymous: false,
+      expiresInHours: 24,
+    },
+  );
+  assert.equal(
+    validatePollCreateBody({ groupId: '7', question: 'Q', options: ['A'] }).ok,
+    false,
+  );
+  assert.equal(
+    validatePollCreateBody({
+      groupId: '7',
+      question: 'Q',
+      options: Array.from({ length: MAX_POLL_OPTIONS + 1 }, (_, index) => `${index}`),
+    }).ok,
+    false,
+  );
+  assert.equal(
+    validatePollCreateBody({ groupId: '7', question: 'Q', options: ['A', 'a'] }).ok,
+    false,
+  );
+  assert.equal(
+    validatePollCreateBody({ groupId: '7', question: 'Q', options: ['A', 'B '] }).ok,
+    true,
+  );
+  assert.equal(
+    validatePollCreateBody({
+      groupId: '7',
+      question: 'Q',
+      options: ['A', 'x'.repeat(MAX_POLL_OPTION_LENGTH + 1)],
+    }).ok,
+    false,
+  );
+  assert.equal(
+    validatePollCreateBody({
+      groupId: '7',
+      question: 'Q',
+      options: ['A', 'B'],
+      expiresInHours: MAX_POLL_EXPIRY_HOURS + 1,
+    }).ok,
+    false,
+  );
+  assert.equal(
+    validatePollCreateBody({ groupId: '7', question: 'Q', options: ['A', 'B'], isAnonymous: 'yes' }).ok,
+    false,
+  );
+  assert.equal(validatePollCreateBody({ groupId: 'x', question: 'Q', options: ['A', 'B'] }).ok, false);
+});
+
+test('validateNoteCreateBody requires a title and optional pin flag', () => {
+  assert.deepEqual(validateNoteCreateBody({ groupId: '7', title: ' Plan ' }), {
+    ok: true,
+    groupId: '7',
+    title: 'Plan',
+    pinned: false,
+  });
+  assert.deepEqual(
+    validateNoteCreateBody({ groupId: '7', title: 'Plan', pinned: true }),
+    { ok: true, groupId: '7', title: 'Plan', pinned: true },
+  );
+  assert.equal(validateNoteCreateBody({ groupId: '7' }).ok, false);
+  assert.equal(validateNoteCreateBody({ groupId: '7', title: '  ' }).ok, false);
+  assert.equal(validateNoteCreateBody({ title: 'Plan' }).ok, false);
+  assert.equal(
+    validateNoteCreateBody({ groupId: '7', title: 'Plan', pinned: 'yes' }).ok,
+    false,
+  );
+});
+
+test('validateReminderCreateBody bounds the start time and repeat mode', () => {
+  assert.deepEqual(
+    validateReminderCreateBody({
+      chatId: '11',
+      title: ' Call ',
+      startsInMinutes: 60,
+      repeat: 'daily',
+      emoji: '⏰',
+    }),
+    {
+      ok: true,
+      chatId: '11',
+      threadType: 'user',
+      title: 'Call',
+      emoji: '⏰',
+      startsInMinutes: 60,
+      repeat: 'daily',
+    },
+  );
+  assert.deepEqual(
+    validateReminderCreateBody({
+      chatId: '22',
+      threadType: 'group',
+      title: 'Call',
+      startsInMinutes: 1,
+    }),
+    {
+      ok: true,
+      chatId: '22',
+      threadType: 'group',
+      title: 'Call',
+      emoji: '',
+      startsInMinutes: 1,
+      repeat: 'none',
+    },
+  );
+  assert.equal(
+    validateReminderCreateBody({ chatId: '11', title: 'Call', startsInMinutes: 0 }).ok,
+    false,
+  );
+  assert.equal(
+    validateReminderCreateBody({ chatId: '11', title: 'Call' }).ok,
+    false,
+  );
+  assert.equal(
+    validateReminderCreateBody({
+      chatId: '11',
+      title: 'Call',
+      startsInMinutes: MAX_REMINDER_MINUTES + 1,
+    }).ok,
+    false,
+  );
+  assert.equal(
+    validateReminderCreateBody({ chatId: '11', title: 'Call', startsInMinutes: 60, repeat: 'hourly' }).ok,
+    false,
+  );
+  assert.equal(
+    validateReminderCreateBody({ chatId: '11', title: 'Call', startsInMinutes: 60, repeat: 'daily', emoji: 'x'.repeat(MAX_REMINDER_EMOJI_LENGTH + 1) }).ok,
+    false,
+  );
+});
+
+test('validatePinBody requires an explicit pinned boolean', () => {
+  assert.deepEqual(validatePinBody({ chatId: '11', pinned: true }), {
+    ok: true,
+    chatId: '11',
+    threadType: 'user',
+    pinned: true,
+  });
+  assert.equal(validatePinBody({ chatId: '11' }).ok, false);
+  assert.equal(validatePinBody({ chatId: '11', pinned: 'yes' }).ok, false);
+  assert.equal(validatePinBody({ pinned: true }).ok, false);
+});
+
+test('validateMuteBody defaults to a permanent mute and bounds names', () => {
+  assert.deepEqual(validateMuteBody({ chatId: '11' }), {
+    ok: true,
+    chatId: '11',
+    threadType: 'user',
+    action: 'mute',
+    duration: 'forever',
+  });
+  assert.deepEqual(
+    validateMuteBody({ chatId: '22', threadType: 'group', action: 'unmute' }),
+    {
+      ok: true,
+      chatId: '22',
+      threadType: 'group',
+      action: 'unmute',
+      duration: 'forever',
+    },
+  );
+  assert.equal(validateMuteBody({ chatId: '11', action: 'quiet' }).ok, false);
+  assert.equal(validateMuteBody({ chatId: '11', duration: 'ten_minutes' }).ok, false);
+  assert.equal(validateMuteBody({}).ok, false);
+});
+
+test('validateLabelsBody needs a thread and label only for a change', () => {
+  assert.deepEqual(validateLabelsBody({ action: 'list' }), {
+    ok: true,
+    action: 'list',
+    chatId: '',
+    threadType: 'user',
+    labelId: '',
+  });
+  assert.deepEqual(
+    validateLabelsBody({ action: 'add', chatId: '11', labelId: 3 }),
+    { ok: true, action: 'add', chatId: '11', threadType: 'user', labelId: '3' },
+  );
+  assert.deepEqual(
+    validateLabelsBody({ action: 'remove', chatId: '22', threadType: 'group', labelId: '4' }),
+    { ok: true, action: 'remove', chatId: '22', threadType: 'group', labelId: '4' },
+  );
+  assert.equal(validateLabelsBody({ action: 'add', chatId: '11' }).ok, false);
+  assert.equal(validateLabelsBody({ action: 'remove', labelId: 3 }).ok, false);
+  assert.equal(validateLabelsBody({ action: 'delete', chatId: '11', labelId: 3 }).ok, false);
+  assert.equal(validateLabelsBody(undefined).ok, false);
+});
+
+test('validateUnreadMarkBody defaults to adding the mark', () => {
+  assert.deepEqual(validateUnreadMarkBody({ chatId: '11' }), {
+    ok: true,
+    chatId: '11',
+    threadType: 'user',
+    unread: true,
+  });
+  assert.deepEqual(validateUnreadMarkBody({ chatId: '11', unread: false }), {
+    ok: true,
+    chatId: '11',
+    threadType: 'user',
+    unread: false,
+  });
+  assert.equal(validateUnreadMarkBody({ chatId: '11', unread: 'no' }).ok, false);
+  assert.equal(validateUnreadMarkBody({}).ok, false);
 });
 
 test('conversationIds accepts raw ids and small objects', () => {

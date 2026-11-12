@@ -248,7 +248,28 @@ bridge validation test and a send-scope or approval test as applicable.
   - The bridge now stores outbound image, file, video, voice, sticker, card,
     and forward messages in `history.jsonl` and reads the attachment message id
     from the send response.
-- **Phase 3 (group utilities):** not started. **Phase 4 (admin):** not started.
+- **Phase 3 (group utilities): done 2026-11-12.** Tool -> bridge endpoint ->
+  zca-js: `zalo_create_poll` -> `POST /poll-create` -> `createPoll`;
+  `zalo_create_note` -> `POST /note-create` -> `createNote`;
+  `zalo_create_reminder` -> `POST /reminder-create` -> `createReminder`;
+  `zalo_pin_conversation` -> `POST /pin` -> `setPinnedConversations`;
+  `zalo_mute` -> `POST /mute` -> `setMute`; `zalo_labels` -> `GET /labels` ->
+  `getLabels`, and `POST /labels` -> `getLabels` + `updateLabels`;
+  `zalo_mark_unread` -> `POST /unread-mark` -> `addUnreadMark` /
+  `removeUnreadMark`.
+  - All seven are always refused in a channel-originated run
+    (`channel_thread_out_of_scope`); polls and notes are group-only, while
+    reminders, pin, mute, labels, and unread marks accept an approved group or
+    a direct message allowed by `dm_policy`. Every write uses the bridge send
+    bucket, and no poll text, note title, reminder title, or label name is
+    logged.
+  - zca-js 2.2.0 `createNote` accepts a title and `pinAct` only, so
+    `zalo_create_note` has no note body. `updateLabels` replaces the whole
+    label list, so the bridge re-reads labels, changes only the requested
+    label's `conversations` (tokens `u<id>`/`g<id>`, matching the pin API's
+    conversation form), and sends the read `version` back.
+  - Not in this phase: `addPollOptions`, `lockPoll`, `editNote`, `editReminder`,
+    and `removeReminder` are not exposed. **Phase 4 (admin):** not started.
 
 ## Track B — Zalo Bot
 

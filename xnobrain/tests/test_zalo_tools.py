@@ -27,6 +27,13 @@ _TOOL_NAMES = (
     "zalo_list_reminders",
     "zalo_list_notes",
     "zalo_poll_detail",
+    "zalo_create_poll",
+    "zalo_create_note",
+    "zalo_create_reminder",
+    "zalo_pin_conversation",
+    "zalo_mute",
+    "zalo_labels",
+    "zalo_mark_unread",
     "zalo_send_image",
     "zalo_send_file",
     "zalo_send_video",
@@ -1500,6 +1507,498 @@ class ZaloSendExtraTests(_ZaloToolTestBase):
 
         self.assertTrue(result["success"])
         self.assertEqual(self.service.bridge_calls[0][0], "/send-media")
+
+
+class ZaloGroupUtilityTests(_ZaloToolTestBase):
+    """P-B phase 3 group utilities: polls, notes, reminders, and settings."""
+
+    _GROUP_TOOLS = (
+        "zalo_create_poll",
+        "zalo_create_note",
+        "zalo_create_reminder",
+        "zalo_pin_conversation",
+        "zalo_mute",
+        "zalo_labels",
+        "zalo_mark_unread",
+    )
+
+    def _ok(self, data):
+        self.service.bridge_result = {"ok": True, "status": 200, "data": data}
+
+    def test_group_utility_descriptions_ask_for_in_chat_confirmation(self):
+        for name in self._GROUP_TOOLS:
+            with self.subTest(name=name):
+                description = zalo_tools._SCHEMAS[name]["function"]["description"]
+                self.assertIn("explicit confirmation in chat", description)
+                self.assertIn("Not available in a run started from a channel thread", description)
+
+    def test_group_utility_schemas_require_their_scope_fields(self):
+        expected = {
+            "zalo_create_poll": {"recipient", "question", "options"},
+            "zalo_create_note": {"recipient", "title"},
+            "zalo_create_reminder": {
+                "recipient",
+                "title",
+                "starts_in_minutes",
+            },
+            "zalo_pin_conversation": {"recipient", "pinned"},
+            "zalo_mute": {"recipient"},
+            "zalo_labels": {"action"},
+            "zalo_mark_unread": {"recipient"},
+        }
+        for name, required in expected.items():
+            with self.subTest(name=name):
+                parameters = zalo_tools._SCHEMAS[name]["function"]["parameters"]
+                self.assertEqual(set(parameters.get("required") or []), required)
+                self.assertIs(parameters["additionalProperties"], False)
+
+    def test_every_group_utility_is_denied_in_a_channel_run(self):
+        self._bind(threads={"zalo": {"123": {"conversation_id": "conv-1"}}})
+
+        cases = [
+            (
+                "zalo_create_poll",
+                {"recipient": "Team One", "question": "Lunch?", "options": ["A", "B"]},
+            ),
+            ("zalo_create_note", {"recipient": "Team One", "title": "Plan"}),
+            (
+                "zalo_create_reminder",
+                {"recipient": "Nam", "title": "Call", "starts_in_minutes": 30},
+            ),
+            ("zalo_pin_conversation", {"recipient": "Nam", "pinned": True}),
+            ("zalo_mute", {"recipient": "Nam", "action": "mute"}),
+            ("zalo_labels", {"action": "list"}),
+            (
+                "zalo_labels",
+                {"action": "add", "recipient": "Nam", "label_id": 3},
+            ),
+            ("zalo_mark_unread", {"recipient": "Nam", "unread": True}),
+        ]
+        for name, args in cases:
+            with self.subTest(name=name, args=args):
+                result = self._call(name, args)
+                self.assertEqual(
+                    result["error"]["code"], "channel_thread_out_of_scope"
+                )
+        self.assertEqual(self.service.bridge_calls, [])
+
+    def test_group_utilities_require_an_approved_group(self):
+        self._bind()
+        self.service.group = {"status": "group_not_approved", "thread_id": "123"}
+
+        cases = [
+            (
+                "zalo_create_poll",
+                {"recipient": "123", "question": "Lunch?", "options": ["A", "B"]},
+            ),
+            ("zalo_create_note", {"recipient": "123", "title": "Plan"}),
+            (
+                "zalo_create_reminder",
+                {
+                    "thread_type": "group",
+                    "recipient": "123",
+                    "title": "Call",
+                    "starts_in_minutes": 30,
+                },
+            ),
+            (
+                "zalo_pin_conversation",
+                {"thread_type": "group", "recipient": "123", "pinned": True},
+            ),
+            (
+                "zalo_mute",
+                {"thread_type": "group", "recipient": "123", "action": "mute"},
+            ),
+            (
+                "zalo_labels",
+                {"action": "add", "thread_type": "group", "recipient": "123", "label_id": 3},
+            ),
+            (
+                "zalo_mark_unread",
+                {"thread_type": "group", "recipient": "123", "unread": True},
+            ),
+        ]
+        for name, args in cases:
+            with self.subTest(name=name):
+                result = self._call(name, args)
+                self.assertEqual(
+                    result["error"]["code"], "channel_group_not_approved"
+                )
+        self.assertEqual(self.service.bridge_calls, [])
+
+    def test_direct_message_utilities_follow_the_dm_policy(self):
+        self._bind()
+        self.service.dm_allowed = False
+
+        cases = [
+            (
+                "zalo_create_reminder",
+                {"recipient": "Nam", "title": "Call", "starts_in_minutes": 30},
+            ),
+            ("zalo_pin_conversation", {"recipient": "Nam", "pinned": True}),
+            ("zalo_mute", {"recipient": "Nam", "action": "unmute"}),
+            (
+                "zalo_labels",
+                {"action": "remove", "recipient": "Nam", "label_id": 3},
+            ),
+            ("zalo_mark_unread", {"recipient": "Nam", "unread": False}),
+        ]
+        for name, args in cases:
+            with self.subTest(name=name):
+                result = self._call(name, args)
+                self.assertEqual(
+                    result["error"]["code"], "channel_dm_policy_blocked"
+                )
+        self.assertEqual(self.service.bridge_calls, [])
+
+    def test_create_poll_posts_the_group_and_options(self):
+        self._bind()
+        self._ok(
+            {
+                "poll": {
+                    "poll_id": "12",
+                    "question": "Lunch?",
+                    "options": [
+                        {"option_id": 1, "content": "Pizza", "votes": 0, "voted": False}
+                    ],
+                    "closed": False,
+                    "anonymous": True,
+                    "multi_choice": True,
+                    "vote_count": 0,
+                    "created_time": 100,
+                }
+            }
+        )
+
+        result = self._call(
+            "zalo_create_poll",
+            {
+                "recipient": "Team One",
+                "question": "  Lunch?  ",
+                "options": ["Pizza", "Pho"],
+                "multi_choice": True,
+                "expires_in_hours": 24,
+            },
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["data"]["thread_id"], "123")
+        self.assertEqual(result["data"]["poll"]["question"], "Lunch?")
+        self.assertEqual(
+            result["data"]["poll"]["options"][0],
+            {
+                "trust": "untrusted_external",
+                "option_id": 1,
+                "content": "Pizza",
+                "votes": 0,
+                "voted": False,
+            },
+        )
+        self.assertEqual(
+            self.service.bridge_calls[0],
+            (
+                "/poll-create",
+                "POST",
+                {
+                    "groupId": "123",
+                    "question": "Lunch?",
+                    "options": ["Pizza", "Pho"],
+                    "allowMultiChoices": True,
+                    "allowAddNewOption": False,
+                    "hideVotePreview": False,
+                    "isAnonymous": False,
+                    "expiresInHours": 24,
+                },
+            ),
+        )
+
+    def test_create_poll_validates_options_and_expiry(self):
+        self._bind()
+
+        cases = [
+            {"recipient": "Team One", "question": "Q", "options": ["A"]},
+            {
+                "recipient": "Team One",
+                "question": "Q",
+                "options": [str(index) for index in range(11)],
+            },
+            {"recipient": "Team One", "question": "Q", "options": ["A", "A"]},
+            {"recipient": "Team One", "question": "Q", "options": ["A", "  "]},
+            {
+                "recipient": "Team One",
+                "question": "Q",
+                "options": ["A", "B" * 501],
+            },
+            {
+                "recipient": "Team One",
+                "question": "Q",
+                "options": ["A", "B"],
+                "expires_in_hours": 721,
+            },
+            {"recipient": "Team One", "question": "  ", "options": ["A", "B"]},
+        ]
+        for args in cases:
+            with self.subTest(args=args):
+                result = self._call("zalo_create_poll", args)
+                self.assertEqual(
+                    result["error"]["code"], "channel_invalid_request"
+                )
+        self.assertEqual(self.service.bridge_calls, [])
+
+    def test_create_note_posts_the_title_and_pin_flag(self):
+        self._bind()
+        self._ok(
+            {
+                "note": {
+                    "note_id": "7",
+                    "title": "Plan",
+                    "created_time": 10,
+                    "updated_time": 10,
+                }
+            }
+        )
+
+        result = self._call(
+            "zalo_create_note",
+            {"recipient": "Team One", "title": " Plan ", "pinned": True},
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(
+            result["data"]["note"],
+            {
+                "trust": "untrusted_external",
+                "note_id": "7",
+                "title": "Plan",
+                "created_time": 10,
+                "updated_time": 10,
+                "pin_requested": True,
+            },
+        )
+        self.assertEqual(
+            self.service.bridge_calls[0],
+            (
+                "/note-create",
+                "POST",
+                {"groupId": "123", "title": "Plan", "pinned": True},
+            ),
+        )
+
+    def test_create_reminder_posts_minutes_and_repeat(self):
+        self._bind()
+        self._ok(
+            {
+                "reminder": {
+                    "reminder_id": "5",
+                    "title": "Standup",
+                    "start_time": 1_800_000,
+                    "repeat": 1,
+                }
+            }
+        )
+
+        result = self._call(
+            "zalo_create_reminder",
+            {
+                "recipient": "Nam",
+                "title": "Standup",
+                "starts_in_minutes": 60,
+                "repeat": "daily",
+                "emoji": "⏰",
+            },
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(
+            result["data"]["reminder"],
+            {
+                "trust": "untrusted_external",
+                "reminder_id": "5",
+                "title": "Standup",
+                "start_time": 1_800_000,
+                "repeat": 1,
+            },
+        )
+        self.assertEqual(
+            self.service.bridge_calls[0],
+            (
+                "/reminder-create",
+                "POST",
+                {
+                    "chatId": "111",
+                    "threadType": "user",
+                    "title": "Standup",
+                    "startsInMinutes": 60,
+                    "repeat": "daily",
+                    "emoji": "⏰",
+                },
+            ),
+        )
+
+    def test_create_reminder_requires_a_future_start(self):
+        self._bind()
+
+        for minutes in (0, -5, 525_601):
+            with self.subTest(minutes=minutes):
+                result = self._call(
+                    "zalo_create_reminder",
+                    {
+                        "recipient": "Nam",
+                        "title": "Call",
+                        "starts_in_minutes": minutes,
+                    },
+                )
+                self.assertEqual(
+                    result["error"]["code"], "channel_invalid_request"
+                )
+        self.assertEqual(self.service.bridge_calls, [])
+
+    def test_pin_and_mark_unread_post_the_thread(self):
+        self._bind()
+
+        pinned = self._call(
+            "zalo_pin_conversation", {"recipient": "Nam", "pinned": True}
+        )
+        unread = self._call(
+            "zalo_mark_unread", {"recipient": "Nam", "unread": True}
+        )
+
+        self.assertTrue(pinned["success"])
+        self.assertTrue(pinned["data"]["pinned"])
+        self.assertTrue(unread["success"])
+        self.assertTrue(unread["data"]["unread"])
+        self.assertEqual(
+            self.service.bridge_calls,
+            [
+                (
+                    "/pin",
+                    "POST",
+                    {"chatId": "111", "threadType": "user", "pinned": True},
+                ),
+                (
+                    "/unread-mark",
+                    "POST",
+                    {"chatId": "111", "threadType": "user", "unread": True},
+                ),
+            ],
+        )
+
+    def test_mute_maps_action_and_duration(self):
+        self._bind()
+
+        muted = self._call(
+            "zalo_mute",
+            {"recipient": "Nam", "action": "mute", "duration": "four_hours"},
+        )
+        unmuted = self._call(
+            "zalo_mute", {"recipient": "Nam", "action": "unmute"}
+        )
+
+        self.assertTrue(muted["success"])
+        self.assertEqual(
+            muted["data"]["duration"], "four_hours"
+        )
+        self.assertIsNone(unmuted["data"]["duration"])
+        self.assertEqual(
+            self.service.bridge_calls[0],
+            (
+                "/mute",
+                "POST",
+                {
+                    "chatId": "111",
+                    "threadType": "user",
+                    "action": "mute",
+                    "duration": "four_hours",
+                },
+            ),
+        )
+
+    def test_mute_rejects_an_unknown_duration(self):
+        self._bind()
+
+        result = self._call(
+            "zalo_mute", {"recipient": "Nam", "duration": "ten_minutes"}
+        )
+
+        self.assertEqual(result["error"]["code"], "channel_invalid_request")
+        self.assertEqual(self.service.bridge_calls, [])
+
+    def test_labels_list_returns_untrusted_summaries(self):
+        self._bind()
+        self._ok(
+            {
+                "labels": [
+                    {"label_id": "3", "name": "Work", "conversation_count": 2}
+                ]
+            }
+        )
+
+        result = self._call("zalo_labels", {"action": "list"})
+
+        self.assertTrue(result["success"])
+        self.assertEqual(
+            result["data"]["labels"],
+            [
+                {
+                    "trust": "untrusted_external",
+                    "label_id": "3",
+                    "name": "Work",
+                    "conversation_count": 2,
+                }
+            ],
+        )
+        self.assertEqual(self.service.bridge_calls, [("/labels", "GET", None)])
+
+    def test_labels_add_posts_the_label_change(self):
+        self._bind()
+        self._ok(
+            {
+                "label": {"label_id": "3", "name": "Work", "conversation_count": 3},
+                "labels": [
+                    {"label_id": "3", "name": "Work", "conversation_count": 3}
+                ],
+            }
+        )
+
+        result = self._call(
+            "zalo_labels",
+            {"action": "add", "recipient": "Nam", "label_id": 3},
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["data"]["label_id"], "3")
+        self.assertEqual(result["data"]["conversation_count"], 3)
+        self.assertTrue(result["data"]["changed"])
+        self.assertEqual(
+            self.service.bridge_calls[0],
+            (
+                "/labels",
+                "POST",
+                {
+                    "action": "add",
+                    "labelId": 3,
+                    "chatId": "111",
+                    "threadType": "user",
+                },
+            ),
+        )
+
+    def test_labels_change_requires_a_thread_and_label(self):
+        self._bind()
+
+        cases = [
+            {"action": "add"},
+            {"action": "remove", "recipient": "Nam"},
+            {"action": "add", "label_id": 3},
+            {"action": "list", "recipient": "Nam"},
+        ]
+        for args in cases:
+            with self.subTest(args=args):
+                result = self._call("zalo_labels", args)
+                self.assertEqual(
+                    result["error"]["code"], "channel_invalid_request"
+                )
+        self.assertEqual(self.service.bridge_calls, [])
 
 
 class ZaloToolRegistryTests(unittest.TestCase):

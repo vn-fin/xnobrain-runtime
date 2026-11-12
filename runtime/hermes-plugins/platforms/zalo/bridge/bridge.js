@@ -22,6 +22,14 @@
  *   POST /reminders   - group reminders
  *   POST /notes      - group notes
  *   POST /poll-detail - one poll
+ *   POST /poll-create - a group poll
+ *   POST /note-create - a group note
+ *   POST /reminder-create - a reminder in a direct message or group
+ *   POST /pin        - pin or unpin a conversation
+ *   POST /mute       - mute or unmute a conversation
+ *   GET  /labels     - conversation labels
+ *   POST /labels     - add or remove one conversation from a label
+ *   POST /unread-mark - add or remove an unread mark
  *   POST /send        - chunked text message (optional quote and mentions)
  *   POST /send-media  - image, file, video, or voice attachment
  *   POST /send-link   - link preview
@@ -67,7 +75,10 @@ import {
 } from 'fs';
 import {
   LoginQRCallbackEventType,
+  MuteAction,
+  MuteDuration,
   Reactions,
+  ReminderRepeatMode,
   ThreadType,
   Zalo,
 } from 'zca-js';
@@ -84,6 +95,7 @@ import {
   MAX_STICKER_SEARCH_LIMIT,
   READ_RATE_LIMIT_PER_MINUTE,
   SEND_RATE_LIMIT_PER_MINUTE,
+  applyLabelChange,
   chunkList,
   classifyCloseCode,
   constantTimeEqual,
@@ -100,6 +112,7 @@ import {
   inboundQueueItem,
   isLoopback,
   isNewerMessageId,
+  labelEntries,
   markdownToZalo,
   mediaFromContent,
   mentionPayloads,
@@ -108,6 +121,7 @@ import {
   messageText,
   nextQrExpiryAttempt,
   normalizeMessageId,
+  noteRecord,
   noteRecords,
   parseBearerToken,
   pollRecord,
@@ -132,8 +146,14 @@ import {
   validateGroupHistoryBody,
   validateGroupInfoBody,
   validateHistoryBody,
+  validateLabelsBody,
+  validateMuteBody,
+  validateNoteCreateBody,
+  validatePinBody,
+  validatePollCreateBody,
   validatePollDetailBody,
   validateReactBody,
+  validateReminderCreateBody,
   validateSearchBody,
   validateSeenBody,
   validateSendCardBody,
@@ -143,6 +163,7 @@ import {
   validateSendStickerBody,
   validateTypingBody,
   validateUndoBody,
+  validateUnreadMarkBody,
   validateUserInfoBody,
 } from './lib.js';
 
@@ -159,6 +180,20 @@ const MAX_REMEMBERED_MESSAGES = 500;
 const MAX_MESSAGE_REFS = 2_000;
 /** How long a quote or undo waits for the live echo of a just-sent message. */
 const MESSAGE_REF_WAIT_MS = 2_000;
+
+/** Bridge duration/repeat names mapped onto the zca-js enums. */
+const MUTE_DURATIONS = Object.freeze({
+  one_hour: MuteDuration.ONE_HOUR,
+  four_hours: MuteDuration.FOUR_HOURS,
+  forever: MuteDuration.FOREVER,
+  until_8am: MuteDuration.UNTIL_8AM,
+});
+const REMINDER_REPEATS = Object.freeze({
+  none: ReminderRepeatMode.None,
+  daily: ReminderRepeatMode.Daily,
+  weekly: ReminderRepeatMode.Weekly,
+  monthly: ReminderRepeatMode.Monthly,
+});
 
 const args = process.argv.slice(2);
 
@@ -1698,6 +1733,234 @@ app.post('/poll-detail', async (req, res) => {
     return res.json(pollRecord(poll));
   } catch (error) {
     return fromInfoError(res, error);
+  }
+});
+
+app.post('/poll-create', async (req, res) => {
+  const body = validatePollCreateBody(req.body);
+  if (!body.ok) {
+    return fail(res, 400, 'invalid_request');
+  }
+  if (!isConnected()) {
+    return fail(res, 503, 'not_connected');
+  }
+  if (!sendBucket.take()) {
+    return fail(res, 429, 'rate_limited');
+  }
+  const options = {
+    question: body.question,
+    options: body.options,
+    allowMultiChoices: body.allowMultiChoices,
+    allowAddNewOption: body.allowAddNewOption,
+    hideVotePreview: body.hideVotePreview,
+    isAnonymous: body.isAnonymous,
+  };
+  if (body.expiresInHours > 0) {
+    options.expiredTime = Date.now() + body.expiresInHours * 3_600_000;
+  }
+  try {
+    const poll = await api.createPoll(options, body.groupId);
+    return res.json({ success: true, poll: pollRecord(poll) });
+  } catch {
+    return fail(res, 500, 'send_failed');
+  }
+});
+
+app.post('/note-create', async (req, res) => {
+  const body = validateNoteCreateBody(req.body);
+  if (!body.ok) {
+    return fail(res, 400, 'invalid_request');
+  }
+  if (!isConnected()) {
+    return fail(res, 503, 'not_connected');
+  }
+  if (!sendBucket.take()) {
+    return fail(res, 429, 'rate_limited');
+  }
+  try {
+    // zca-js 2.2.0 `createNote` takes a title only; it has no note body field.
+    const note = await api.createNote(
+      { title: body.title, pinAct: body.pinned },
+      body.groupId,
+    );
+    return res.json({ success: true, note: noteRecord(note) });
+  } catch {
+    return fail(res, 500, 'send_failed');
+  }
+});
+
+app.post('/reminder-create', async (req, res) => {
+  const body = validateReminderCreateBody(req.body);
+  if (!body.ok) {
+    return fail(res, 400, 'invalid_request');
+  }
+  if (!isConnected()) {
+    return fail(res, 503, 'not_connected');
+  }
+  if (!sendBucket.take()) {
+    return fail(res, 429, 'rate_limited');
+  }
+  const options = {
+    title: body.title,
+    startTime: Date.now() + body.startsInMinutes * 60_000,
+    repeat: REMINDER_REPEATS[body.repeat],
+  };
+  if (body.emoji) {
+    options.emoji = body.emoji;
+  }
+  try {
+    const reminder = await api.createReminder(
+      options,
+      body.chatId,
+      toZaloThreadType(body.threadType),
+    );
+    return res.json({
+      success: true,
+      reminder: reminderRecords([reminder])[0] || null,
+    });
+  } catch {
+    return fail(res, 500, 'send_failed');
+  }
+});
+
+app.post('/pin', async (req, res) => {
+  const body = validatePinBody(req.body);
+  if (!body.ok) {
+    return fail(res, 400, 'invalid_request');
+  }
+  if (!isConnected()) {
+    return fail(res, 503, 'not_connected');
+  }
+  if (!sendBucket.take()) {
+    return fail(res, 429, 'rate_limited');
+  }
+  try {
+    await api.setPinnedConversations(
+      body.pinned,
+      body.chatId,
+      toZaloThreadType(body.threadType),
+    );
+    return res.json({ success: true, pinned: body.pinned });
+  } catch {
+    return fail(res, 500, 'send_failed');
+  }
+});
+
+app.post('/mute', async (req, res) => {
+  const body = validateMuteBody(req.body);
+  if (!body.ok) {
+    return fail(res, 400, 'invalid_request');
+  }
+  if (!isConnected()) {
+    return fail(res, 503, 'not_connected');
+  }
+  if (!sendBucket.take()) {
+    return fail(res, 429, 'rate_limited');
+  }
+  const muted = body.action === 'mute';
+  const params = {
+    action: muted ? MuteAction.MUTE : MuteAction.UNMUTE,
+  };
+  if (muted) {
+    params.duration = MUTE_DURATIONS[body.duration];
+  }
+  try {
+    await api.setMute(params, body.chatId, toZaloThreadType(body.threadType));
+    return res.json({
+      success: true,
+      muted,
+      duration: muted ? body.duration : null,
+    });
+  } catch {
+    return fail(res, 500, 'send_failed');
+  }
+});
+
+app.get('/labels', async (req, res) => {
+  if (!isConnected()) {
+    return fail(res, 503, 'not_connected');
+  }
+  if (!readBucket.take()) {
+    return fail(res, 429, 'rate_limited');
+  }
+  try {
+    const current = await api.getLabels();
+    return res.json({
+      labels: labelEntries(current?.labelData),
+      version: Number(current?.version) || 0,
+    });
+  } catch (error) {
+    return fromInfoError(res, error);
+  }
+});
+
+app.post('/labels', async (req, res) => {
+  const body = validateLabelsBody(req.body);
+  if (!body.ok) {
+    return fail(res, 400, 'invalid_request');
+  }
+  if (body.action === 'list') {
+    return fail(res, 400, 'invalid_request');
+  }
+  if (!isConnected()) {
+    return fail(res, 503, 'not_connected');
+  }
+  if (!sendBucket.take()) {
+    return fail(res, 429, 'rate_limited');
+  }
+  try {
+    // The version is read again right before the write so a concurrent label
+    // edit is reported instead of overwritten with stale data.
+    const current = await api.getLabels();
+    const applied = applyLabelChange(current?.labelData, {
+      labelId: body.labelId,
+      chatId: body.chatId,
+      threadType: body.threadType,
+      add: body.action === 'add',
+    });
+    if (!applied.ok) {
+      return fail(
+        res,
+        applied.error === 'not_found' ? 404 : 502,
+        applied.error === 'not_found' ? 'not_found' : 'upstream_failed',
+      );
+    }
+    const updated = await api.updateLabels({
+      labelData: applied.labelData,
+      version: current?.version,
+    });
+    return res.json({
+      success: true,
+      label: applied.label,
+      labels: labelEntries(updated?.labelData),
+      version: Number(updated?.version) || 0,
+    });
+  } catch (error) {
+    return fromInfoError(res, error);
+  }
+});
+
+app.post('/unread-mark', async (req, res) => {
+  const body = validateUnreadMarkBody(req.body);
+  if (!body.ok) {
+    return fail(res, 400, 'invalid_request');
+  }
+  if (!isConnected()) {
+    return fail(res, 503, 'not_connected');
+  }
+  if (!sendBucket.take()) {
+    return fail(res, 429, 'rate_limited');
+  }
+  const threadType = toZaloThreadType(body.threadType);
+  try {
+    if (body.unread) {
+      await api.addUnreadMark(body.chatId, threadType);
+    } else {
+      await api.removeUnreadMark(body.chatId, threadType);
+    }
+    return res.json({ success: true, unread: body.unread });
+  } catch {
+    return fail(res, 500, 'send_failed');
   }
 });
 
