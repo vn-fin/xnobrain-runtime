@@ -3,6 +3,7 @@
 import base64
 import json
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -16,6 +17,16 @@ _TOOL_NAMES = (
     "zalo_me",
     "zalo_list_friends",
     "zalo_list_groups",
+    "zalo_list_conversations",
+    "zalo_read_history",
+    "zalo_read_group_history",
+    "zalo_search_messages",
+    "zalo_group_info",
+    "zalo_user_info",
+    "zalo_unread",
+    "zalo_list_reminders",
+    "zalo_list_notes",
+    "zalo_poll_detail",
     "zalo_send_image",
     "zalo_send_link",
     "zalo_react",
@@ -41,6 +52,22 @@ class _FakeService:
         self.group = {"status": "ok", "thread_id": "123", "name": "Team One"}
         self.approved = {"123"}
         self.media_max_mb = 10.0
+        self.dm_allowed = True
+        self.readable_threads = ["111", "123"]
+        self.threads = {
+            "111": {
+                "status": "ok",
+                "thread_id": "111",
+                "name": "Nam",
+                "type": "dm",
+            },
+            "123": {
+                "status": "ok",
+                "thread_id": "123",
+                "name": "Team One",
+                "type": "group",
+            },
+        }
 
     def profile_path(self, agent_id):
         return self.profile
@@ -59,6 +86,27 @@ class _FakeService:
 
     def zalo_bridge_health(self, agent_id):
         return self.health
+
+    def zalo_readable_threads(self, agent_id):
+        return list(self.readable_threads)
+
+    def resolve_zalo_thread(self, agent_id, thread_id):
+        entry = self.threads.get(str(thread_id))
+        if entry is None:
+            return {
+                "status": "not_found",
+                "thread_id": str(thread_id),
+                "name": "",
+                "type": "",
+            }
+        if entry["type"] == "dm" and not self.dm_allowed:
+            return {
+                "status": "dm_policy_blocked",
+                "thread_id": str(thread_id),
+                "name": "",
+                "type": "dm",
+            }
+        return entry
 
     def call_zalo_bridge(
         self,
@@ -93,6 +141,30 @@ class ZaloToolSchemaTests(unittest.TestCase):
         self.assertEqual(set(image["required"]), {"recipient", "path"})
         link = zalo_tools._SCHEMAS["zalo_send_link"]["function"]["parameters"]
         self.assertEqual(set(link["required"]), {"recipient", "url"})
+
+    def test_read_schemas_require_their_scope_fields(self):
+        expected = {
+            "zalo_read_history": {"recipient"},
+            "zalo_read_group_history": {"recipient"},
+            "zalo_search_messages": {"query"},
+            "zalo_group_info": {"recipient"},
+            "zalo_list_reminders": {"recipient"},
+            "zalo_list_notes": {"recipient"},
+            "zalo_poll_detail": {"recipient", "poll_id"},
+        }
+        for name, required in expected.items():
+            with self.subTest(name=name):
+                parameters = zalo_tools._SCHEMAS[name]["function"]["parameters"]
+                self.assertEqual(set(parameters.get("required") or []), required)
+                self.assertIs(parameters["additionalProperties"], False)
+        empty = zalo_tools._SCHEMAS["zalo_unread"]["function"]["parameters"]
+        self.assertEqual(empty["properties"], {})
+        self.assertIs(empty["additionalProperties"], False)
+        user = zalo_tools._SCHEMAS["zalo_user_info"]["function"]["parameters"]
+        self.assertEqual(
+            set(user["properties"]), {"user_id", "phone", "username"}
+        )
+        self.assertNotIn("required", user)
 
 
 class ZaloToolCallTests(unittest.TestCase):
@@ -490,6 +562,530 @@ class ZaloToolCallTests(unittest.TestCase):
 
         self.assertEqual(result["error"]["code"], "channel_thread_out_of_scope")
         self.assertEqual(self.service.bridge_calls, [])
+
+
+class ZaloReadToolTests(unittest.TestCase):
+    """P-B read tools: stored history, group reads, and channel-run scope."""
+
+    def setUp(self):
+        channel_tools._BINDINGS.clear()
+        channel_tools._PLATFORMS.clear()
+        self.addCleanup(channel_tools._BINDINGS.clear)
+        self.addCleanup(channel_tools._PLATFORMS.clear)
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.profile = Path(self.temporary.name) / "profiles" / "agent-1"
+        self.profile.mkdir(parents=True)
+        self.service = _FakeService(self.profile)
+
+    def _bind(self, threads=None):
+        if threads is not None:
+            self.service.repository = _Repository(threads)
+        channel_tools._BINDINGS["conv-1"] = (
+            self.service,
+            "agent-1",
+            "conv-1",
+            "run-1",
+            lambda approval: None,
+            None,
+        )
+        channel_tools._PLATFORMS["conv-1"] = frozenset({"zalo"})
+
+    def _call(self, name, args=None, conversation_id="conv-1"):
+        return json.loads(zalo_tools.call(name, args or {}, session_id=conversation_id))
+
+    def _ok(self, data):
+        self.service.bridge_result = {"ok": True, "status": 200, "data": data}
+
+    def test_conversations_include_only_readable_threads(self):
+        self._bind()
+        self._ok(
+            {
+                "conversations": [
+                    {
+                        "kind": "group",
+                        "id": "123",
+                        "name": "Team One",
+                        "member_count": 5,
+                        "pinned": True,
+                        "archived": False,
+                    },
+                    {
+                        "kind": "dm",
+                        "id": "111",
+                        "name": "Nam",
+                        "member_count": 0,
+                        "pinned": False,
+                        "archived": True,
+                    },
+                    {
+                        "kind": "group",
+                        "id": "999",
+                        "name": "Other",
+                        "member_count": 2,
+                        "pinned": False,
+                        "archived": False,
+                    },
+                ]
+            }
+        )
+
+        result = self._call("zalo_list_conversations")
+
+        self.assertTrue(result["success"])
+        self.assertEqual(
+            result["data"]["conversations"],
+            [
+                {
+                    "trust": "untrusted_external",
+                    "thread_type": "group",
+                    "thread_id": "123",
+                    "name": "Team One",
+                    "member_count": 5,
+                    "pinned": True,
+                    "archived": False,
+                },
+                {
+                    "trust": "untrusted_external",
+                    "thread_type": "dm",
+                    "thread_id": "111",
+                    "name": "Nam",
+                    "member_count": 0,
+                    "pinned": False,
+                    "archived": True,
+                },
+            ],
+        )
+        self.assertEqual(self.service.bridge_calls, [("/conversations", "GET", None)])
+
+    def test_conversations_filter_by_name(self):
+        self._bind()
+        self._ok(
+            {
+                "conversations": [
+                    {"kind": "group", "id": "123", "name": "Team One"},
+                    {"kind": "dm", "id": "111", "name": "Nam"},
+                ]
+            }
+        )
+
+        result = self._call("zalo_list_conversations", {"query": "nam"})
+
+        self.assertEqual(
+            [entry["thread_id"] for entry in result["data"]["conversations"]], ["111"]
+        )
+
+    def test_global_read_tools_are_denied_in_channel_runs(self):
+        self._bind(threads={"zalo": {"111": {"conversation_id": "conv-1"}}})
+
+        cases = [
+            ("zalo_list_conversations", {}),
+            ("zalo_user_info", {"user_id": "111"}),
+            ("zalo_unread", {}),
+        ]
+        for name, args in cases:
+            with self.subTest(name=name):
+                result = self._call(name, args)
+                self.assertEqual(
+                    result["error"]["code"], "channel_thread_out_of_scope"
+                )
+        self.assertEqual(self.service.bridge_calls, [])
+
+    def test_read_history_wraps_both_directions(self):
+        self._bind()
+        self._ok(
+            {
+                "messages": [
+                    {
+                        "messageId": "1",
+                        "senderId": "111",
+                        "senderName": "Nam",
+                        "text": "hello",
+                        "ts": 100,
+                        "type": "text",
+                        "direction": "in",
+                    },
+                    {
+                        "messageId": "2",
+                        "senderId": "",
+                        "senderName": "me",
+                        "text": "reply",
+                        "ts": 200,
+                        "type": "text",
+                        "direction": "out",
+                    },
+                ],
+                "truncated": False,
+                "backfilled": True,
+            }
+        )
+
+        result = self._call(
+            "zalo_read_history",
+            {"recipient": "Nam", "since_hours": 24, "limit": 10},
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["data"]["thread_id"], "111")
+        self.assertEqual(result["data"]["name"], "Nam")
+        self.assertTrue(result["data"]["backfilled"])
+        self.assertEqual(
+            [message["direction"] for message in result["data"]["messages"]],
+            ["in", "out"],
+        )
+        self.assertTrue(
+            all(
+                message["trust"] == "untrusted_external"
+                for message in result["data"]["messages"]
+            )
+        )
+        self.assertEqual(
+            self.service.bridge_calls,
+            [("/history", "POST", {"chatId": "111", "limit": 10, "sinceHours": 24})],
+        )
+
+    def test_read_history_requires_the_dm_policy_to_allow_the_contact(self):
+        self._bind()
+        self.service.dm_allowed = False
+
+        result = self._call("zalo_read_history", {"recipient": "Nam"})
+
+        self.assertEqual(result["error"]["code"], "channel_dm_policy_blocked")
+        self.assertEqual(self.service.bridge_calls, [])
+
+    def test_read_history_refuses_a_group_id(self):
+        self._bind()
+        self.service.recipient = {"status": "ok", "thread_id": "123", "name": "Team One"}
+
+        result = self._call("zalo_read_history", {"recipient": "123"})
+
+        self.assertEqual(result["error"]["code"], "channel_recipient_invalid")
+        self.assertEqual(self.service.bridge_calls, [])
+
+    def test_channel_run_reads_only_its_own_direct_thread(self):
+        self._bind(threads={"zalo": {"999": {"conversation_id": "conv-1"}}})
+
+        other = self._call("zalo_read_history", {"recipient": "Nam"})
+        self.assertEqual(other["error"]["code"], "channel_thread_out_of_scope")
+        self.assertEqual(self.service.bridge_calls, [])
+
+        self._bind(threads={"zalo": {"111": {"conversation_id": "conv-1"}}})
+        own = self._call("zalo_read_history", {"recipient": "Nam"})
+
+        self.assertTrue(own["success"])
+        self.assertEqual(self.service.bridge_calls[0][0], "/history")
+
+    def test_group_history_filters_by_since_and_reports_more(self):
+        self._bind()
+        now = time.time()
+        self._ok(
+            {
+                "messages": [
+                    {
+                        "message_id": "1",
+                        "sender_id": "77",
+                        "sender_name": "Lan",
+                        "text": "old",
+                        "ts": now - 7200,
+                        "type": "text",
+                        "direction": "in",
+                    },
+                    {
+                        "message_id": "2",
+                        "sender_id": "78",
+                        "sender_name": "Minh",
+                        "text": "new",
+                        "ts": now - 60,
+                        "type": "text",
+                        "direction": "in",
+                    },
+                ],
+                "more": 12,
+                "last_action_id": "77",
+            }
+        )
+
+        result = self._call(
+            "zalo_read_group_history",
+            {"recipient": "Team One", "since_hours": 1, "limit": 50},
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["data"]["thread_id"], "123")
+        self.assertEqual(
+            [message["message_id"] for message in result["data"]["messages"]], ["2"]
+        )
+        self.assertEqual(result["data"]["more"], 12)
+        self.assertEqual(result["data"]["last_action_id"], "77")
+        self.assertEqual(
+            self.service.bridge_calls[0],
+            ("/group-history", "POST", {"groupId": "123", "limit": 50}),
+        )
+
+    def test_group_reads_require_an_approved_group(self):
+        self._bind()
+        self.service.group = {"status": "group_not_approved", "thread_id": "123"}
+
+        cases = [
+            ("zalo_read_group_history", {"recipient": "123"}),
+            ("zalo_group_info", {"recipient": "123"}),
+            ("zalo_list_reminders", {"recipient": "123"}),
+            ("zalo_list_notes", {"recipient": "123"}),
+            ("zalo_poll_detail", {"recipient": "123", "poll_id": 5}),
+        ]
+        for name, args in cases:
+            with self.subTest(name=name):
+                result = self._call(name, args)
+                self.assertEqual(
+                    result["error"]["code"], "channel_group_not_approved"
+                )
+        self.assertEqual(self.service.bridge_calls, [])
+
+    def test_channel_run_group_reads_are_limited_to_its_own_group(self):
+        self._bind(threads={"zalo": {"999": {"conversation_id": "conv-1"}}})
+
+        other = self._call("zalo_group_info", {"recipient": "Team One"})
+        self.assertEqual(other["error"]["code"], "channel_thread_out_of_scope")
+        self.assertEqual(self.service.bridge_calls, [])
+
+        self._bind(threads={"zalo": {"123": {"conversation_id": "conv-1"}}})
+        own = self._call("zalo_group_info", {"recipient": "Team One"})
+
+        self.assertTrue(own["success"])
+        self.assertEqual(self.service.bridge_calls[0][0], "/group-info")
+
+    def test_group_info_wraps_members_as_untrusted(self):
+        self._bind()
+        self._ok(
+            {
+                "group_id": "123",
+                "name": "Team One",
+                "description": "desc",
+                "member_count": 2,
+                "created_time": 100,
+                "creator_id": "77",
+                "members": [
+                    {"user_id": "77", "display_name": "Owner", "role": "creator"},
+                    {"user_id": "78", "display_name": "Member", "role": "member"},
+                ],
+            }
+        )
+
+        result = self._call("zalo_group_info", {"recipient": "Team One"})
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["data"]["member_count"], 2)
+        self.assertEqual(
+            result["data"]["members"][0],
+            {
+                "trust": "untrusted_external",
+                "user_id": "77",
+                "display_name": "Owner",
+                "role": "creator",
+            },
+        )
+
+    def test_reminders_and_notes_are_group_scoped(self):
+        self._bind()
+        self._ok(
+            {
+                "reminders": [
+                    {
+                        "reminder_id": "5",
+                        "title": "Standup",
+                        "creator_id": "77",
+                        "start_time": 100,
+                        "repeat": 1,
+                    }
+                ]
+            }
+        )
+
+        reminders = self._call(
+            "zalo_list_reminders", {"recipient": "Team One", "page": 2, "count": 5}
+        )
+
+        self.assertTrue(reminders["success"])
+        self.assertEqual(reminders["data"]["group_id"], "123")
+        self.assertEqual(
+            reminders["data"]["reminders"][0],
+            {
+                "trust": "untrusted_external",
+                "reminder_id": "5",
+                "title": "Standup",
+                "creator_id": "77",
+                "start_time": 100,
+                "repeat": 1,
+            },
+        )
+        self.assertEqual(
+            self.service.bridge_calls[0],
+            ("/reminders", "POST", {"groupId": "123", "page": 2, "count": 5}),
+        )
+
+        self._ok(
+            {
+                "notes": [
+                    {
+                        "note_id": "7",
+                        "title": "Plan",
+                        "creator_id": "77",
+                        "created_time": 10,
+                        "updated_time": 20,
+                    }
+                ]
+            }
+        )
+        notes = self._call("zalo_list_notes", {"recipient": "Team One"})
+
+        self.assertTrue(notes["success"])
+        self.assertEqual(notes["data"]["notes"][0]["note_id"], "7")
+        self.assertEqual(self.service.bridge_calls[1][0], "/notes")
+
+    def test_poll_detail_wraps_the_poll(self):
+        self._bind()
+        self._ok(
+            {
+                "poll_id": "12",
+                "question": "Lunch?",
+                "options": [
+                    {
+                        "option_id": 1,
+                        "content": "Pizza",
+                        "votes": 2,
+                        "voted": True,
+                    }
+                ],
+                "closed": False,
+                "anonymous": True,
+                "multi_choice": False,
+                "vote_count": 3,
+                "created_time": 100,
+            }
+        )
+
+        result = self._call(
+            "zalo_poll_detail", {"recipient": "Team One", "poll_id": 12}
+        )
+
+        self.assertTrue(result["success"])
+        poll = result["data"]["poll"]
+        self.assertEqual(poll["question"], "Lunch?")
+        self.assertEqual(poll["vote_count"], 3)
+        self.assertEqual(
+            poll["options"][0],
+            {
+                "trust": "untrusted_external",
+                "option_id": 1,
+                "content": "Pizza",
+                "votes": 2,
+                "voted": True,
+            },
+        )
+        self.assertEqual(
+            self.service.bridge_calls[0],
+            ("/poll-detail", "POST", {"groupId": "123", "pollId": 12}),
+        )
+
+    def test_search_uses_every_readable_thread_in_a_web_run(self):
+        self._bind()
+        self._ok(
+            {
+                "messages": [
+                    {
+                        "messageId": "1",
+                        "threadId": "123",
+                        "senderId": "77",
+                        "senderName": "Lan",
+                        "text": "report ready",
+                        "ts": 100,
+                        "type": "text",
+                        "direction": "in",
+                    }
+                ],
+                "truncated": True,
+            }
+        )
+
+        result = self._call("zalo_search_messages", {"query": "report"})
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["data"]["messages"][0]["text"], "report ready")
+        self.assertTrue(result["data"]["truncated"])
+        self.assertEqual(
+            self.service.bridge_calls[0],
+            (
+                "/search",
+                "POST",
+                {"query": "report", "chatIds": ["111", "123"], "limit": 20},
+            ),
+        )
+
+    def test_search_in_a_channel_run_uses_only_the_origin_thread(self):
+        self._bind(threads={"zalo": {"111": {"conversation_id": "conv-1"}}})
+
+        result = self._call("zalo_search_messages", {"query": "report"})
+
+        self.assertTrue(result["success"])
+        self.assertEqual(self.service.bridge_calls[0][2]["chatIds"], ["111"])
+
+        self.service.bridge_calls.clear()
+        other = self._call(
+            "zalo_search_messages",
+            {"query": "report", "thread_type": "group", "recipient": "Team One"},
+        )
+        self.assertEqual(other["error"]["code"], "channel_thread_out_of_scope")
+        self.assertEqual(self.service.bridge_calls, [])
+
+    def test_user_info_sends_exactly_one_lookup_key(self):
+        self._bind()
+        self._ok(
+            {
+                "user_id": "42",
+                "display_name": "Nam",
+                "zalo_name": "nam",
+                "avatar": "https://a",
+                "is_friend": True,
+                "gender": 0,
+                "birthday": "",
+            }
+        )
+
+        result = self._call("zalo_user_info", {"username": "nam"})
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["data"]["user_id"], "42")
+        self.assertEqual(self.service.bridge_calls[0], ("/user-info", "POST", {"username": "nam"}))
+
+        for args in ({}, {"user_id": "1", "phone": "+84912345678"}, {"phone": "abc"}):
+            with self.subTest(args=args):
+                invalid = self._call("zalo_user_info", args)
+                self.assertEqual(
+                    invalid["error"]["code"], "channel_invalid_request"
+                )
+
+    def test_unread_filters_to_readable_threads(self):
+        self._bind()
+        self._ok(
+            {
+                "direct": [
+                    {"thread_id": "111", "last_message_id": "9", "ts": 100},
+                    {"thread_id": "777", "last_message_id": "8", "ts": 90},
+                ],
+                "groups": [{"thread_id": "123", "last_message_id": "7", "ts": 80}],
+            }
+        )
+
+        result = self._call("zalo_unread")
+
+        self.assertTrue(result["success"])
+        self.assertEqual(
+            [entry["thread_id"] for entry in result["data"]["direct"]], ["111"]
+        )
+        self.assertEqual(
+            [entry["thread_id"] for entry in result["data"]["groups"]], ["123"]
+        )
+        self.assertEqual(result["data"]["direct"][0]["trust"], "untrusted_external")
 
 
 class ZaloToolRegistryTests(unittest.TestCase):

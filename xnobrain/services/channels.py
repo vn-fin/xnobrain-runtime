@@ -459,6 +459,101 @@ class ChannelsService:
             if entry.get("status") == "approved"
         }
 
+    def _zalo_allowed_users(self, profile: Path) -> set[str]:
+        """Read the personal channel allowlist from the profile environment."""
+        env = self.repository.env(profile)
+        return {
+            item.strip()
+            for item in str(env.get("ZALO_ALLOWED_USERS") or "").split(",")
+            if item.strip()
+        }
+
+    def _zalo_paired_users(self, agent_id: str) -> set[str]:
+        """Return the Zalo user ids with an approved channel pairing."""
+        try:
+            approved = self._pairing_store(agent_id).approved("zalo")
+        except Exception:
+            return set()
+        paired: set[str] = set()
+        for entry in approved if isinstance(approved, list) else []:
+            if not isinstance(entry, Mapping):
+                continue
+            user_id = str(entry.get("user_id") or "").strip()
+            if user_id:
+                paired.add(user_id)
+        return paired
+
+    def _zalo_dm_allowed(
+        self,
+        profile: Path,
+        agent_id: str,
+        thread_id: str,
+        paired: set[str] | None = None,
+    ) -> bool:
+        """True when the profile's dm_policy lets this direct message be read."""
+        policy = self._dm_policy(self.repository.config(profile))
+        if policy == "disabled":
+            return False
+        if thread_id in self._zalo_allowed_users(profile):
+            return True
+        if policy == "allowlist":
+            return False
+        if paired is None:
+            paired = self._zalo_paired_users(agent_id)
+        return thread_id in paired
+
+    def zalo_dm_allowed(self, agent_id: str, thread_id: Any) -> bool:
+        """Public direct-message readability check for the personal Zalo tools."""
+        profile = self._profile(agent_id)
+        raw = zalo_channels.normalize_recipient(thread_id)
+        if not _ZALO_ID.fullmatch(raw):
+            return False
+        return self._zalo_dm_allowed(profile, agent_id, raw)
+
+    def resolve_zalo_thread(self, agent_id: str, thread_id: Any) -> dict[str, Any]:
+        """Resolve one readable personal Zalo thread by exact id.
+
+        Groups follow the owner approval rule and direct messages follow the
+        profile ``dm_policy``, mirroring the send tools.
+        """
+        raw = zalo_channels.normalize_recipient(thread_id)
+        if not _ZALO_ID.fullmatch(raw):
+            return {"status": "invalid", "thread_id": "", "name": "", "type": ""}
+        profile = self._profile(agent_id)
+        _, record = self._group_state(profile, "zalo")
+        entry = record["groups"].get(raw)
+        if isinstance(entry, dict):
+            name = self._group_name(entry.get("name")) or raw
+            status = "ok" if entry.get("status") == "approved" else "group_not_approved"
+            return {"status": status, "thread_id": raw, "name": name, "type": "group"}
+        if not self._zalo_dm_allowed(profile, agent_id, raw):
+            return {
+                "status": "dm_policy_blocked",
+                "thread_id": raw,
+                "name": "",
+                "type": "dm",
+            }
+        senders = zalo_channels.known_senders(
+            self.repository.history(profile), self.repository.directory(profile)
+        )
+        name = str((senders.get(raw) or {}).get("name") or "")
+        return {"status": "ok", "thread_id": raw, "name": name, "type": "dm"}
+
+    def zalo_readable_threads(self, agent_id: str) -> list[str]:
+        """Every personal Zalo thread this profile may read, for history tools."""
+        profile = self._profile(agent_id)
+        ids = set(self.approved_zalo_groups(agent_id))
+        policy = self._dm_policy(self.repository.config(profile))
+        if policy == "disabled":
+            return sorted(ids)
+        candidates = self._zalo_allowed_users(profile)
+        if policy == "pairing":
+            candidates = candidates | self._zalo_paired_users(agent_id)
+        for thread_id in candidates:
+            if _ZALO_ID.fullmatch(thread_id):
+                ids.add(thread_id)
+        return sorted(ids)
+
     def zalo_media_max_mb(self, agent_id: str) -> float:
         """Read the profile's outbound media size cap in MiB."""
         profile = self._profile(agent_id)

@@ -12,6 +12,16 @@
  *   GET  /me          - own profile
  *   GET  /friends     - friend list, cached 5 minutes
  *   GET  /groups      - group list, cached 5 minutes
+ *   GET  /conversations - direct and group conversations with pin/archive flags
+ *   POST /history     - stored direct-message history, with a best-effort backfill
+ *   POST /group-history - group history through getGroupChatHistory
+ *   POST /search      - substring search over stored history
+ *   POST /group-info  - one group and a member preview
+ *   POST /user-info   - one user profile by id, phone, or username
+ *   GET  /unread      - unread conversation marks
+ *   POST /reminders   - group reminders
+ *   POST /notes      - group notes
+ *   POST /poll-detail - one poll
  *   POST /send        - chunked text message
  *   POST /send-media  - image attachment
  *   POST /send-link   - link preview
@@ -26,8 +36,8 @@
  * Usage:
  *   node bridge.js --port 3110 --session <HERMES_HOME>/zalo
  *
- * Inbound group messages are forwarded like direct messages; history.jsonl
- * still stores direct messages only.
+ * Every inbound and outbound message is appended to history.jsonl, direct and
+ * group alike, with 30-day retention and mode 0600.
  */
 
 import express from 'express';
@@ -59,21 +69,27 @@ import {
 } from 'zca-js';
 
 import {
+  GROUP_HISTORY_RATE_LIMIT_PER_MINUTE,
   GROUP_INFO_BATCH_SIZE,
   GROUP_INFO_CACHE_TTL_MS,
   LIST_CACHE_TTL_MS,
   MAX_QUEUE_SIZE,
   MAX_RELOGIN_ATTEMPTS,
+  MAX_SEARCH_SCAN,
   READ_RATE_LIMIT_PER_MINUTE,
   SEND_RATE_LIMIT_PER_MINUTE,
   chunkList,
   classifyCloseCode,
   constantTimeEqual,
+  conversationEntries,
+  conversationIds,
   cookieListFromJar,
   createInfoGate,
   createTokenBucket,
   fillGroupNames,
+  groupHistoryRecords,
   groupInfoCacheKey,
+  groupInfoRecord,
   historyEntry,
   inboundQueueItem,
   isLoopback,
@@ -84,27 +100,45 @@ import {
   messageText,
   nextQrExpiryAttempt,
   normalizeMessageId,
+  noteRecords,
   parseBearerToken,
+  pollRecord,
   pushToQueue,
   quotesSelf,
+  readHistoryRecords,
   receiptFields,
   reloginDelayMs,
   rememberCursor,
   rememberGroupName,
+  reminderRecords,
+  selectHistoryRecords,
   shouldQueueMessage,
   splitStyledChunks,
   trimHistoryLines,
+  unreadRecords,
+  userInfoRecord,
+  validateBoardBody,
+  validateGroupHistoryBody,
+  validateGroupInfoBody,
+  validateHistoryBody,
+  validatePollDetailBody,
   validateReactBody,
+  validateSearchBody,
   validateSeenBody,
   validateSendLinkBody,
   validateSendMediaBody,
   validateSendMessageBody,
   validateTypingBody,
+  validateUserInfoBody,
 } from './lib.js';
 
 const DEFAULT_PORT = 3110;
 const KEEPALIVE_INTERVAL_MS = 60_000;
 const SESSION_SAVE_INTERVAL_MS = 10 * 60_000;
+const HISTORY_TRIM_INTERVAL_MS = 6 * 60 * 60_000;
+/** How long one DM history request waits for `old_messages` to arrive. */
+const BACKFILL_WAIT_MS = 2_500;
+const MAX_BACKFILL_MESSAGES = 500;
 const MAX_SEEN_IDS = 2_000;
 const MAX_REMEMBERED_MESSAGES = 500;
 
@@ -144,6 +178,11 @@ const readBucket = createTokenBucket({
 const sendBucket = createTokenBucket({
   capacity: SEND_RATE_LIMIT_PER_MINUTE,
   perMinute: SEND_RATE_LIMIT_PER_MINUTE,
+});
+// Group history is the heaviest read endpoint and gets its own smaller bucket.
+const groupHistoryBucket = createTokenBucket({
+  capacity: GROUP_HISTORY_RATE_LIMIT_PER_MINUTE,
+  perMinute: GROUP_HISTORY_RATE_LIMIT_PER_MINUTE,
 });
 // One gate serializes every upstream read-info call, so Zalo never sees two
 // profile/list/group-info requests close together. It also owns the TTL cache
@@ -193,12 +232,15 @@ let qrExpiredCount = 0;
 let qrLoginAborted = false;
 let keepAliveTimer = null;
 let sessionSaveTimer = null;
+let historyTrimTimer = null;
 let sessionIdentity = null;
 
 const messageQueue = [];
 const seenIds = new Set();
 const seenOrder = [];
 const cursors = loadJsonFile(CURSOR_FILE, {});
+// One in-flight direct-message backfill; old messages never join the queue.
+let backfillState = null;
 
 function loadJsonFile(filePath, fallback) {
   try {
@@ -265,7 +307,10 @@ function writeTextAtomic(filePath, text, mode = 0o600) {
   renameSync(temporary, filePath);
 }
 
-function appendHistory(message, { recovered = false } = {}) {
+function appendHistory(
+  message,
+  { recovered = false, threadType = 'user', direction = 'in', type = 'text' } = {},
+) {
   const entry = historyEntry({
     messageId: message.messageId,
     threadId: message.threadId,
@@ -273,6 +318,9 @@ function appendHistory(message, { recovered = false } = {}) {
     senderName: message.senderName,
     text: message.text,
     timestamp: message.timestamp,
+    threadType: message.threadType || threadType,
+    direction: message.direction || direction,
+    type: message.type || type,
     recovered,
   });
   try {
@@ -280,14 +328,37 @@ function appendHistory(message, { recovered = false } = {}) {
       encoding: 'utf8',
       mode: 0o600,
     });
+    // `mode` only applies to a new file; force the mode on every append.
+    try {
+      chmodSync(HISTORY_FILE, 0o600);
+    } catch {
+      // Best effort on filesystems without POSIX modes.
+    }
   } catch {
-    console.log('[zalo] failed to append inbound history');
+    console.log('[zalo] failed to append history');
   }
 }
 
+/** Read the stored history file as raw JSONL lines; missing file reads empty. */
+function readHistoryLines() {
+  try {
+    return readFileSync(HISTORY_FILE, 'utf8').split(/\r?\n/);
+  } catch {
+    return [];
+  }
+}
+
+/** Convert an optional `sinceHours` value into an absolute epoch threshold. */
+function sinceThreshold(sinceHours) {
+  if (typeof sinceHours !== 'number' || !Number.isFinite(sinceHours)) {
+    return null;
+  }
+  return Date.now() - sinceHours * 3_600_000;
+}
+
 /**
- * Keep only the last 30 days of inbound history. Runs once at bridge start so
- * the append-only file cannot grow without bound across sessions.
+ * Keep only the last 30 days of stored history. Runs once at bridge start and
+ * every six hours so the append-only file cannot grow without bound.
  */
 function trimHistory() {
   try {
@@ -299,7 +370,17 @@ function trimHistory() {
     const payload = kept.length ? `${kept.join('\n')}\n` : '';
     writeTextAtomic(HISTORY_FILE, payload, 0o600);
   } catch {
-    console.log('[zalo] failed to trim inbound history');
+    console.log('[zalo] failed to trim history');
+  }
+}
+
+function startHistoryTrim() {
+  if (historyTrimTimer) {
+    clearInterval(historyTrimTimer);
+  }
+  historyTrimTimer = setInterval(trimHistory, HISTORY_TRIM_INTERVAL_MS);
+  if (typeof historyTrimTimer.unref === 'function') {
+    historyTrimTimer.unref();
   }
 }
 
@@ -465,20 +546,20 @@ function ingestMessage(message, { requireNewer = false } = {}) {
     receipt: receiptFields(data),
   });
   pushToQueue(messageQueue, item);
-  // Group history is a later plan (P-B); keep the existing DM-only history.
-  if (threadType === 'user') {
-    appendHistory(
-      {
-        messageId,
-        threadId,
-        senderId,
-        senderName,
-        text,
-        timestamp,
-      },
-      { recovered: Boolean(requireNewer) },
-    );
-  }
+  appendHistory(
+    {
+      messageId,
+      threadId,
+      senderId,
+      senderName,
+      text,
+      timestamp,
+      threadType,
+      direction: 'in',
+      type: media.length ? media[0].kind : 'text',
+    },
+    { recovered: Boolean(requireNewer) },
+  );
   return true;
 }
 
@@ -490,8 +571,116 @@ function handleOldMessages(messages, threadType) {
     return;
   }
   for (const message of messages) {
+    const threadId = normalizeMessageId(
+      message?.threadId ||
+        (threadType === ThreadType.User ? message?.data?.uidFrom : ''),
+    );
+    if (
+      threadType === ThreadType.User &&
+      backfillState &&
+      backfillState.threadId === threadId
+    ) {
+      collectBackfillMessage(message, threadId);
+      continue;
+    }
     ingestMessage(message, { requireNewer: true });
   }
+}
+
+/**
+ * Store one older direct message collected for an in-flight history request.
+ *
+ * Backfilled messages never enter the inbound queue: they are history only, so
+ * a read cannot start an agent turn.
+ */
+function collectBackfillMessage(message, threadId) {
+  if (!backfillState || backfillState.collected.length >= MAX_BACKFILL_MESSAGES) {
+    return;
+  }
+  const data = message?.data || {};
+  const messageId = normalizeMessageId(data.msgId ?? data.realMsgId);
+  if (!messageId) {
+    return;
+  }
+  const media = mediaFromContent(data.content);
+  const text = messageText(data.content);
+  if (!text.trim() && media.length === 0) {
+    return;
+  }
+  backfillState.collected.push({
+    messageId,
+    threadId,
+    senderId: normalizeMessageId(data.uidFrom || threadId),
+    senderName: String(data.dName || ''),
+    text,
+    timestamp: Number(data.ts) || Date.now(),
+    threadType: 'user',
+    direction: message?.isSelf ? 'out' : 'in',
+    type: media.length ? media[0].kind : 'text',
+  });
+}
+
+/**
+ * Request one page of older direct messages for one thread and store them.
+ *
+ * zca-js `requestOldMessages` has no per-chat cursor, so this asks for the page
+ * before the oldest stored message and keeps only the events for this thread.
+ * Resolves true when at least one message was stored.
+ */
+function backfillThread(threadId, lastMessageId, limit) {
+  if (!api?.listener || backfillState) {
+    return Promise.resolve(false);
+  }
+  return new Promise((resolve) => {
+    const deadline = Date.now() + BACKFILL_WAIT_MS;
+    const state = {
+      threadId,
+      collected: [],
+      finish: null,
+    };
+    const timer = setInterval(() => {
+      if (backfillState !== state) {
+        return;
+      }
+      if (
+        state.collected.length >= Math.min(limit, MAX_BACKFILL_MESSAGES) ||
+        Date.now() >= deadline
+      ) {
+        state.finish();
+      }
+    }, 100);
+    if (typeof timer.unref === 'function') {
+      timer.unref();
+    }
+    state.finish = () => {
+      if (backfillState !== state) {
+        return;
+      }
+      backfillState = null;
+      clearInterval(timer);
+      const existing = new Set(
+        readHistoryRecords(readHistoryLines())
+          .filter((record) => record.threadId === threadId)
+          .map((record) => record.messageId),
+      );
+      let stored = 0;
+      for (const item of state.collected) {
+        if (existing.has(item.messageId)) {
+          continue;
+        }
+        existing.add(item.messageId);
+        appendHistory(item, { recovered: true });
+        stored += 1;
+      }
+      resolve(stored > 0);
+    };
+    backfillState = state;
+    try {
+      api.listener.requestOldMessages(ThreadType.User, lastMessageId || null);
+    } catch {
+      state.finish();
+    }
+  });
 }
 
 function requestCatchUp() {
@@ -915,6 +1104,48 @@ function fromInfoError(res, error) {
   return fromUpstreamError(res);
 }
 
+function friendEntries(friends) {
+  return (Array.isArray(friends) ? friends : []).map((friend) => ({
+    userId: normalizeMessageId(friend?.userId),
+    displayName: String(friend?.displayName || ''),
+    zaloName: String(friend?.zaloName || ''),
+  }));
+}
+
+/** Load the group list with names and member counts, through the info gate. */
+async function loadGroups() {
+  const listing = await infoGate.run('groups:list', () => api.getAllGroups(), {
+    ttlMs: LIST_CACHE_TTL_MS,
+  });
+  const grid =
+    listing?.gridVerMap && typeof listing.gridVerMap === 'object'
+      ? listing.gridVerMap
+      : {};
+  const groups = [];
+  for (const batch of chunkList(Object.keys(grid), GROUP_INFO_BATCH_SIZE)) {
+    const info = await infoGate.run(
+      groupInfoCacheKey(batch),
+      () => api.getGroupInfo(batch),
+      { ttlMs: GROUP_INFO_CACHE_TTL_MS },
+    );
+    const gridInfoMap = info?.gridInfoMap || {};
+    for (const groupId of batch) {
+      const group = gridInfoMap[groupId];
+      if (!group) {
+        continue;
+      }
+      const name = String(group.name || '');
+      rememberGroupName(groupNames, groupId, name);
+      groups.push({
+        groupId: normalizeMessageId(group.groupId || groupId),
+        name,
+        memberCount: Number(group.totalMember) || 0,
+      });
+    }
+  }
+  return groups;
+}
+
 const app = express();
 
 app.use((req, res, next) => {
@@ -1006,13 +1237,7 @@ app.get('/friends', async (req, res) => {
     const friends = await infoGate.run('friends', () => api.getAllFriends(), {
       ttlMs: LIST_CACHE_TTL_MS,
     });
-    return res.json({
-      friends: (Array.isArray(friends) ? friends : []).map((friend) => ({
-        userId: normalizeMessageId(friend?.userId),
-        displayName: String(friend?.displayName || ''),
-        zaloName: String(friend?.zaloName || ''),
-      })),
-    });
+    return res.json({ friends: friendEntries(friends) });
   } catch (error) {
     return fromInfoError(res, error);
   }
@@ -1026,35 +1251,276 @@ app.get('/groups', async (req, res) => {
     return fail(res, 429, 'rate_limited');
   }
   try {
-    const listing = await infoGate.run('groups:list', () => api.getAllGroups(), {
+    return res.json({ groups: await loadGroups() });
+  } catch (error) {
+    return fromInfoError(res, error);
+  }
+});
+
+app.get('/conversations', async (req, res) => {
+  if (!isConnected()) {
+    return fail(res, 503, 'not_connected');
+  }
+  if (!readBucket.take()) {
+    return fail(res, 429, 'rate_limited');
+  }
+  try {
+    const friends = await infoGate.run('friends', () => api.getAllFriends(), {
       ttlMs: LIST_CACHE_TTL_MS,
     });
-    const grid = listing?.gridVerMap && typeof listing.gridVerMap === 'object'
-      ? listing.gridVerMap
-      : {};
-    const groups = [];
-    for (const batch of chunkList(Object.keys(grid), GROUP_INFO_BATCH_SIZE)) {
-      const info = await infoGate.run(
-        groupInfoCacheKey(batch),
-        () => api.getGroupInfo(batch),
+    const groups = await loadGroups();
+    const pinned = await infoGate.run(
+      'conversations:pinned',
+      () => api.getPinConversations(),
+      { ttlMs: LIST_CACHE_TTL_MS },
+    );
+    const archived = await infoGate.run(
+      'conversations:archived',
+      () => api.getArchivedChatList(),
+      { ttlMs: LIST_CACHE_TTL_MS },
+    );
+    return res.json({
+      conversations: conversationEntries({
+        friends: friendEntries(friends),
+        groups,
+        pinned: conversationIds(pinned?.conversations),
+        archived: conversationIds(archived?.items),
+      }),
+    });
+  } catch (error) {
+    return fromInfoError(res, error);
+  }
+});
+
+app.post('/history', async (req, res) => {
+  const body = validateHistoryBody(req.body);
+  if (!body.ok) {
+    return fail(res, 400, 'invalid_request');
+  }
+  if (!readBucket.take()) {
+    return fail(res, 429, 'rate_limited');
+  }
+  const read = () =>
+    selectHistoryRecords(readHistoryRecords(readHistoryLines()), {
+      threadIds: [body.chatId],
+      since: sinceThreshold(body.sinceHours),
+      limit: body.limit,
+    });
+  let result = read();
+  let backfilled = false;
+  if (body.backfill && result.records.length < body.limit && isConnected()) {
+    const oldest = result.records[0]?.messageId || '';
+    backfilled = await backfillThread(body.chatId, oldest, body.limit);
+    if (backfilled) {
+      result = read();
+    }
+  }
+  return res.json({
+    messages: result.records,
+    truncated: result.matched > result.records.length,
+    backfilled,
+  });
+});
+
+app.post('/group-history', async (req, res) => {
+  const body = validateGroupHistoryBody(req.body);
+  if (!body.ok) {
+    return fail(res, 400, 'invalid_request');
+  }
+  if (!isConnected()) {
+    return fail(res, 503, 'not_connected');
+  }
+  // Its own bucket: the heaviest upstream read has the smallest allowance.
+  if (!groupHistoryBucket.take()) {
+    return fail(res, 429, 'rate_limited');
+  }
+  try {
+    const history = await api.getGroupChatHistory(body.groupId, body.limit);
+    return res.json({
+      messages: groupHistoryRecords(history?.groupMsgs),
+      more: Number(history?.more) || 0,
+      last_action_id: normalizeMessageId(history?.lastActionId),
+    });
+  } catch (error) {
+    return fromInfoError(res, error);
+  }
+});
+
+app.post('/search', (req, res) => {
+  const body = validateSearchBody(req.body);
+  if (!body.ok) {
+    return fail(res, 400, 'invalid_request');
+  }
+  if (!readBucket.take()) {
+    return fail(res, 429, 'rate_limited');
+  }
+  const scanned = readHistoryRecords(readHistoryLines()).slice(-MAX_SEARCH_SCAN);
+  const result = selectHistoryRecords(scanned, {
+    threadIds: body.chatIds,
+    query: body.query,
+    since: sinceThreshold(body.sinceHours),
+    limit: body.limit,
+  });
+  return res.json({
+    messages: result.records,
+    truncated: result.matched > result.records.length,
+  });
+});
+
+app.post('/group-info', async (req, res) => {
+  const body = validateGroupInfoBody(req.body);
+  if (!body.ok) {
+    return fail(res, 400, 'invalid_request');
+  }
+  if (!isConnected()) {
+    return fail(res, 503, 'not_connected');
+  }
+  if (!readBucket.take()) {
+    return fail(res, 429, 'rate_limited');
+  }
+  try {
+    const info = await infoGate.run(
+      groupInfoCacheKey([body.groupId]),
+      () => api.getGroupInfo([body.groupId]),
+      { ttlMs: GROUP_INFO_CACHE_TTL_MS },
+    );
+    const group = info?.gridInfoMap?.[body.groupId];
+    if (!group) {
+      return fail(res, 404, 'not_found');
+    }
+    let profiles = null;
+    const memberIds = Array.isArray(group.memberIds)
+      ? group.memberIds.slice(0, body.memberLimit)
+      : [];
+    if (memberIds.length) {
+      const key = `groupmembers:${body.groupId}:${memberIds.join(',')}`;
+      profiles = await infoGate.run(
+        key,
+        () => api.getGroupMembersInfo(memberIds),
         { ttlMs: GROUP_INFO_CACHE_TTL_MS },
       );
-      const gridInfoMap = info?.gridInfoMap || {};
-      for (const groupId of batch) {
-        const group = gridInfoMap[groupId];
-        if (!group) {
-          continue;
-        }
-        const name = String(group.name || '');
-        rememberGroupName(groupNames, groupId, name);
-        groups.push({
-          groupId: normalizeMessageId(group.groupId || groupId),
-          name,
-          memberCount: Number(group.totalMember) || 0,
-        });
-      }
     }
-    return res.json({ groups });
+    return res.json(
+      groupInfoRecord(group, profiles?.profiles, {
+        memberLimit: body.memberLimit,
+      }),
+    );
+  } catch (error) {
+    return fromInfoError(res, error);
+  }
+});
+
+app.post('/user-info', async (req, res) => {
+  const body = validateUserInfoBody(req.body);
+  if (!body.ok) {
+    return fail(res, 400, 'invalid_request');
+  }
+  if (!isConnected()) {
+    return fail(res, 503, 'not_connected');
+  }
+  if (!readBucket.take()) {
+    return fail(res, 429, 'rate_limited');
+  }
+  try {
+    const key = `userinfo:${body.field}:${body.value}`;
+    const loaded = await infoGate.run(
+      key,
+      async () => {
+        if (body.field === 'userId') {
+          const response = await api.getUserInfo(body.value);
+          const changed = response?.changed_profiles || {};
+          return changed[body.value] || Object.values(changed)[0] || null;
+        }
+        if (body.field === 'phone') {
+          return api.findUser(body.value);
+        }
+        return api.findUserByUsername(body.value);
+      },
+      { ttlMs: LIST_CACHE_TTL_MS },
+    );
+    if (!loaded) {
+      return fail(res, 404, 'not_found');
+    }
+    return res.json(userInfoRecord(loaded));
+  } catch (error) {
+    return fromInfoError(res, error);
+  }
+});
+
+app.get('/unread', async (req, res) => {
+  if (!isConnected()) {
+    return fail(res, 503, 'not_connected');
+  }
+  if (!readBucket.take()) {
+    return fail(res, 429, 'rate_limited');
+  }
+  try {
+    const mark = await api.getUnreadMark();
+    return res.json(unreadRecords(mark));
+  } catch (error) {
+    return fromInfoError(res, error);
+  }
+});
+
+app.post('/reminders', async (req, res) => {
+  const body = validateBoardBody(req.body);
+  if (!body.ok) {
+    return fail(res, 400, 'invalid_request');
+  }
+  if (!isConnected()) {
+    return fail(res, 503, 'not_connected');
+  }
+  if (!readBucket.take()) {
+    return fail(res, 429, 'rate_limited');
+  }
+  try {
+    const items = await api.getListReminder(
+      { page: body.page, count: body.count },
+      body.groupId,
+      ThreadType.Group,
+    );
+    return res.json({ reminders: reminderRecords(items) });
+  } catch (error) {
+    return fromInfoError(res, error);
+  }
+});
+
+app.post('/notes', async (req, res) => {
+  const body = validateBoardBody(req.body);
+  if (!body.ok) {
+    return fail(res, 400, 'invalid_request');
+  }
+  if (!isConnected()) {
+    return fail(res, 503, 'not_connected');
+  }
+  if (!readBucket.take()) {
+    return fail(res, 429, 'rate_limited');
+  }
+  try {
+    const board = await api.getListBoard(
+      { page: body.page, count: body.count },
+      body.groupId,
+    );
+    return res.json({ notes: noteRecords(board?.items) });
+  } catch (error) {
+    return fromInfoError(res, error);
+  }
+});
+
+app.post('/poll-detail', async (req, res) => {
+  const body = validatePollDetailBody(req.body);
+  if (!body.ok) {
+    return fail(res, 400, 'invalid_request');
+  }
+  if (!isConnected()) {
+    return fail(res, 503, 'not_connected');
+  }
+  if (!readBucket.take()) {
+    return fail(res, 429, 'rate_limited');
+  }
+  try {
+    const poll = await api.getPollDetail(Number(body.pollId));
+    return res.json(pollRecord(poll));
   } catch (error) {
     return fromInfoError(res, error);
   }
@@ -1094,6 +1560,24 @@ app.post('/send', async (req, res) => {
   } catch {
     return fail(res, 500, 'send_failed');
   }
+  const timestamp = Date.now();
+  chunks.forEach((chunk, index) => {
+    const messageId = messageIds[index];
+    if (!messageId) {
+      return;
+    }
+    appendHistory({
+      messageId,
+      threadId: body.chatId,
+      senderId: ownId,
+      senderName: 'me',
+      text: chunk.msg,
+      timestamp,
+      threadType: body.threadType,
+      direction: 'out',
+      type: 'text',
+    });
+  });
   return res.json({
     success: true,
     // The adapter treats the last chunk as the primary reply id.
@@ -1124,9 +1608,24 @@ app.post('/send-media', async (req, res) => {
       toZaloThreadType(body.threadType),
     );
     const messageId = sent?.message?.msgId;
+    const normalized =
+      messageId === undefined || messageId === null ? null : String(messageId);
+    if (normalized) {
+      appendHistory({
+        messageId: normalized,
+        threadId: body.chatId,
+        senderId: ownId,
+        senderName: 'me',
+        text: body.caption,
+        timestamp: Date.now(),
+        threadType: body.threadType,
+        direction: 'out',
+        type: 'image',
+      });
+    }
     return res.json({
       success: true,
-      messageId: messageId === undefined || messageId === null ? null : String(messageId),
+      messageId: normalized,
     });
   } catch {
     return fail(res, 500, 'send_failed');
@@ -1158,9 +1657,25 @@ app.post('/send-link', async (req, res) => {
       body.chatId,
       toZaloThreadType(body.threadType),
     );
+    const messageId = sent?.msgId;
+    const normalized =
+      messageId === undefined || messageId === null ? null : String(messageId);
+    if (normalized) {
+      appendHistory({
+        messageId: normalized,
+        threadId: body.chatId,
+        senderId: ownId,
+        senderName: 'me',
+        text: [body.message, body.url].filter(Boolean).join(' '),
+        timestamp: Date.now(),
+        threadType: body.threadType,
+        direction: 'out',
+        type: 'link',
+      });
+    }
     return res.json({
       success: true,
-      messageId: sent?.msgId === undefined || sent?.msgId === null ? null : String(sent.msgId),
+      messageId: normalized,
     });
   } catch {
     return fail(res, 500, 'send_failed');
@@ -1255,6 +1770,10 @@ process.on('SIGTERM', () => {
   shuttingDown = true;
   stopKeepAlive();
   stopSessionSave();
+  if (historyTrimTimer) {
+    clearInterval(historyTrimTimer);
+    historyTrimTimer = null;
+  }
   if (reloginTimer) {
     clearTimeout(reloginTimer);
     reloginTimer = null;
@@ -1269,6 +1788,7 @@ process.on('SIGTERM', () => {
 
 app.listen(PORT, '127.0.0.1', () => {
   writeBridgeToken();
+  startHistoryTrim();
   console.log(`[zalo] bridge listening on 127.0.0.1:${PORT}`);
   console.log(`[zalo] session directory: ${SESSION_DIR}`);
   console.log(`[zalo] inbound queue limit: ${MAX_QUEUE_SIZE}`);

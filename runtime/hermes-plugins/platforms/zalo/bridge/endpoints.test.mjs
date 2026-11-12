@@ -11,25 +11,40 @@ import {
   chunkList,
   chunkText,
   constantTimeEqual,
+  conversationEntries,
+  conversationIds,
   createInfoGate,
   createTokenBucket,
   createTtlCache,
   detectImageType,
   fillGroupNames,
+  groupHistoryRecords,
   groupInfoCacheKey,
+  groupInfoRecord,
   inboundQueueItem,
   isRateLimitError,
   markdownToZalo,
   mediaFromContent,
   mentionsSelf,
   messageText,
+  noteRecords,
   parseBearerToken,
+  pollRecord,
   quotesSelf,
   receiptFields,
   rememberGroupName,
+  reminderRecords,
   safeImageFileName,
   splitStyledChunks,
+  unreadRecords,
+  userInfoRecord,
+  validateBoardBody,
+  validateGroupHistoryBody,
+  validateGroupInfoBody,
+  validateHistoryBody,
+  validatePollDetailBody,
   validateReactBody,
+  validateSearchBody,
   validateSeenBody,
   validateSendBody,
   validateSendLinkBody,
@@ -37,6 +52,7 @@ import {
   validateSendMessageBody,
   validateThreadTarget,
   validateTypingBody,
+  validateUserInfoBody,
 } from './lib.js';
 
 const PNG_HEADER = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
@@ -1071,4 +1087,347 @@ test('splitStyledChunks preserves the full converted text', () => {
 test('splitStyledChunks returns no chunks for empty text', () => {
   assert.deepEqual(splitStyledChunks('', []), []);
   assert.deepEqual(splitStyledChunks(null, []), []);
+});
+
+test('validateHistoryBody accepts a direct-message read with defaults', () => {
+  assert.deepEqual(validateHistoryBody({ chatId: ' 42 ' }), {
+    ok: true,
+    chatId: '42',
+    limit: 50,
+    sinceHours: null,
+    backfill: true,
+  });
+  assert.deepEqual(validateHistoryBody({ chatId: '42', limit: 200, sinceHours: 24 }), {
+    ok: true,
+    chatId: '42',
+    limit: 200,
+    sinceHours: 24,
+    backfill: true,
+  });
+});
+
+test('validateHistoryBody rejects bad ids, limits and sizes', () => {
+  for (const body of [
+    null,
+    {},
+    { chatId: 'zalo:42' },
+    { chatId: '42', limit: 0 },
+    { chatId: '42', limit: 201 },
+    { chatId: '42', limit: '50' },
+    { chatId: '42', sinceHours: -1 },
+    { chatId: '42', sinceHours: 9_000 },
+    { chatId: '42', backfill: 'yes' },
+  ]) {
+    assert.deepEqual(validateHistoryBody(body), { ok: false, error: 'invalid_request' });
+  }
+});
+
+test('validateGroupHistoryBody caps the count and requires a group id', () => {
+  assert.deepEqual(validateGroupHistoryBody({ groupId: '123', limit: 80 }), {
+    ok: true,
+    groupId: '123',
+    limit: 80,
+  });
+  assert.equal(validateGroupHistoryBody({ groupId: '' }).ok, false);
+  assert.equal(validateGroupHistoryBody({ groupId: '123', limit: 500 }).ok, false);
+});
+
+test('validateSearchBody requires a query and validates thread scope', () => {
+  assert.deepEqual(validateSearchBody({ query: ' report ' }), {
+    ok: true,
+    query: 'report',
+    chatIds: null,
+    limit: 50,
+    sinceHours: null,
+  });
+  assert.deepEqual(validateSearchBody({ query: 'report', chatIds: ['1', 2], limit: 10 }), {
+    ok: true,
+    query: 'report',
+    chatIds: ['1', '2'],
+    limit: 10,
+    sinceHours: null,
+  });
+  assert.equal(validateSearchBody({ query: '' }).ok, false);
+  assert.equal(validateSearchBody({ query: 'x'.repeat(201) }).ok, false);
+  assert.equal(validateSearchBody({ query: 'report', chatIds: ['nope'] }).ok, false);
+  assert.equal(validateSearchBody({ query: 'report', chatIds: '1' }).ok, false);
+});
+
+test('validateGroupInfoBody bounds the member preview', () => {
+  assert.deepEqual(validateGroupInfoBody({ groupId: '9' }), {
+    ok: true,
+    groupId: '9',
+    memberLimit: 50,
+  });
+  assert.equal(validateGroupInfoBody({ groupId: '9', memberLimit: 0 }).ok, true);
+  assert.equal(validateGroupInfoBody({ groupId: '9', memberLimit: 101 }).ok, false);
+  assert.equal(validateGroupInfoBody({ groupId: '9', memberLimit: -1 }).ok, false);
+});
+
+test('validateUserInfoBody accepts exactly one lookup key', () => {
+  assert.deepEqual(validateUserInfoBody({ userId: '42' }), {
+    ok: true,
+    field: 'userId',
+    value: '42',
+  });
+  assert.deepEqual(validateUserInfoBody({ phone: '+84912345678' }), {
+    ok: true,
+    field: 'phone',
+    value: '+84912345678',
+  });
+  assert.deepEqual(validateUserInfoBody({ username: 'nam.nguyen' }), {
+    ok: true,
+    field: 'username',
+    value: 'nam.nguyen',
+  });
+  for (const body of [
+    null,
+    {},
+    { userId: '42', phone: '+84912345678' },
+    { userId: 'zalo' },
+    { phone: 'abc' },
+    { username: 'with space' },
+    { userId: '42', extra: true },
+  ]) {
+    assert.equal(validateUserInfoBody(body).ok, false);
+  }
+});
+
+test('validateBoardBody bounds paging and count', () => {
+  assert.deepEqual(validateBoardBody({ groupId: '7' }), {
+    ok: true,
+    groupId: '7',
+    page: 1,
+    count: 20,
+  });
+  assert.equal(validateBoardBody({ groupId: '7', page: 2, count: 100 }).ok, true);
+  assert.equal(validateBoardBody({ groupId: '7', page: 0 }).ok, false);
+  assert.equal(validateBoardBody({ groupId: '7', count: 101 }).ok, false);
+  assert.equal(validateBoardBody({}).ok, false);
+});
+
+test('validatePollDetailBody requires both a group and a poll id', () => {
+  assert.deepEqual(validatePollDetailBody({ groupId: '7', pollId: 8 }), {
+    ok: true,
+    groupId: '7',
+    pollId: '8',
+  });
+  assert.deepEqual(validatePollDetailBody({ groupId: '7', pollId: '8' }), {
+    ok: true,
+    groupId: '7',
+    pollId: '8',
+  });
+  assert.equal(validatePollDetailBody({ groupId: '7' }).ok, false);
+  assert.equal(validatePollDetailBody({ groupId: '7', pollId: 'x' }).ok, false);
+});
+
+test('conversationIds accepts raw ids and small objects', () => {
+  assert.deepEqual(
+    conversationIds(['11', 22, { id: '33' }, { conversationId: '44' }, { threadId: '55' }, 'bad', null]),
+    ['11', '22', '33', '44', '55'],
+  );
+  assert.deepEqual(conversationIds(null), []);
+});
+
+test('conversationEntries merges friends, groups and flags', () => {
+  const entries = conversationEntries({
+    friends: [
+      { userId: '1', displayName: 'Nam' },
+      { userId: '2', displayName: 'Lan' },
+    ],
+    groups: [{ groupId: '3', name: 'Team', memberCount: 9 }],
+    pinned: ['2'],
+    archived: [{ id: '3' }],
+  });
+
+  assert.deepEqual(entries, [
+    { kind: 'dm', id: '2', name: 'Lan', member_count: 0, pinned: true, archived: false },
+    { kind: 'group', id: '3', name: 'Team', member_count: 9, pinned: false, archived: true },
+    { kind: 'dm', id: '1', name: 'Nam', member_count: 0, pinned: false, archived: false },
+  ]);
+});
+
+test('groupHistoryRecords shapes self and inbound messages oldest first', () => {
+  const records = groupHistoryRecords([
+    {
+      isSelf: true,
+      data: {
+        msgId: '11',
+        uidFrom: '42',
+        dName: 'Me',
+        content: { title: 'photo.jpg', type: 'chat.photo', params: '{"fileSize":12}' },
+        ts: '1700000001000',
+      },
+    },
+    {
+      isSelf: false,
+      data: { msgId: '10', uidFrom: '77', dName: 'Nam', content: 'hello', ts: '1700000000000' },
+    },
+    { isSelf: false, data: { msgId: '', content: 'ignored' } },
+  ]);
+
+  assert.deepEqual(records, [
+    {
+      message_id: '10',
+      sender_id: '77',
+      sender_name: 'Nam',
+      text: 'hello',
+      ts: 1_700_000_000_000,
+      type: 'text',
+      direction: 'in',
+    },
+    {
+      message_id: '11',
+      sender_id: '42',
+      sender_name: 'Me',
+      text: 'photo.jpg',
+      ts: 1_700_000_001_000,
+      type: 'image',
+      direction: 'out',
+    },
+  ]);
+});
+
+test('groupInfoRecord marks creator, admins and the member limit', () => {
+  const record = groupInfoRecord(
+    {
+      groupId: '9',
+      name: 'Team',
+      desc: 'desc',
+      totalMember: 3,
+      createdTime: 100,
+      creatorId: '1',
+      adminIds: ['2'],
+      memberIds: ['1', '2', '3'],
+    },
+    {
+      1: { displayName: 'Owner' },
+      2: { displayName: 'Admin' },
+      3: { zaloName: 'Member' },
+    },
+    { memberLimit: 2 },
+  );
+
+  assert.deepEqual(record, {
+    group_id: '9',
+    name: 'Team',
+    description: 'desc',
+    member_count: 3,
+    created_time: 100,
+    creator_id: '1',
+    members: [
+      { user_id: '1', display_name: 'Owner', role: 'creator' },
+      { user_id: '2', display_name: 'Admin', role: 'admin' },
+    ],
+  });
+});
+
+test('reminderRecords and noteRecords keep only their own shapes', () => {
+  assert.deepEqual(
+    reminderRecords([
+      {
+        id: '5',
+        creatorId: '1',
+        startTime: 1_700_000_000,
+        repeat: 1,
+        params: { title: 'Standup' },
+      },
+      null,
+    ]),
+    [
+      {
+        reminder_id: '5',
+        title: 'Standup',
+        creator_id: '1',
+        start_time: 1_700_000_000,
+        repeat: 1,
+      },
+    ],
+  );
+
+  assert.deepEqual(
+    noteRecords([
+      { boardType: 1, data: { id: '7', creatorId: '1', createTime: 10, editTime: 20, params: { title: 'Plan' } } },
+      { boardType: 3, data: { id: '8', params: { title: 'Poll' } } },
+    ]),
+    [
+      {
+        note_id: '7',
+        title: 'Plan',
+        creator_id: '1',
+        created_time: 10,
+        updated_time: 20,
+      },
+    ],
+  );
+});
+
+test('pollRecord and unreadRecords normalize upstream payloads', () => {
+  assert.deepEqual(
+    pollRecord({
+      poll_id: 12,
+      question: 'Lunch?',
+      closed: false,
+      is_anonymous: true,
+      allow_multi_choices: false,
+      num_vote: 3,
+      created_time: 100,
+      options: [{ option_id: 1, content: 'Pizza', votes: 2, voted: true }],
+    }),
+    {
+      poll_id: '12',
+      question: 'Lunch?',
+      options: [{ option_id: 1, content: 'Pizza', votes: 2, voted: true }],
+      closed: false,
+      anonymous: true,
+      multi_choice: false,
+      vote_count: 3,
+      created_time: 100,
+    },
+  );
+
+  assert.deepEqual(
+    unreadRecords({
+      data: {
+        convsUser: [{ id: 42, cliMsgId: 9, ts: 100 }],
+        convsGroup: [{ id: '43', cliMsgId: 8, ts: 200 }, { id: 'x' }],
+      },
+    }),
+    {
+      direct: [{ thread_id: '42', last_message_id: '9', ts: 100 }],
+      groups: [{ thread_id: '43', last_message_id: '8', ts: 200 }],
+    },
+  );
+});
+
+test('userInfoRecord accepts getUsers and findUser shapes', () => {
+  assert.deepEqual(
+    userInfoRecord({
+      userId: '42',
+      displayName: 'Nam',
+      zaloName: 'nam',
+      avatar: 'https://a',
+      isFr: 1,
+      gender: 1,
+      sdob: '1990-01-01',
+    }),
+    {
+      user_id: '42',
+      display_name: 'Nam',
+      zalo_name: 'nam',
+      avatar: 'https://a',
+      is_friend: true,
+      gender: 1,
+      birthday: '1990-01-01',
+    },
+  );
+  assert.deepEqual(userInfoRecord({ uid: '43', display_name: 'Lan', zalo_name: 'lan' }), {
+    user_id: '43',
+    display_name: 'Lan',
+    zalo_name: 'lan',
+    avatar: '',
+    is_friend: false,
+    gender: 0,
+    birthday: '',
+  });
 });

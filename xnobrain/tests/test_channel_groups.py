@@ -233,6 +233,80 @@ class ChannelGroupFixture(unittest.IsolatedAsyncioTestCase):
         )
 
 
+class ZaloReadScopeTests(ChannelGroupFixture):
+    """Readable-thread resolution shared by the personal Zalo read tools."""
+
+    def _enable_zalo(self, dm_policy="disabled"):
+        config = yaml.safe_load(
+            self.profile.joinpath("config.yaml").read_text(encoding="utf-8")
+        )
+        config["platforms"]["zalo"] = {
+            "enabled": True,
+            "extra": {"dm_policy": dm_policy},
+        }
+        self.profile.joinpath("config.yaml").write_text(
+            yaml.safe_dump(config), encoding="utf-8"
+        )
+
+    async def _approve_zalo(self, group_id="123"):
+        self.service.record_group_seen(
+            {
+                "platform": "zalo",
+                "agent_id": "agent-1",
+                "group_id": group_id,
+                "group_name": "Team One",
+            },
+            TOKEN,
+        )
+        return await self.service.approve_group(
+            "agent-1", "zalo", group_id, self._trusted()
+        )
+
+    async def test_resolve_zalo_thread_honors_approval_and_dm_policy(self):
+        self._enable_zalo("allowlist")
+        self.service.repository.update_env(self.profile, {"ZALO_ALLOWED_USERS": "111,222"})
+        await self._approve_zalo("123")
+        self.service.record_group_seen(
+            {
+                "platform": "zalo",
+                "agent_id": "agent-1",
+                "group_id": "456",
+                "group_name": "Pending",
+            },
+            TOKEN,
+        )
+
+        approved = self.service.resolve_zalo_thread("agent-1", "123")
+        self.assertEqual((approved["status"], approved["type"]), ("ok", "group"))
+        pending = self.service.resolve_zalo_thread("agent-1", "456")
+        self.assertEqual(pending["status"], "group_not_approved")
+        allowed = self.service.resolve_zalo_thread("agent-1", "111")
+        self.assertEqual((allowed["status"], allowed["type"]), ("ok", "dm"))
+        blocked = self.service.resolve_zalo_thread("agent-1", "999")
+        self.assertEqual(blocked["status"], "dm_policy_blocked")
+        self.assertEqual(
+            self.service.resolve_zalo_thread("agent-1", "not-an-id")["status"],
+            "invalid",
+        )
+        self.assertTrue(self.service.zalo_dm_allowed("agent-1", "222"))
+        self.assertFalse(self.service.zalo_dm_allowed("agent-1", "999"))
+        self.assertEqual(
+            self.service.zalo_readable_threads("agent-1"), ["111", "123", "222"]
+        )
+
+    async def test_disabled_dm_policy_hides_direct_messages(self):
+        self._enable_zalo("disabled")
+        self.service.repository.update_env(self.profile, {"ZALO_ALLOWED_USERS": "111"})
+        await self._approve_zalo("123")
+
+        self.assertFalse(self.service.zalo_dm_allowed("agent-1", "111"))
+        self.assertEqual(
+            self.service.resolve_zalo_thread("agent-1", "111")["status"],
+            "dm_policy_blocked",
+        )
+        self.assertEqual(self.service.zalo_readable_threads("agent-1"), ["123"])
+
+
 class ChannelGroupServiceTests(ChannelGroupFixture):
     async def test_pending_record_and_cap(self):
         for index in range(MAX_PENDING_GROUP_REQUESTS + 2):

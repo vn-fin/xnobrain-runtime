@@ -198,6 +198,32 @@ Done when: the agent can summarize the last N messages of an approved group
 `getGroupChatHistory` reaches) and every tool above has a schema test, a
 bridge validation test and a send-scope or approval test as applicable.
 
+### P-B progress
+
+- **Phase 1 — read tools: done 2026-11-12.** Tool -> bridge endpoint -> zca-js:
+  `zalo_list_conversations` -> `GET /conversations` -> `getAllFriends`,
+  `getAllGroups`, `getGroupInfo`, `getPinConversations`,
+  `getArchivedChatList`; `zalo_read_history` -> `POST /history` ->
+  `history.jsonl` + `listener.requestOldMessages(User)`;
+  `zalo_read_group_history` -> `POST /group-history` ->
+  `getGroupChatHistory`; `zalo_search_messages` -> `POST /search` -> stored
+  history; `zalo_group_info` -> `POST /group-info` -> `getGroupInfo`,
+  `getGroupMembersInfo`; `zalo_user_info` -> `POST /user-info` ->
+  `getUserInfo`, `findUser`, `findUserByUsername`; `zalo_unread` ->
+  `GET /unread` -> `getUnreadMark`; `zalo_list_reminders` ->
+  `POST /reminders` -> `getListReminder`; `zalo_list_notes` ->
+  `POST /notes` -> `getListBoard`; `zalo_poll_detail` ->
+  `POST /poll-detail` -> `getPollDetail`.
+- The bridge now stores inbound and outbound direct and group messages in
+  `history.jsonl` (30-day retention, `0600`, trimmed at start and every six
+  hours) and enforces the read bucket (30/min) plus a
+  `getGroupChatHistory` bucket (10/min).
+- Deferred: `getGroupChatHistory` paging. zca-js 2.2.0 accepts only
+  `(groupId, count)`, so the tool reports `more` and `last_action_id` but cannot
+  request the next page.
+- **Phase 2 (send extras):** not started. **Phase 3 (group utilities):** not
+  started. **Phase 4 (admin):** not started.
+
 ## Track B — Zalo Bot
 
 ### B1 — Store conversations from connect time

@@ -20,8 +20,24 @@ export const MAX_MEDIA_BASE64_LENGTH = 14 * 1024 * 1024;
 
 export const READ_RATE_LIMIT_PER_MINUTE = 30;
 export const SEND_RATE_LIMIT_PER_MINUTE = 20;
+/** `getGroupChatHistory` is the heaviest read, so it has its own smaller bucket. */
+export const GROUP_HISTORY_RATE_LIMIT_PER_MINUTE = 10;
 export const LIST_CACHE_TTL_MS = 5 * 60_000;
 export const GROUP_INFO_BATCH_SIZE = 50;
+
+/** Per-call message cap shared by the history and search reads (D4). */
+export const MAX_HISTORY_READ_LIMIT = 200;
+export const DEFAULT_HISTORY_READ_LIMIT = 50;
+export const MAX_SEARCH_QUERY_LENGTH = 200;
+export const MAX_SEARCH_SCAN = 5_000;
+export const MAX_BOARD_COUNT = 100;
+export const MAX_GROUP_MEMBER_LIMIT = 100;
+export const MAX_SEARCH_THREADS = 200;
+export const MAX_PHONE_LENGTH = 15;
+export const PHONE_PATTERN = /^\+?[0-9]{6,15}$/;
+export const USERNAME_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
+/** zca-js `BoardType.Note`. */
+export const NOTE_BOARD_TYPE = 1;
 
 /** Cache lifetime for a group-info lookup (single group or batch). */
 export const GROUP_INFO_CACHE_TTL_MS = 10 * 60_000;
@@ -97,10 +113,11 @@ export function nextQrExpiryAttempt(current) {
 export const HISTORY_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 /**
- * Build one inbound-history record.
+ * Build one history record.
  *
  * The bridge appends these as JSON lines so the Runtime tool can resolve a
- * human name to a Zalo thread without reading the live queue.
+ * human name to a Zalo thread and read stored history without the live queue.
+ * Direct and group messages are stored, in both directions (`direction`).
  */
 export function historyEntry({
   messageId,
@@ -109,6 +126,9 @@ export function historyEntry({
   senderName,
   text,
   timestamp,
+  threadType = 'user',
+  direction = 'in',
+  type = 'text',
   recovered = false,
 }) {
   const parsed = Number(timestamp);
@@ -116,11 +136,308 @@ export function historyEntry({
     ts: Number.isFinite(parsed) && parsed > 0 ? parsed : Date.now(),
     messageId: normalizeMessageId(messageId),
     threadId: normalizeMessageId(threadId),
+    threadType: threadType === 'group' ? 'group' : 'user',
+    direction: direction === 'out' ? 'out' : 'in',
+    type: String(type || 'text').slice(0, 32) || 'text',
     senderId: normalizeMessageId(senderId),
     senderName: String(senderName || ''),
     text: String(text || ''),
     recovered: Boolean(recovered),
   };
+}
+
+/**
+ * Parse stored JSONL history into normalized records inside the retention
+ * window. Malformed lines and foreign shapes are skipped, never repaired.
+ */
+export function readHistoryRecords(
+  lines,
+  { now = Date.now(), maxAgeMs = HISTORY_MAX_AGE_MS } = {},
+) {
+  const cutoff = Number(now) - Math.max(0, Number(maxAgeMs) || 0);
+  const records = [];
+  for (const line of Array.isArray(lines) ? lines : []) {
+    const raw = String(line || '').trim();
+    if (!raw) {
+      continue;
+    }
+    let record;
+    try {
+      record = JSON.parse(raw);
+    } catch {
+      continue;
+    }
+    if (!record || typeof record !== 'object' || Array.isArray(record)) {
+      continue;
+    }
+    const timestamp = Number(record.ts);
+    if (!Number.isFinite(timestamp) || timestamp < cutoff) {
+      continue;
+    }
+    records.push({
+      ts: timestamp,
+      messageId: normalizeMessageId(record.messageId),
+      threadId: normalizeMessageId(record.threadId),
+      threadType: record.threadType === 'group' ? 'group' : 'user',
+      direction: record.direction === 'out' ? 'out' : 'in',
+      type: String(record.type || 'text').slice(0, 32) || 'text',
+      senderId: normalizeMessageId(record.senderId),
+      senderName: String(record.senderName || ''),
+      text: String(record.text || ''),
+    });
+  }
+  return records;
+}
+
+/**
+ * Select stored records for one read or search request.
+ *
+ * Records are kept oldest-first so the newest `limit` entries survive; text is
+ * clipped per message. Returns `{records, matched}` where `matched` counts all
+ * matches before the limit, so the caller can report truncation.
+ */
+export function selectHistoryRecords(
+  records,
+  {
+    threadIds = null,
+    query = '',
+    since = null,
+    limit = DEFAULT_HISTORY_READ_LIMIT,
+    textLimit = MAX_CHUNK_LENGTH,
+  } = {},
+) {
+  const wanted = Array.isArray(threadIds)
+    ? new Set(threadIds.map((id) => normalizeMessageId(id)).filter(Boolean))
+    : null;
+  const needle = String(query || '').trim().toLowerCase();
+  const threshold = typeof since === 'number' && Number.isFinite(since) ? since : null;
+  const cap = Math.max(1, Math.min(MAX_HISTORY_READ_LIMIT, Math.floor(Number(limit) || DEFAULT_HISTORY_READ_LIMIT)));
+  const matches = [];
+  for (const record of Array.isArray(records) ? records : []) {
+    if (!record || typeof record !== 'object') {
+      continue;
+    }
+    if (wanted && !wanted.has(normalizeMessageId(record.threadId))) {
+      continue;
+    }
+    if (threshold !== null && !(Number(record.ts) >= threshold)) {
+      continue;
+    }
+    if (needle && !String(record.text || '').toLowerCase().includes(needle)) {
+      continue;
+    }
+    matches.push(record);
+  }
+  matches.sort((left, right) => Number(left.ts || 0) - Number(right.ts || 0));
+  const selected = matches.slice(-cap).map((record) => ({
+    ...record,
+    text: String(record.text || '').slice(0, textLimit),
+  }));
+  return { records: selected, matched: matches.length };
+}
+
+/** True when `value` is one usable numeric Zalo id. */
+function numericId(value) {
+  if (typeof value !== 'string' && typeof value !== 'number') {
+    return '';
+  }
+  const id = normalizeMessageId(value);
+  return THREAD_ID_PATTERN.test(id) ? id : '';
+}
+
+function optionalSinceHours(value) {
+  if (value === undefined || value === null) {
+    return { ok: true, value: null };
+  }
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0 || number > 8_760) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  return { ok: true, value: number };
+}
+
+function boundedInteger(value, { min = 1, max = MAX_HISTORY_READ_LIMIT, fallback }) {
+  if (value === undefined || value === null) {
+    return fallback;
+  }
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < min || value > max) {
+    return null;
+  }
+  return value;
+}
+
+/** Validate a `POST /history` body (direct-message history). */
+export function validateHistoryBody(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const chatId = numericId(body.chatId);
+  if (!chatId) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const limit = boundedInteger(body.limit, { fallback: DEFAULT_HISTORY_READ_LIMIT });
+  if (limit === null) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const since = optionalSinceHours(body.sinceHours);
+  if (!since.ok) {
+    return since;
+  }
+  if (body.backfill !== undefined && typeof body.backfill !== 'boolean') {
+    return { ok: false, error: 'invalid_request' };
+  }
+  return {
+    ok: true,
+    chatId,
+    limit,
+    sinceHours: since.value,
+    backfill: body.backfill !== false,
+  };
+}
+
+/** Validate a `POST /group-history` body. */
+export function validateGroupHistoryBody(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const groupId = numericId(body.groupId);
+  if (!groupId) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const limit = boundedInteger(body.limit, { fallback: DEFAULT_HISTORY_READ_LIMIT });
+  if (limit === null) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  return { ok: true, groupId, limit };
+}
+
+/** Validate a `POST /search` body over stored history. */
+export function validateSearchBody(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  if (typeof body.query !== 'string') {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const query = body.query.trim();
+  if (!query || query.length > MAX_SEARCH_QUERY_LENGTH) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const limit = boundedInteger(body.limit, { fallback: DEFAULT_HISTORY_READ_LIMIT });
+  if (limit === null) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const since = optionalSinceHours(body.sinceHours);
+  if (!since.ok) {
+    return since;
+  }
+  let chatIds = null;
+  if (body.chatIds !== undefined && body.chatIds !== null) {
+    if (!Array.isArray(body.chatIds) || body.chatIds.length > MAX_SEARCH_THREADS) {
+      return { ok: false, error: 'invalid_request' };
+    }
+    chatIds = [];
+    for (const value of body.chatIds) {
+      const id = numericId(value);
+      if (!id) {
+        return { ok: false, error: 'invalid_request' };
+      }
+      chatIds.push(id);
+    }
+  }
+  return { ok: true, query, chatIds, limit, sinceHours: since.value };
+}
+
+/** Validate a `POST /group-info` body. */
+export function validateGroupInfoBody(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const groupId = numericId(body.groupId);
+  if (!groupId) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const memberLimit = boundedInteger(body.memberLimit, {
+    min: 0,
+    max: MAX_GROUP_MEMBER_LIMIT,
+    fallback: GROUP_INFO_BATCH_SIZE,
+  });
+  if (memberLimit === null) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  return { ok: true, groupId, memberLimit };
+}
+
+/**
+ * Validate a `POST /user-info` body.
+ *
+ * Exactly one lookup key is accepted: numeric id, phone number, or username.
+ */
+export function validateUserInfoBody(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  if (Object.keys(body).some((key) => !['userId', 'phone', 'username'].includes(key))) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const provided = ['userId', 'phone', 'username'].filter((field) => {
+    const value = body[field];
+    return value !== undefined && value !== null && value !== '';
+  });
+  if (provided.length !== 1) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const field = provided[0];
+  const raw = body[field];
+  if (typeof raw !== 'string') {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const value = raw.trim();
+  if (field === 'userId' && !numericId(value)) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  if (field === 'phone' && (!PHONE_PATTERN.test(value) || value.length > MAX_PHONE_LENGTH + 1)) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  if (field === 'username' && !USERNAME_PATTERN.test(value)) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  return { ok: true, field, value };
+}
+
+/** Validate a reminders or notes listing body. */
+export function validateBoardBody(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const groupId = numericId(body.groupId);
+  if (!groupId) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const page = boundedInteger(body.page, { min: 1, max: 10_000, fallback: 1 });
+  if (page === null) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const count = boundedInteger(body.count, { min: 1, max: MAX_BOARD_COUNT, fallback: 20 });
+  if (count === null) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  return { ok: true, groupId, page, count };
+}
+
+/** Validate a `POST /poll-detail` body. */
+export function validatePollDetailBody(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const groupId = numericId(body.groupId);
+  const pollId = numericId(
+    typeof body.pollId === 'number' ? String(body.pollId) : body.pollId,
+  );
+  if (!groupId || !pollId) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  return { ok: true, groupId, pollId };
 }
 
 /**
@@ -1144,6 +1461,266 @@ export function fillGroupNames(messages, names) {
     }
   }
   return messages;
+}
+
+/**
+ * Extract numeric conversation ids from a pin/archive listing.
+ *
+ * zca-js returns raw ids or small objects depending on the account version, so
+ * both shapes are accepted and anything else is skipped.
+ */
+export function conversationIds(values) {
+  const ids = [];
+  for (const value of Array.isArray(values) ? values : []) {
+    const raw =
+      typeof value === 'string' || typeof value === 'number'
+        ? value
+        : value && typeof value === 'object'
+          ? value.id ?? value.conversationId ?? value.threadId ?? value.groupId ?? value.userId
+          : '';
+    const id = normalizeMessageId(raw);
+    if (THREAD_ID_PATTERN.test(id) && !ids.includes(id)) {
+      ids.push(id);
+    }
+  }
+  return ids;
+}
+
+/**
+ * Build the conversation list from the friend list, group list, pinned and
+ * archived ids. Pinned entries come first; the rest keeps source order.
+ */
+export function conversationEntries({
+  friends = [],
+  groups = [],
+  pinned = [],
+  archived = [],
+} = {}) {
+  const pinnedIds = new Set(conversationIds(pinned));
+  const archivedIds = new Set(conversationIds(archived));
+  const entries = [];
+  const seen = new Set();
+  for (const group of Array.isArray(groups) ? groups : []) {
+    const id = normalizeMessageId(group?.groupId);
+    if (!THREAD_ID_PATTERN.test(id) || seen.has(id)) {
+      continue;
+    }
+    seen.add(id);
+    entries.push({
+      kind: 'group',
+      id,
+      name: String(group?.name || ''),
+      member_count: Number(group?.memberCount) || 0,
+      pinned: pinnedIds.has(id),
+      archived: archivedIds.has(id),
+    });
+  }
+  for (const friend of Array.isArray(friends) ? friends : []) {
+    const id = normalizeMessageId(friend?.userId);
+    if (!THREAD_ID_PATTERN.test(id) || seen.has(id)) {
+      continue;
+    }
+    seen.add(id);
+    entries.push({
+      kind: 'dm',
+      id,
+      name: String(friend?.displayName || friend?.zaloName || ''),
+      member_count: 0,
+      pinned: pinnedIds.has(id),
+      archived: archivedIds.has(id),
+    });
+  }
+  entries.sort((left, right) => Number(right.pinned) - Number(left.pinned));
+  return entries;
+}
+
+/**
+ * Shape `getGroupChatHistory` messages for the Runtime tool.
+ *
+ * @param {Array<{data: object, isSelf?: boolean}>} messages
+ */
+export function groupHistoryRecords(messages, { textLimit = MAX_CHUNK_LENGTH } = {}) {
+  const records = [];
+  for (const message of Array.isArray(messages) ? messages : []) {
+    const data = message?.data || {};
+    const messageId = normalizeMessageId(data.msgId ?? data.realMsgId);
+    if (!messageId) {
+      continue;
+    }
+    const media = mediaFromContent(data.content);
+    const timestamp = Number(data.ts);
+    records.push({
+      message_id: messageId,
+      sender_id: normalizeMessageId(data.uidFrom),
+      sender_name: String(data.dName || ''),
+      text: messageText(data.content).slice(0, textLimit),
+      ts: Number.isFinite(timestamp) && timestamp > 0 ? timestamp : 0,
+      type: media.length ? media[0].kind : 'text',
+      direction: message?.isSelf ? 'out' : 'in',
+    });
+  }
+  // Zalo does not guarantee message order; history reads expect oldest first.
+  records.sort((left, right) => Number(left.ts || 0) - Number(right.ts || 0));
+  return records;
+}
+
+/** Role of one member inside a `GroupInfo` payload. */
+export function groupMemberRole(group, memberId) {
+  const id = normalizeMessageId(memberId);
+  if (!id) {
+    return 'member';
+  }
+  if (normalizeMessageId(group?.creatorId) === id) {
+    return 'creator';
+  }
+  if (Array.isArray(group?.adminIds) && group.adminIds.some((value) => normalizeMessageId(value) === id)) {
+    return 'admin';
+  }
+  return 'member';
+}
+
+/**
+ * Shape one group and its member preview for the Runtime tool.
+ *
+ * @param {object} group zca-js `GroupInfo`
+ * @param {Record<string, object>} profiles `getGroupMembersInfo` profiles map
+ */
+export function groupInfoRecord(group, profiles, { memberLimit = GROUP_INFO_BATCH_SIZE } = {}) {
+  const info = group || {};
+  const memberIds = Array.isArray(info.memberIds) ? info.memberIds : [];
+  const limit = Math.max(0, Math.min(MAX_GROUP_MEMBER_LIMIT, Math.floor(Number(memberLimit) || 0)));
+  const map = profiles && typeof profiles === 'object' ? profiles : {};
+  const members = [];
+  for (const memberId of memberIds) {
+    if (members.length >= limit) {
+      break;
+    }
+    const id = normalizeMessageId(memberId);
+    if (!id) {
+      continue;
+    }
+    const profile = map[id] || {};
+    members.push({
+      user_id: id,
+      display_name: String(profile.displayName || profile.zaloName || ''),
+      role: groupMemberRole(info, id),
+    });
+  }
+  return {
+    group_id: normalizeMessageId(info.groupId),
+    name: String(info.name || ''),
+    description: String(info.desc || ''),
+    member_count: Number(info.totalMember) || memberIds.length,
+    created_time: Number(info.createdTime) || 0,
+    creator_id: normalizeMessageId(info.creatorId),
+    members,
+  };
+}
+
+/** Shape `getListReminder` entries (group reminders). */
+export function reminderRecords(items) {
+  const records = [];
+  for (const item of Array.isArray(items) ? items : []) {
+    if (!item || typeof item !== 'object') {
+      continue;
+    }
+    records.push({
+      reminder_id: normalizeMessageId(item.reminderId ?? item.id),
+      title: String(item.params?.title || ''),
+      creator_id: normalizeMessageId(item.creatorId),
+      start_time: Number(item.startTime) || 0,
+      repeat: Number(item.repeat) || 0,
+    });
+  }
+  return records;
+}
+
+/** Shape `getListBoard` items into notes only. */
+export function noteRecords(items) {
+  const records = [];
+  for (const item of Array.isArray(items) ? items : []) {
+    if (item?.boardType !== undefined && Number(item.boardType) !== NOTE_BOARD_TYPE) {
+      continue;
+    }
+    const data = item?.data;
+    if (!data || typeof data !== 'object') {
+      continue;
+    }
+    records.push({
+      note_id: normalizeMessageId(data.id),
+      title: String(data.params?.title || ''),
+      creator_id: normalizeMessageId(data.creatorId),
+      created_time: Number(data.createTime) || 0,
+      updated_time: Number(data.editTime) || 0,
+    });
+  }
+  return records;
+}
+
+/** Shape one `getPollDetail` payload. */
+export function pollRecord(poll) {
+  const value = poll || {};
+  const options = [];
+  for (const option of Array.isArray(value.options) ? value.options : []) {
+    options.push({
+      option_id: Number(option?.option_id) || 0,
+      content: String(option?.content || ''),
+      votes: Number(option?.votes) || 0,
+      voted: Boolean(option?.voted),
+    });
+  }
+  return {
+    poll_id: normalizeMessageId(value.poll_id),
+    question: String(value.question || ''),
+    options,
+    closed: Boolean(value.closed),
+    anonymous: Boolean(value.is_anonymous),
+    multi_choice: Boolean(value.allow_multi_choices),
+    vote_count: Number(value.num_vote) || 0,
+    created_time: Number(value.created_time) || 0,
+  };
+}
+
+/**
+ * Shape `getUnreadMark` into unread conversation records.
+ *
+ * @param {{data?: {convsUser?: Array, convsGroup?: Array}}} mark
+ */
+export function unreadRecords(mark) {
+  const data = mark?.data && typeof mark.data === 'object' ? mark.data : {};
+  const shape = (items) => {
+    const records = [];
+    for (const item of Array.isArray(items) ? items : []) {
+      const threadId = normalizeMessageId(item?.id);
+      if (!THREAD_ID_PATTERN.test(threadId)) {
+        continue;
+      }
+      records.push({
+        thread_id: threadId,
+        last_message_id: normalizeMessageId(item?.cliMsgId),
+        ts: Number(item?.ts) || 0,
+      });
+    }
+    return records;
+  };
+  return {
+    direct: shape(data.convsUser),
+    groups: shape(data.convsGroup),
+  };
+}
+
+/** Shape one user profile from `getUserInfo`, `findUser`, or `findUserByUsername`. */
+export function userInfoRecord(profile) {
+  const value = profile || {};
+  return {
+    user_id: normalizeMessageId(value.userId ?? value.uid),
+    display_name: String(value.displayName ?? value.display_name ?? ''),
+    zalo_name: String(value.zaloName ?? value.zalo_name ?? ''),
+    avatar: String(value.avatar || ''),
+    is_friend: Number(value.isFr) === 1 || value.isFr === true,
+    gender: Number(value.gender) || 0,
+    birthday: String(value.sdob || ''),
+  };
 }
 
 // zca-js TextStyle values (dist/apis/sendMessage.js:

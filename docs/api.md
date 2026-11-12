@@ -885,6 +885,15 @@ the platform.
 | `send_channel_message` | text to `zalo` (DM or approved group) or `zalo_bot` | in chat, before every send |
 | `zalo_status`, `zalo_me` | bridge status / own profile | none |
 | `zalo_list_friends`, `zalo_list_groups` | friend and group listings | none |
+| `zalo_list_conversations` | readable DM and approved group conversations | none |
+| `zalo_read_history` | stored DM history, both directions | none |
+| `zalo_read_group_history` | group history through Zalo | none |
+| `zalo_search_messages` | search over stored history | none |
+| `zalo_group_info` | one approved group and a member preview | none |
+| `zalo_user_info` | one Zalo user profile | none |
+| `zalo_unread` | unread conversations | none |
+| `zalo_list_reminders`, `zalo_list_notes` | approved group reminders and notes | none |
+| `zalo_poll_detail` | one group poll | none |
 | `zalo_send_image` | image from `<profile>/workspace` | in chat, before every send |
 | `zalo_send_link` | http/https link | in chat, before every send |
 | `zalo_react` | reaction on a recent inbound message | in chat, before every reaction |
@@ -904,6 +913,20 @@ friends or groups, and a send may target only the run's own thread
 (`channel_thread_out_of_scope`); web runs may send to any allowed recipient.
 Images must be JPEG, PNG, GIF, or WebP, stay inside the agent workspace, and
 respect the profile's `platforms.zalo.extra.media_max_mb` cap (default `10`).
+
+Personal read tools return external content as untrusted data: at most 200
+messages per call, 2000 characters per message, and 64 KB per result. Direct
+messages are readable only while `platforms.zalo.extra.dm_policy` is
+`allowlist` or `pairing`; otherwise a read returns `channel_dm_policy_blocked`.
+Group reads require an owner-approved group. A run started from a channel
+thread may read only its own thread (`channel_thread_out_of_scope`); the global
+lookups `zalo_list_conversations`, `zalo_user_info`, and `zalo_unread` are
+unavailable in such a run. `zalo_read_history` reads the bridge's
+`history.jsonl`, which stores inbound and outbound direct and group messages
+for 30 days, and may ask Zalo for older direct messages. `zalo_read_group_history`
+uses Zalo's group history and reports `more` for older messages; zca-js 2.2.0
+has no cursor paging for that call. The bridge rate-limits reads to 30 per
+minute and group history to 10 per minute (`channel_rate_limited`).
 
 Personal `zalo` does not answer inbound messages on its own unless
 `platforms.zalo.extra.auto_reply` is `true` (default `false`). While it is off,
