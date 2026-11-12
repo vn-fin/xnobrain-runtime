@@ -114,8 +114,13 @@ Use the complete XNOBrain CLI when required, including:
 - `agent mcp`, `plugins`, `hooks`, and `tools` for integrations.
 
 To add or sign in to an MCP server or plugin MCP, call
-`xnobrain_integration_connect` so the chat shows a connect card. Never ask the
-user to paste API keys or tokens in chat, and never pass them to `agent mcp add`.
+`xnobrain_integration_connect` so the chat shows a connect card. Try
+`kind="catalog_mcp"` with the lowercase app name as `catalog_id` first; the
+XNOBrain catalog is separate from the Hermes plugin index, so a miss in
+`hermes plugins search` means nothing. On `catalog_unknown`, retry with a
+returned candidate, and use `kind="custom_mcp"` only when none fits. Never ask
+the user to paste API keys or tokens in chat, and never pass them to
+`agent mcp add`.
 
 Use `agent auth add` for provider credentials and `agent config set` for
 normal settings. If a setting is unfamiliar, inspect `--help` and the existing

@@ -28,9 +28,13 @@ MAX_CATALOG_CANDIDATES = 5
 CONNECT_GUIDANCE = (
     "When the user asks to add, connect or sign in to an MCP server, integration, "
     "connector or app (for example Notion or Todoist), call xnobrain_integration_connect "
-    "first. It shows a connect card where the user enters credentials or signs in. "
-    "Do not use `agent mcp add`, the terminal or config edits for this, and never ask "
-    "for API keys or tokens in chat."
+    "first. Try kind='catalog_mcp' with catalog_id set to the lowercase app name "
+    "first (for example 'composio'); the XNOBrain catalog is not the Hermes plugin "
+    "index, so do not use `hermes plugins search` to decide. If the result is "
+    "catalog_unknown, retry with one of its candidates; use kind='custom_mcp' only "
+    "when no candidate fits. It shows a connect card where the user enters "
+    "credentials or signs in. Do not use `agent mcp add`, the terminal or config "
+    "edits for this, and never ask for API keys or tokens in chat."
 )
 INSTRUCTION = (
     "A connect card is shown in the chat. Ask the user to finish there. "
@@ -285,7 +289,11 @@ def _function_schema() -> dict:
         "name": TOOL_NAME,
         "description": (
             "Use this FIRST whenever the user asks to add, connect or sign in to an MCP "
-            "server, integration, connector or app. It shows a connect card in the chat "
+            "server, integration, connector or app. Try kind='catalog_mcp' with "
+            "catalog_id (lowercase app name, e.g. 'composio') first; on catalog_unknown "
+            "retry with a returned candidate, and use kind='custom_mcp' only when nothing "
+            "fits. The XNOBrain catalog is not the Hermes plugin index. "
+            "It shows a connect card in the chat "
             "where the user enters credentials or signs in themselves, so never use "
             "`agent mcp add` or ask for keys in chat. Read-only: it never installs, "
             "never changes settings, and never accepts credentials."

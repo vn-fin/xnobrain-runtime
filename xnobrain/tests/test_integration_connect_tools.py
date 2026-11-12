@@ -256,6 +256,16 @@ class ConnectGuidanceTests(unittest.TestCase):
         self.assertIn("agent mcp add", tools.CONNECT_GUIDANCE)
         self.assertIn("never ask", tools.CONNECT_GUIDANCE)
 
+    def test_guidance_and_description_try_catalog_before_custom(self):
+        from xnobrain.integrations import integration_connect_tools as tools
+
+        description = tools._function_schema()["description"]
+        for text in (tools.CONNECT_GUIDANCE, description):
+            self.assertIn("kind='catalog_mcp'", text)
+            self.assertIn("catalog_unknown", text)
+            self.assertIn("Hermes plugin index", text)
+            self.assertLess(text.index("catalog_mcp"), text.index("custom_mcp"))
+
 
 if __name__ == "__main__":
     unittest.main()
