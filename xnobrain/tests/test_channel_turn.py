@@ -17,13 +17,13 @@ from fastapi import FastAPI
 from pydantic import ValidationError
 
 from xnobrain.handlers.operations.channels import operations
-from xnobrain.integrations import AgentAPIError
+from xnobrain.integrations import AgentAPIError, conversation_runner
 from xnobrain.models.channels import ChannelTurnRequest
 from xnobrain.repositories.files import FileRepository
 from xnobrain.routes.definition import API_PREFIX
 from xnobrain.routes.setup import setup_routes
 from xnobrain.services.base import ServiceError
-from xnobrain.services.channels import ChannelsService
+from xnobrain.services.channels import CHANNEL_TURN_TOOLSETS, ChannelsService
 
 TOKEN = "channel-turn-test-token"
 
@@ -362,6 +362,7 @@ class ChannelTurnServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(body["run_mode"], "background")
         self.assertEqual(body["idempotency_key"], "zalo:message-1")
         self.assertEqual(body["input"], "hello there")
+        self.assertEqual(body["toolsets"], list(CHANNEL_TURN_TOOLSETS))
         thread_path = self.profile / "zalo" / "threads.json"
         self.assertEqual(thread_path.stat().st_mode & 0o777, 0o600)
         mapping = json.loads(thread_path.read_text(encoding="utf-8"))
@@ -405,6 +406,10 @@ class ChannelTurnServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             self.platform.create_calls[0][1]["title"],
             "Zalo · group 34567890",
+        )
+        self.assertEqual(
+            self.platform.run_calls[0][2]["toolsets"],
+            list(CHANNEL_TURN_TOOLSETS),
         )
         mapping = json.loads((self.profile / "zalo" / "threads.json").read_text(encoding="utf-8"))
         self.assertEqual(
@@ -579,6 +584,23 @@ class ChannelTurnServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("connect card", result["reply"].lower())
         self.assertNotIn("control.internal", result["reply"])
 
+    async def test_dm_and_group_turns_share_one_toolset_allowlist(self):
+        self._approve_zalo_group()
+        await self.service.run_internal_turn(_body(), TOKEN)
+        await self.service.run_internal_turn(
+            _body(
+                thread_type="group",
+                thread_id="1234567890",
+                message_id="message-2",
+            ),
+            TOKEN,
+        )
+
+        self.assertEqual(
+            [call[2]["toolsets"] for call in self.platform.run_calls],
+            [list(CHANNEL_TURN_TOOLSETS), list(CHANNEL_TURN_TOOLSETS)],
+        )
+
     async def test_approval_denial_failure_log_is_redacted(self):
         self.platform.resolve_error = RuntimeError("secret command and message text")
         record = {
@@ -613,6 +635,81 @@ class ChannelTurnServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["reply"], "reply")
         self.assertTrue(any("RuntimeError" in message for message in records))
         self.assertTrue(all("secret" not in message for message in records))
+
+
+class ChannelTurnToolsetTests(unittest.TestCase):
+    """The native run path applies the allowlist and excludes MCP tools."""
+
+    def test_allowlist_keeps_every_channel_tool_toolset(self):
+        from xnobrain.integrations import channel_tools, zalo_bot_tools, zalo_tools
+
+        for toolset in (
+            channel_tools.TOOLSET,
+            zalo_tools._TOOLSET,
+            zalo_bot_tools.TOOLSET,
+        ):
+            self.assertIn(toolset, CHANNEL_TURN_TOOLSETS)
+
+    def test_channel_run_replaces_tools_and_excludes_mcp(self):
+        agent = SimpleNamespace(
+            tools=[
+                {"type": "function", "function": {"name": "terminal"}},
+                {"type": "function", "function": {"name": "mcp_notion_search"}},
+            ],
+            valid_tool_names={"terminal", "mcp_notion_search"},
+            enabled_toolsets=["hermes-api-server"],
+            disabled_toolsets=None,
+        )
+        allowlisted = [{"type": "function", "function": {"name": "web_search"}}]
+        prepared = {
+            "toolsets": list(CHANNEL_TURN_TOOLSETS),
+            "_channel_host_authority": SimpleNamespace(agent_id="agent-1"),
+        }
+        with mock.patch(
+            "model_tools.get_tool_definitions", return_value=allowlisted
+        ) as definitions:
+            excluded = conversation_runner._apply_channel_turn_toolsets(agent, prepared)
+
+        self.assertTrue(excluded)
+        self.assertEqual(agent.enabled_toolsets, list(CHANNEL_TURN_TOOLSETS))
+        definitions.assert_called_once_with(
+            enabled_toolsets=list(CHANNEL_TURN_TOOLSETS),
+            disabled_toolsets=None,
+            quiet_mode=True,
+        )
+        self.assertEqual(agent.tools, allowlisted)
+        self.assertEqual(agent.valid_tool_names, {"web_search"})
+
+    def test_profile_mcp_is_skipped_only_for_channel_runs(self):
+        channel = {
+            "toolsets": list(CHANNEL_TURN_TOOLSETS),
+            "_channel_host_authority": SimpleNamespace(agent_id="agent-1"),
+        }
+        self.assertFalse(conversation_runner._profile_mcp_allowed(channel))
+        self.assertTrue(
+            conversation_runner._profile_mcp_allowed(
+                {"toolsets": list(CHANNEL_TURN_TOOLSETS)}
+            )
+        )
+        self.assertTrue(conversation_runner._profile_mcp_allowed({}))
+
+    def test_web_run_keeps_its_profile_tools(self):
+        tools = [{"type": "function", "function": {"name": "terminal"}}]
+        agent = SimpleNamespace(
+            tools=list(tools),
+            valid_tool_names={"terminal"},
+            enabled_toolsets=["hermes-api-server"],
+            disabled_toolsets=None,
+        )
+
+        excluded = conversation_runner._apply_channel_turn_toolsets(
+            agent, {"toolsets": list(CHANNEL_TURN_TOOLSETS)}
+        )
+
+        self.assertFalse(excluded)
+        self.assertEqual(agent.tools, tools)
+        self.assertEqual(agent.enabled_toolsets, ["hermes-api-server"])
+        self.assertEqual(agent.valid_tool_names, {"terminal"})
 
 
 if __name__ == "__main__":

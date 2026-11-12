@@ -56,6 +56,9 @@ _PAIRING_REQUEST_ID = re.compile(r"^[0-9a-fA-F]{16}$")
 _DM_POLICIES = {"disabled", "allowlist", "pairing"}
 _SAFE_TURN_DM_POLICIES = {"allowlist", "pairing"}
 _TURN_PLATFORMS = {"zalo", "zalo_bot"}
+# A run started from a channel chat may only use these toolsets. Every other
+# built-in toolset, profile MCP server toolset and host tool stays out of it.
+CHANNEL_TURN_TOOLSETS = ("xnobrain_channels", "web", "vision", "tts", "todo")
 _ENABLED_VALUES = {"1", "true", "yes", "on"}
 _MAX_TURN_TEXT = 20000
 _GATEWAY_CONNECT_INSTRUCTION = (
@@ -878,6 +881,7 @@ class ChannelsService:
             "input": request["text"],
             "run_mode": "background",
             "idempotency_key": f"{request['platform']}:{request['message_id']}",
+            "toolsets": list(CHANNEL_TURN_TOOLSETS),
         }
         if group_turn:
             await self._consume_group_turn(

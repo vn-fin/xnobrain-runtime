@@ -325,16 +325,18 @@ before more tools ship; F2 was dropped by product decision.
 
 ### Fixes
 
-- **F1: channel turns get an allowlist (closes S2).** `run_internal_turn`
-  passes `toolsets` in the run body; `conversation_runner` already maps it to
-  `--toolsets`. The allowlist is `xnobrain_channels`, `web`, `vision`, `tts`,
-  `todo`. Excluded: `terminal`, `file`, `code_execution`, `session_search`,
-  `memory`, `skills`, `delegation`, `cronjob`, `kanban`, `browser`,
-  `computer_use`, `image_gen`, every MCP toolset. This is the real boundary:
-  without terminal and file tools the run cannot read the bot token, the
-  bridge token or other sessions. Tests assert that the run body carries the
-  allowlist for group and DM turns, and that a channel run's tool list
-  excludes `session_search`, `terminal` and MCP tools.
+- **F1: channel turns get an allowlist (done 2026-11-12, closes S2).** `run_internal_turn`
+  passes `toolsets` (`xnobrain_channels`, `web`, `vision`, `tts`, `todo`) in the
+  run body. Background channel turns run the native in-process agent rather than
+  the `--toolsets` CLI path, so `conversation_runner` applies the body's
+  `toolsets` to the built agent and rebuilds its tool list from the registry,
+  and skips the profile MCP install for that turn. Excluded: `terminal`, `file`,
+  `code_execution`, `session_search`, `memory`, `skills`, `delegation`,
+  `cronjob`, `kanban`, `browser`, `computer_use`, `image_gen`, every MCP
+  toolset. This is the real boundary: without terminal and file tools the run
+  cannot read the bot token, the bridge token or other sessions. Tests assert
+  that the run body carries the allowlist for group and DM turns, and that a
+  channel run's tool list excludes MCP tools.
 - **F2: dropped by product decision (S1, web runs).** Sends via `agent send`
   are allowed, and the confirmation requirement moves to the skill: the agent
   shows the user the recipient and the exact payload and waits for explicit

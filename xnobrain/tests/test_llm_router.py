@@ -303,6 +303,34 @@ class LLMRouterConfigTests(unittest.TestCase):
             global_manager.update_config({"reasoning_effort": "none"})
             self.assertEqual(global_manager.get_config()["reasoning_effort"], "none")
 
+    def test_prepare_chat_command_maps_toolsets_to_the_cli_flag(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manager = AgentManager(
+                root_profile=root / "root",
+                profiles_root=root / "profiles",
+                legacy_agents_root=root / "legacy",
+            )
+            created, _ = manager.create_agent({"display_name": "Toolset agent"})
+            name = created["name"]
+
+            restricted = manager._prepare_chat_command(
+                name,
+                {"message": "summarize", "toolsets": ["web", "todo"]},
+                require_conversation=False,
+            )
+            ordinary = manager._prepare_chat_command(
+                name,
+                {"message": "summarize"},
+                require_conversation=False,
+            )
+
+        command = restricted["command"]
+        self.assertEqual(command[command.index("--toolsets") + 1], "web,todo")
+        self.assertEqual(restricted["toolsets"], ["web", "todo"])
+        self.assertNotIn("--toolsets", ordinary["command"])
+        self.assertEqual(ordinary["toolsets"], [])
+
     def test_global_config_accepts_model_derived_auto_reasoning(self) -> None:
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

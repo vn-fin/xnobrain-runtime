@@ -71,14 +71,19 @@ Public paths, envelopes, error codes and persisted keys stay unchanged.
 A test fails when a platform appears in `PLATFORMS` without its tools module,
 skill section, connect support and delegation (the Runtime genericity test).
 
-### R2 — Channel turns use a tool allowlist
+### R2 — Channel turns use a tool allowlist (done 2026-11-12)
 
-Plan 020 F1, made generic: `run_internal_turn` passes
-`toolsets=CHANNEL_TURN_TOOLSETS` for every delegated platform. Initial list:
-`xnobrain_channels`, `web`, `vision`, `tts`, `todo`. Excluded: terminal, file,
-code execution, session search, memory, skills, delegation, cron, kanban,
-browser, computer use, image generation and every MCP toolset. Tests assert
-the run body and that MCP tools do not reach a channel run.
+Plan 020 F1, made generic. `run_internal_turn` puts
+`toolsets=CHANNEL_TURN_TOOLSETS` (`xnobrain_channels`, `web`, `vision`, `tts`,
+`todo`) in the run body for every delegated platform. Verification found that
+background conversation runs execute the native in-process agent, not the
+`--toolsets` CLI command; `conversation_runner` therefore keeps the run body's
+`toolsets` and applies it to the built agent as `enabled_toolsets` plus a
+registry rebuild, and skips the profile MCP install for a channel turn so MCP
+tools cannot be appended after that rebuild. Excluded: terminal, file, code
+execution, session search, memory, skills, delegation, cron, kanban, browser,
+computer use, image generation and every MCP toolset. Tests assert the run body
+for DM and group turns and that a channel run's tools exclude MCP tools.
 
 ### R3 — One shared skill, `social-channels`
 

@@ -915,8 +915,13 @@ work.
 
 `POST /xnobrain/api/runtime/v1/internal/channels/turn` runs one
 already-authorized gateway message as a normal conversation turn in the main
-Runtime, so it uses the same run service, admission path, managed MCP catalog,
-connect tool, policies, and run records as web chat. The gateway response is
+Runtime, so it uses the same run service, admission path, connect tool,
+policies, and run records as web chat. Every channel turn runs with the fixed
+toolset allowlist `xnobrain_channels`, `web`, `vision`, `tts`, `todo`
+(`CHANNEL_TURN_TOOLSETS`): terminal, file, code execution, session search,
+memory, skills, delegation, cron, kanban, browser, computer use, image
+generation, and every MCP server toolset are unavailable to it, for both direct
+messages and approved groups on every platform. The gateway response is
 still text-only: it returns the final reply and usage, not per-tool events,
 attachments, or streamed UI metadata. It requires the same
 `X-XNOBrain-Internal-Token: RUNTIME_INTERNAL_SERVICE_TOKEN` as private message

@@ -48,6 +48,56 @@ async def _run_goal_call(profile_dir: Path, callback):
     return await asyncio.to_thread(run)
 
 
+def _channel_turn_toolsets(prepared: Mapping[str, Any]) -> tuple[str, ...]:
+    """Return the fixed toolset allowlist for a channel-originated run."""
+    if prepared.get("_channel_host_authority") is None:
+        return ()
+    toolsets = prepared.get("toolsets")
+    if not isinstance(toolsets, (list, tuple)):
+        return ()
+    return tuple(str(item) for item in toolsets if str(item))
+
+
+def _apply_channel_turn_toolsets(agent: Any, prepared: Mapping[str, Any]) -> bool:
+    """Restrict one built channel-turn agent to its allowlist.
+
+    Native conversation runs build their tools from
+    ``platform_toolsets.api_server``; the ``--toolsets`` command assembled for
+    the CLI is not executed on this path. Applying the allowlist to the agent
+    itself replaces that profile selection for the run. Returns ``True`` when
+    this is a channel turn, whose profile MCP tools must also stay out.
+    """
+    toolsets = _channel_turn_toolsets(prepared)
+    if not toolsets:
+        return False
+    from model_tools import get_tool_definitions
+
+    agent.enabled_toolsets = list(toolsets)
+    agent.tools = list(
+        get_tool_definitions(
+            enabled_toolsets=list(toolsets),
+            disabled_toolsets=getattr(agent, "disabled_toolsets", None),
+            quiet_mode=True,
+        )
+        or []
+    )
+    agent.valid_tool_names = {
+        str(tool.get("function", {}).get("name") or "")
+        for tool in agent.tools
+        if isinstance(tool.get("function"), Mapping)
+    } - {""}
+    return True
+
+
+def _profile_mcp_allowed(prepared: Mapping[str, Any]) -> bool:
+    """Return whether a run may receive this profile's MCP server tools.
+
+    A channel turn's fixed allowlist never names an MCP server toolset, and the
+    profile MCP install runs after the registry build, so it must stay out.
+    """
+    return not _channel_turn_toolsets(prepared)
+
+
 class ConversationRunnerMixin:
     _FEATURE_PROMPTS = {
         "custom_page": (
@@ -273,8 +323,8 @@ class ConversationRunnerMixin:
         if normalized_skills:
             command.extend(["--skills", ",".join(normalized_skills)])
         toolsets = body.get("toolsets")
-        if toolsets:
-            normalized_toolsets = self._normalize_skill_list(toolsets)
+        normalized_toolsets = self._normalize_skill_list(toolsets) if toolsets else []
+        if normalized_toolsets:
             command.extend(["--toolsets", ",".join(normalized_toolsets)])
         if bool(body.get("yolo", False)):
             command.append("--yolo")
@@ -332,6 +382,7 @@ class ConversationRunnerMixin:
             "capabilities": capabilities,
             "goal_resume": bool(body.get("goal_resume", False)),
             "requested_skills": normalized_skills,
+            "toolsets": normalized_toolsets,
             "work_context_id": str((body.get("ownership_context") or {}).get("id") or "personal"),
             "ownership_context": dict(body.get("ownership_context") or {}),
             "_xno_data_grant": body.get("_xno_data_grant"),
@@ -970,6 +1021,7 @@ class ConversationRunnerMixin:
 
             def _create_agent(self, *args: Any, **kwargs: Any) -> Any:
                 agent = super()._create_agent(*args, **kwargs)
+                _apply_channel_turn_toolsets(agent, prepared)
                 if max_iterations is not None:
                     agent.max_iterations = max(1, int(max_iterations))
                     try:
@@ -1479,7 +1531,8 @@ class ConversationRunnerMixin:
                 install_zalo_bot_tools(agent, conversation_id, profile_dir)
                 from .managed_mcp import install_tools as install_catalog_mcp_tools
 
-                install_catalog_mcp_tools(agent, profile_dir)
+                if _profile_mcp_allowed(prepared):
+                    install_catalog_mcp_tools(agent, profile_dir)
                 if feature_enabled(FEATURE_AGENT_CUSTOM_PAGE):
                     from .custom_page_tools import install_tools
 
