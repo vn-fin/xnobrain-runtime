@@ -121,7 +121,9 @@ XNOBrain catalog is separate from the Hermes plugin index, so a miss in
 returned candidate, and use `kind="custom_mcp"` only when none fits; it accepts
 an optional `server_name` (lowercase letters, digits, `-`, `_`; up to 64
 characters). To list or disconnect an agent's MCP servers, use
-`kind="manage_mcp"`; the card performs the change, never the tool. Never ask the
+`kind="manage_mcp"`, only when the user asks to list or disconnect; do not show
+it alongside an add or connect request. The card performs the change, never the
+tool. Never ask the
 user to paste API keys or tokens in chat, and never pass them to
 `agent mcp add`.
 

@@ -329,6 +329,7 @@ class ConnectGuidanceTests(unittest.TestCase):
             self.assertIn("catalog_unknown", text)
             self.assertIn("Hermes plugin index", text)
             self.assertLess(text.index("catalog_mcp"), text.index("custom_mcp"))
+            self.assertIn("only when the user asks", text)
 
 
 if __name__ == "__main__":
