@@ -85,13 +85,13 @@ execution, session search, memory, skills, delegation, cron, kanban, browser,
 computer use, image generation and every MCP toolset. Tests assert the run body
 for DM and group turns and that a channel run's tools exclude MCP tools.
 
-### R3 — One shared skill, `social-channels`
+### R3 — One shared skill, `social-channels` (done 2026-11-12)
 
 Packaged at `xnobrain/assets/skills/social-channels/`:
 
 ```text
 social-channels/
-  SKILL.md               # common rules, version in frontmatter
+  SKILL.md               # common rules, no version field
   platforms/zalo.md      # one section per wired platform
   platforms/zalo_bot.md
 ```
@@ -117,22 +117,24 @@ personal account), its tools, id formats and limits.
 Remove the Zalo paragraph from `big-brother-control` and point to
 `social-channels`.
 
-### R4 — Install and update the skill per agent
+### R4 — Install and update the skill per agent (done 2026-11-12)
 
-When a channel is connected for an agent (the connect handler that already
-writes the platform config), install `social-channels` into that agent's
-profile under category `social`, enabled. On Runtime start, for every profile
-with at least one platform from `PLATFORMS` enabled, reinstall when the
-packaged `version` is newer than the installed one. Agents without a channel
-do not get the skill. Unlike the current `xno-data` install (install once,
-never update), the version check lets skill fixes reach existing agents.
-The skill content is the same for every agent; only the platform sections for
-that agent's enabled platforms are copied.
+`ChannelsService.sync_social_channels_skill` runs from `_sync_root_multiplex`
+after every channel enable, disable, and connect, and once at Runtime startup
+after `ensure_default_agent` when the channels feature is enabled. For every
+profile with `zalo` or `zalo_bot` enabled it compares each packaged file with
+the installed file under `skills/social/social-channels/`. When any file is
+missing or differs, the whole packaged directory is rewritten with atomic file
+writes; an identical tree is left untouched. No version field or comparison is
+used. The skill is then enabled through the existing profile skill mechanism
+(`agent_skills._set_skill_enabled`, i.e. `skills.disabled` in the profile
+config). The root/Big Brother profile is included separately because the
+multiplex allowlist still excludes it. Profiles without an enabled channel get
+nothing, and disabling a channel does not remove the skill.
 
-Big Brother's self-written `skills/operations/messaging-channels` conflicts
-with R3. Remove it once, with the owner's consent, as a manual migration step
-recorded in `plans/VERIFICATION.md`; never delete user-authored skills
-automatically.
+Startup failures are logged without content and do not block startup. Big
+Brother's self-written `skills/operations/messaging-channels` is not removed or
+modified automatically.
 
 ### R5 — UI
 

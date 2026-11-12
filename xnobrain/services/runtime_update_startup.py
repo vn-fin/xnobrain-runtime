@@ -76,6 +76,19 @@ def cleanup_legacy_catalog_mcp(platform) -> None:
         extension_policy.save_state(profile, state)
 
 
+def sync_social_channels_skill(platform) -> None:
+    """Install the shared channel skill after the default agent is ready."""
+    from ..feature_flags import FEATURE_AGENT_CHANNELS
+    from ..feature_flags import enabled as feature_enabled
+
+    if not feature_enabled(FEATURE_AGENT_CHANNELS):
+        return
+    try:
+        platform.channels.sync_social_channels_skill()
+    except Exception:  # noqa: BLE001 - skill sync must never block startup
+        logging.getLogger(__name__).warning("Social channels skill sync failed")
+
+
 async def finish_startup(platform, *, deferred: bool = False) -> None:
     # Maintenance is durable across process replacement. Read it on every
     # iteration; both verified resume and verified abort release this barrier.
@@ -105,4 +118,5 @@ async def finish_startup(platform, *, deferred: bool = False) -> None:
                 platform.config.ensure_write_approval_defaults()
                 platform._ensure_existing_write_approval_defaults()
             await platform.ensure_default_agent()
+            sync_social_channels_skill(platform)
         return

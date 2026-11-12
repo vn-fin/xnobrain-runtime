@@ -73,6 +73,14 @@ _BOT_TOKEN_ENV = "ZALO_BOT_TOKEN"
 # older than three missed heartbeats means the owning gateway stopped writing.
 _BOT_STATE_HEARTBEAT_SECONDS = 30.0
 _BOT_STATE_STALE_SECONDS = 3 * _BOT_STATE_HEARTBEAT_SECONDS
+SOCIAL_CHANNELS_SKILL_ID = "social-channels"
+SOCIAL_CHANNELS_SKILL_CATEGORY = "social"
+_SOCIAL_CHANNELS_SKILL_ROOT = (
+    Path(__file__).resolve().parent.parent
+    / "assets"
+    / "skills"
+    / SOCIAL_CHANNELS_SKILL_ID
+)
 
 
 class ChannelsService:
@@ -1866,7 +1874,95 @@ class ChannelsService:
             return False
         return self.repository.delete_owner(profile)
 
+    @staticmethod
+    def _has_enabled_channel(config: Mapping[str, Any]) -> bool:
+        return any(
+            bool(ChannelsService._platform_config(config, platform).get("enabled"))
+            for platform in ("zalo", "zalo_bot")
+        )
+
+    @staticmethod
+    def _packaged_social_channels_skill_files() -> dict[str, bytes]:
+        root = _SOCIAL_CHANNELS_SKILL_ROOT
+        if not root.is_dir():
+            return {}
+        return {
+            path.relative_to(root).as_posix(): path.read_bytes()
+            for path in sorted(root.rglob("*"))
+            if path.is_file() and not path.is_symlink()
+        }
+
+    def _install_social_channels_skill(
+        self, profile: Path, packaged: Mapping[str, bytes]
+    ) -> None:
+        skill_dir = (
+            profile / "skills" / SOCIAL_CHANNELS_SKILL_CATEGORY / SOCIAL_CHANNELS_SKILL_ID
+        )
+        current = profile
+        for part in ("skills", SOCIAL_CHANNELS_SKILL_CATEGORY, SOCIAL_CHANNELS_SKILL_ID):
+            current = current / part
+            if current.is_symlink():
+                raise OSError("social channels skill path is a symlink")
+
+        changed = False
+        for relative, payload in packaged.items():
+            try:
+                installed = (skill_dir / relative).read_bytes()
+            except OSError:
+                changed = True
+                break
+            if installed != payload:
+                changed = True
+                break
+        if changed:
+            for relative, payload in packaged.items():
+                self.repository.base.atomic_write(skill_dir / relative, payload)
+
+        agents = self.platform.agents
+        if SOCIAL_CHANNELS_SKILL_ID in agents._disabled_skills(
+            agents._read_config(profile)
+        ):
+            agents._set_skill_enabled(profile, SOCIAL_CHANNELS_SKILL_ID, True)
+
+    def sync_social_channels_skill(self) -> None:
+        """Install and enable the shared skill in every profile with a channel."""
+        try:
+            packaged = self._packaged_social_channels_skill_files()
+        except OSError:
+            _LOGGER.warning("Social channels skill package could not be read")
+            return
+        if not packaged:
+            return
+        profiles = [self._root_profile()]
+        profiles_root = Path(self.platform.repository.profiles_root)
+        if profiles_root.is_dir():
+            profiles.extend(
+                entry
+                for entry in sorted(profiles_root.iterdir(), key=lambda item: item.name)
+                if entry.is_dir() and not entry.is_symlink()
+            )
+        seen: set[Path] = set()
+        for profile in profiles:
+            try:
+                resolved = profile.resolve(strict=True)
+            except OSError:
+                continue
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            try:
+                config = self.repository.config(resolved)
+            except Exception:
+                continue
+            if not self._has_enabled_channel(config):
+                continue
+            try:
+                self._install_social_channels_skill(resolved, packaged)
+            except Exception:
+                _LOGGER.warning("Social channels skill sync failed")
+
     def _sync_root_multiplex(self) -> None:
+        self.sync_social_channels_skill()
         root = self._root_profile()
         root_name = root.name
         enabled_profiles: list[str] = []
