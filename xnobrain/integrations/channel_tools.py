@@ -38,8 +38,15 @@ def _deliver(
     text: str,
     platform: str = zalo_channels.ZALO_PLATFORM,
     thread_type: str = "dm",
+    quote_message_id: str | None = None,
+    mentions: list[str] | None = None,
 ) -> dict:
     service, agent_id, conversation_id, _run_id, _notify_cb, loop = binding
+    options = {}
+    if quote_message_id:
+        options["quote_message_id"] = quote_message_id
+    if mentions:
+        options["mentions"] = list(mentions)
     future = asyncio.run_coroutine_threadsafe(
         service.send_message(
             agent_id,
@@ -49,6 +56,7 @@ def _deliver(
             text,
             platform=platform,
             thread_type=thread_type,
+            **options,
         ),
         loop,
     )
@@ -82,9 +90,12 @@ def register_tools(profile_dir) -> None:
                 "(personal account, direct messages or approved groups) and "
                 "'zalo_bot' (bot, direct messages or approved groups). Pass an exact "
                 "Zalo thread id or an exact contact name seen in the agent's Zalo "
-                "history; bot sends require an exact chat id. Before calling, show "
-                "the user the recipient and the exact text and wait for their "
-                "explicit confirmation in chat. Every group must be approved first."
+                "history; bot sends require an exact chat id. On the personal "
+                "account, optional quote_message_id replies to one stored message in "
+                "the same thread and optional mentions tags group members by user id. "
+                "Before calling, show the user the recipient and the exact text and "
+                "wait for their explicit confirmation in chat. Every group must be "
+                "approved first. This is the only supported way to send on Zalo."
             ),
             "parameters": {
                 "type": "object",
@@ -109,8 +120,23 @@ def register_tools(profile_dir) -> None:
                         "maxLength": limit,
                         "description": f"Plain text, at most {limit} characters.",
                     },
-                    "required": ["recipient", "text"],
-                    "additionalProperties": False,
+                    "quote_message_id": {
+                        "type": "string",
+                        "pattern": "^[0-9]{1,32}$",
+                        "description": (
+                            "Personal Zalo only: numeric id of a stored message in "
+                            "the same thread to quote."
+                        ),
+                    },
+                    "mentions": {
+                        "type": "array",
+                        "maxItems": 20,
+                        "items": {"type": "string", "pattern": "^[0-9]{1,32}$"},
+                        "description": (
+                            "Personal Zalo group only: member user ids to mention. "
+                            "Each name must already appear in the text as @DisplayName."
+                        ),
+                    },
                 },
                 "required": ["recipient", "text"],
                 "additionalProperties": False,
@@ -227,6 +253,13 @@ def call(args, **kwargs):
     platform = request.platform
     if platform not in platforms:
         return _error("channel_platform_not_configured")
+    if platform != zalo_channels.ZALO_PLATFORM and (
+        request.quote_message_id or request.mentions
+    ):
+        # Quote replies and mentions exist only on the personal account.
+        return _error("channel_field_not_supported")
+    if request.mentions and request.thread_type != "group":
+        return _error("channel_invalid_request")
     service, agent_id, conversation_id, _run_id, _notify_cb, _loop = binding
     try:
         if platform == zalo_channels.ZALO_PLATFORM:
@@ -278,6 +311,11 @@ def call(args, **kwargs):
     )
     if scope_error is not None:
         return _error(scope_error)
+    options = {}
+    if request.quote_message_id:
+        options["quote_message_id"] = request.quote_message_id
+    if request.mentions:
+        options["mentions"] = request.mentions
     try:
         result = _deliver(
             binding,
@@ -286,6 +324,7 @@ def call(args, **kwargs):
             request.text,
             platform=platform,
             thread_type=request.thread_type,
+            **options,
         )
     except ChannelDeliveryError as error:
         return _error(error.code)

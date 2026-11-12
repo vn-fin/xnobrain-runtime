@@ -112,6 +112,23 @@ class SendChannelMessageRequest(BaseModel):
     thread_type: Literal["dm", "group"] = "dm"
     recipient: str = Field(min_length=1, max_length=200)
     text: str = Field(min_length=1, max_length=20000)
+    quote_message_id: str | None = Field(default=None, pattern=r"^[0-9]{1,32}$")
+    mentions: list[str] | None = Field(default=None, max_length=20)
+
+    @field_validator("mentions")
+    @classmethod
+    def validate_mentions(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        if not value:
+            raise ValueError("mentions must name at least one member")
+        ids: list[str] = []
+        for item in value:
+            text = str(item or "").strip()
+            if not re.fullmatch(_ZALO_ID, text) or text in ids:
+                raise ValueError("mentions must be unique numeric user ids")
+            ids.append(text)
+        return ids
 
 
 class ChannelPluginArtifact(BaseModel):

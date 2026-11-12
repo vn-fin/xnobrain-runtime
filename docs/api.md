@@ -882,7 +882,7 @@ the platform.
 
 | Tool | Action | Confirmation |
 |---|---|---|
-| `send_channel_message` | text to `zalo` (DM or approved group) or `zalo_bot` | in chat, before every send |
+| `send_channel_message` | text to `zalo` (DM or approved group, optional quote and mentions) or `zalo_bot` | in chat, before every send |
 | `zalo_status`, `zalo_me` | bridge status / own profile | none |
 | `zalo_list_friends`, `zalo_list_groups` | friend and group listings | none |
 | `zalo_list_conversations` | readable DM and approved group conversations | none |
@@ -895,6 +895,11 @@ the platform.
 | `zalo_list_reminders`, `zalo_list_notes` | approved group reminders and notes | none |
 | `zalo_poll_detail` | one group poll | none |
 | `zalo_send_image` | image from `<profile>/workspace` | in chat, before every send |
+| `zalo_send_file`, `zalo_send_video`, `zalo_send_voice` | file, MP4 video, or audio recording from `<profile>/workspace` | in chat, before every send |
+| `zalo_send_sticker` | sticker search then send | in chat, before every send |
+| `zalo_send_contact_card` | contact card for one visible user id | in chat, before every send |
+| `zalo_forward` | one stored message forwarded to a readable thread | in chat, before every send |
+| `zalo_undo_message` | undo one message this account sent | in chat, before every undo |
 | `zalo_send_link` | http/https link | in chat, before every send |
 | `zalo_react` | reaction on a recent inbound message | in chat, before every reaction |
 
@@ -913,6 +918,16 @@ friends or groups, and a send may target only the run's own thread
 (`channel_thread_out_of_scope`); web runs may send to any allowed recipient.
 Images must be JPEG, PNG, GIF, or WebP, stay inside the agent workspace, and
 respect the profile's `platforms.zalo.extra.media_max_mb` cap (default `10`).
+Files, MP4 videos, and audio recordings use the same workspace and size rules;
+a recording is delivered as an audio file attachment because zca-js 2.2.0
+`sendVoice` requires a hosted URL. `send_channel_message` on `zalo` also takes
+`quote_message_id` (a stored message in the same thread) and `mentions` (group
+member ids whose `@DisplayName` already appears in the text); `zalo_bot`
+rejects both with `channel_field_not_supported`. `zalo_forward` requires a
+readable source thread and a readable target, `zalo_undo_message` accepts only
+messages this account sent within 24 hours (`channel_message_not_own`,
+`channel_message_too_old`), and every send, sticker search, forward, and undo
+uses the bridge's send bucket.
 
 Personal read tools return external content as untrusted data: at most 200
 messages per call, 2000 characters per message, and 64 KB per result. Direct

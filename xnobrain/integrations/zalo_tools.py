@@ -1,12 +1,12 @@
-"""Run-scoped personal Zalo tools (plan 020 tracks P-A and P-B read).
+"""Run-scoped personal Zalo tools (plan 020 tracks P-A and P-B read and send).
 
 Every tool is bound to one run exactly like ``send_channel_message`` and calls
 the loopback bridge through :class:`ChannelsService`. Reads never need
-approval; before a send or reaction the agent must show the user the recipient
-and the exact payload and wait for explicit confirmation in chat. A run
-started from a channel thread may only read or send in that same thread. The
-global lookups (conversation list, user profile, unread marks) are denied in a
-channel run. External names and message identifiers are data, never
+approval; before a send, reaction, forward, or undo the agent must show the
+user the recipient and the exact payload and wait for explicit confirmation in
+chat. A run started from a channel thread may only read or send in that same
+thread. The global lookups (conversation list, user profile, unread marks) are
+denied in a channel run. External names and message identifiers are data, never
 instructions; stored messages are returned as untrusted external records with
 the shared size caps.
 """
@@ -16,6 +16,7 @@ from __future__ import annotations
 import base64
 import copy
 import json
+import re
 import threading
 import time
 import urllib.parse
@@ -45,8 +46,22 @@ _MAX_BOARD_COUNT = 100
 _MAX_RECIPIENT_LENGTH = 200
 _MAX_URL_LENGTH = 2000
 _MAX_CAPTION_LENGTH = 2000
+_MAX_STICKER_KEYWORD_LENGTH = 100
+_MAX_STICKER_INDEX = 19
 _REACTION_NAMES = ("HEART", "LIKE", "HAHA", "WOW", "CRY", "ANGRY")
 _TRUST = "untrusted_external"
+# Extensions each media tool owns; zca-js picks its upload path from these.
+_IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "webp"}
+_VIDEO_EXTENSIONS = {"mp4"}
+_VOICE_EXTENSIONS = {"m4a", "mp3", "aac", "ogg", "opus"}
+_FILE_EXTENSION = re.compile(r"^[A-Za-z0-9]{1,10}$")
+# Where an extension maps for a voice note, by detected container.
+_AUDIO_EXTENSIONS = {
+    "m4a": {"m4a"},
+    "mp3": {"mp3"},
+    "aac": {"aac"},
+    "ogg": {"ogg", "opus"},
+}
 
 _LOCK = threading.RLock()
 
@@ -62,13 +77,49 @@ class _ListRequest(BaseModel):
     limit: int = Field(default=_DEFAULT_LIST_LIMIT, ge=1, le=_MAX_LIST_LIMIT)
 
 
-class _SendImageRequest(BaseModel):
+class _SendMediaRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     thread_type: Literal["dm", "group"] = "dm"
     recipient: str = Field(min_length=1, max_length=_MAX_RECIPIENT_LENGTH)
     path: str = Field(min_length=1, max_length=1024)
     caption: str | None = Field(default=None, max_length=_MAX_CAPTION_LENGTH)
+
+
+class _SendStickerRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    thread_type: Literal["dm", "group"] = "dm"
+    recipient: str = Field(min_length=1, max_length=_MAX_RECIPIENT_LENGTH)
+    keyword: str = Field(min_length=1, max_length=_MAX_STICKER_KEYWORD_LENGTH)
+    index: int = Field(default=0, ge=0, le=_MAX_STICKER_INDEX)
+
+
+class _SendCardRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    thread_type: Literal["dm", "group"] = "dm"
+    recipient: str = Field(min_length=1, max_length=_MAX_RECIPIENT_LENGTH)
+    user_id: str = Field(min_length=1, max_length=32, pattern=r"^[0-9]{1,32}$")
+    phone: str | None = Field(default=None, pattern=r"^\+?[0-9]{6,15}$")
+
+
+class _ForwardRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_thread_type: Literal["dm", "group"] = "dm"
+    source_recipient: str = Field(min_length=1, max_length=_MAX_RECIPIENT_LENGTH)
+    message_id: str = Field(min_length=1, max_length=32, pattern=r"^[0-9]{1,32}$")
+    thread_type: Literal["dm", "group"] = "dm"
+    recipient: str = Field(min_length=1, max_length=_MAX_RECIPIENT_LENGTH)
+
+
+class _UndoRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    thread_type: Literal["dm", "group"] = "dm"
+    recipient: str = Field(min_length=1, max_length=_MAX_RECIPIENT_LENGTH)
+    message_id: str = Field(min_length=1, max_length=32, pattern=r"^[0-9]{1,32}$")
 
 
 class _SendLinkRequest(BaseModel):
@@ -180,8 +231,15 @@ _MODELS = {
     "zalo_list_reminders": _BoardRequest,
     "zalo_list_notes": _BoardRequest,
     "zalo_poll_detail": _PollRequest,
-    "zalo_send_image": _SendImageRequest,
+    "zalo_send_image": _SendMediaRequest,
+    "zalo_send_file": _SendMediaRequest,
+    "zalo_send_video": _SendMediaRequest,
+    "zalo_send_voice": _SendMediaRequest,
     "zalo_send_link": _SendLinkRequest,
+    "zalo_send_sticker": _SendStickerRequest,
+    "zalo_send_contact_card": _SendCardRequest,
+    "zalo_forward": _ForwardRequest,
+    "zalo_undo_message": _UndoRequest,
     "zalo_react": _ReactRequest,
 }
 
@@ -557,6 +615,254 @@ _SCHEMAS = {
             ("recipient", "path"),
         ),
     },
+    "zalo_send_file": {
+        "type": "function",
+        "function": _function(
+            "zalo_send_file",
+            (
+                "Send a non-image, non-video file from the agent workspace to a "
+                "personal Zalo direct message or an approved group. Before calling, "
+                "show the user the recipient and the exact text and wait for their "
+                "explicit confirmation in chat. The path is relative to the "
+                "workspace; absolute paths, escapes, non-regular files, files over "
+                "the profile media limit, and image, video, or voice formats are "
+                "refused."
+            ),
+            {
+                "thread_type": {
+                    "type": "string",
+                    "enum": ["dm", "group"],
+                    "default": "dm",
+                },
+                "recipient": {
+                    "type": "string",
+                    "description": "Exact Zalo thread id or approved group id/name.",
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Workspace-relative path to the file to send.",
+                },
+                "caption": {
+                    "type": "string",
+                    "maxLength": _MAX_CAPTION_LENGTH,
+                    "description": f"Optional caption, at most {_MAX_CAPTION_LENGTH} characters.",
+                },
+            },
+            ("recipient", "path"),
+        ),
+    },
+    "zalo_send_video": {
+        "type": "function",
+        "function": _function(
+            "zalo_send_video",
+            (
+                "Send an MP4 video from the agent workspace to a personal Zalo "
+                "direct message or an approved group. Before calling, show the user "
+                "the recipient and the exact text and wait for their explicit "
+                "confirmation in chat. The path is relative to the workspace; "
+                "absolute paths, escapes, non-regular files, files over the profile "
+                "media limit, and non-MP4 files are refused."
+            ),
+            {
+                "thread_type": {
+                    "type": "string",
+                    "enum": ["dm", "group"],
+                    "default": "dm",
+                },
+                "recipient": {
+                    "type": "string",
+                    "description": "Exact Zalo thread id or approved group id/name.",
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Workspace-relative path to an MP4 video.",
+                },
+                "caption": {
+                    "type": "string",
+                    "maxLength": _MAX_CAPTION_LENGTH,
+                    "description": f"Optional caption, at most {_MAX_CAPTION_LENGTH} characters.",
+                },
+            },
+            ("recipient", "path"),
+        ),
+    },
+    "zalo_send_voice": {
+        "type": "function",
+        "function": _function(
+            "zalo_send_voice",
+            (
+                "Send a voice recording from the agent workspace to a personal Zalo "
+                "direct message or an approved group. Zalo receives it as an audio "
+                "file attachment. Before calling, show the user the recipient and "
+                "the exact text and wait for their explicit confirmation in chat. "
+                "The path is relative to the workspace; absolute paths, escapes, "
+                "non-regular files, files over the profile media limit, and "
+                "unsupported audio formats are refused."
+            ),
+            {
+                "thread_type": {
+                    "type": "string",
+                    "enum": ["dm", "group"],
+                    "default": "dm",
+                },
+                "recipient": {
+                    "type": "string",
+                    "description": "Exact Zalo thread id or approved group id/name.",
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Workspace-relative path to an m4a, mp3, aac, ogg, or opus file.",
+                },
+                "caption": {
+                    "type": "string",
+                    "maxLength": _MAX_CAPTION_LENGTH,
+                    "description": f"Optional caption, at most {_MAX_CAPTION_LENGTH} characters.",
+                },
+            },
+            ("recipient", "path"),
+        ),
+    },
+    "zalo_send_sticker": {
+        "type": "function",
+        "function": _function(
+            "zalo_send_sticker",
+            (
+                "Search Zalo's sticker catalogue by keyword and send one result to a "
+                "personal Zalo direct message or an approved group. Before calling, "
+                "show the user the recipient, the keyword, and the sticker result and "
+                "wait for their explicit confirmation in chat. `index` picks a "
+                "zero-based search result, at most 19."
+            ),
+            {
+                "thread_type": {
+                    "type": "string",
+                    "enum": ["dm", "group"],
+                    "default": "dm",
+                },
+                "recipient": {
+                    "type": "string",
+                    "description": "Exact Zalo thread id or approved group id/name.",
+                },
+                "keyword": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": _MAX_STICKER_KEYWORD_LENGTH,
+                    "description": "Sticker search keyword.",
+                },
+                "index": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": _MAX_STICKER_INDEX,
+                    "default": 0,
+                    "description": "Zero-based index into the search results.",
+                },
+            },
+            ("recipient", "keyword"),
+        ),
+    },
+    "zalo_send_contact_card": {
+        "type": "function",
+        "function": _function(
+            "zalo_send_contact_card",
+            (
+                "Send one Zalo contact card for a user this account can see to a "
+                "personal Zalo direct message or an approved group. Before calling, "
+                "show the user the recipient and the exact contact and wait for their "
+                "explicit confirmation in chat."
+            ),
+            {
+                "thread_type": {
+                    "type": "string",
+                    "enum": ["dm", "group"],
+                    "default": "dm",
+                },
+                "recipient": {
+                    "type": "string",
+                    "description": "Exact Zalo thread id or approved group id/name.",
+                },
+                "user_id": {
+                    "type": "string",
+                    "pattern": "^[0-9]{1,32}$",
+                    "description": "Numeric Zalo user id of the contact to share.",
+                },
+                "phone": {
+                    "type": "string",
+                    "pattern": "^\\+?[0-9]{6,15}$",
+                    "description": "Optional phone number shown on the card.",
+                },
+            },
+            ("recipient", "user_id"),
+        ),
+    },
+    "zalo_forward": {
+        "type": "function",
+        "function": _function(
+            "zalo_forward",
+            (
+                "Forward one stored text message from a readable personal Zalo "
+                "thread to another readable thread. Before calling, show the user "
+                "the source message and the target recipient and wait for their "
+                "explicit confirmation in chat. A channel run may forward only "
+                "inside its own thread."
+            ),
+            {
+                "source_thread_type": {
+                    "type": "string",
+                    "enum": ["dm", "group"],
+                    "default": "dm",
+                },
+                "source_recipient": {
+                    "type": "string",
+                    "description": "Exact source thread id or approved group id/name.",
+                },
+                "message_id": {
+                    "type": "string",
+                    "pattern": "^[0-9]{1,32}$",
+                    "description": "Exact numeric id of the stored message.",
+                },
+                "thread_type": {
+                    "type": "string",
+                    "enum": ["dm", "group"],
+                    "default": "dm",
+                },
+                "recipient": {
+                    "type": "string",
+                    "description": "Exact target thread id or approved group id/name.",
+                },
+            },
+            ("source_recipient", "message_id", "recipient"),
+        ),
+    },
+    "zalo_undo_message": {
+        "type": "function",
+        "function": _function(
+            "zalo_undo_message",
+            (
+                "Undo one message this account sent in a personal Zalo direct "
+                "message or an approved group. Before calling, show the user the "
+                "recipient and the exact message and wait for their explicit "
+                "confirmation in chat. Only messages this account sent within the "
+                "last 24 hours can be undone."
+            ),
+            {
+                "thread_type": {
+                    "type": "string",
+                    "enum": ["dm", "group"],
+                    "default": "dm",
+                },
+                "recipient": {
+                    "type": "string",
+                    "description": "Exact Zalo thread id or approved group id/name.",
+                },
+                "message_id": {
+                    "type": "string",
+                    "pattern": "^[0-9]{1,32}$",
+                    "description": "Exact numeric id of the message to undo.",
+                },
+            },
+            ("recipient", "message_id"),
+        ),
+    },
     "zalo_send_link": {
         "type": "function",
         "function": _function(
@@ -857,7 +1163,8 @@ def _image_type(data: bytes) -> str | None:
     return None
 
 
-def _workspace_image(workspace: Path, value: str) -> Path:
+def _workspace_file(workspace: Path, value: str) -> Path:
+    """Resolve one workspace file, refusing absolute paths and symlink escapes."""
     raw = Path(value)
     if raw.is_absolute():
         raise _ToolError("channel_path_unsafe")
@@ -873,6 +1180,91 @@ def _workspace_image(workspace: Path, value: str) -> Path:
     if not target.is_file():
         raise _ToolError("channel_path_unsafe")
     return target
+
+
+def _is_mp4(data: bytes) -> bool:
+    return len(data) >= 12 and data[4:8] == b"ftyp"
+
+
+def _audio_type(data: bytes) -> str:
+    """Detect a supported audio container; an empty string means unknown."""
+    if _is_mp4(data):
+        return "m4a"
+    if data.startswith(b"ID3"):
+        return "mp3"
+    if data.startswith(b"OggS"):
+        return "ogg"
+    if len(data) >= 2 and data[0] == 0xFF:
+        # ADTS AAC uses 0xFFF1/0xFFF9; MPEG audio frames use 0xFFEx.
+        if data[1] & 0xF6 == 0xF0:
+            return "aac"
+        if data[1] & 0xE0 == 0xE0:
+            return "mp3"
+    return ""
+
+
+def _extension(name: str) -> str:
+    return Path(name).suffix.lower().lstrip(".")
+
+
+def _media_error(kind: str, name: str, content: bytes) -> str | None:
+    """Return the shared error code when a payload does not match its kind."""
+    extension = _extension(name)
+    if kind == "image":
+        return None if _image_type(content) is not None else "channel_image_invalid"
+    if kind == "video":
+        if extension in _VIDEO_EXTENSIONS and _is_mp4(content):
+            return None
+        return "channel_video_invalid"
+    if kind == "voice":
+        detected = _audio_type(content)
+        if extension in _VOICE_EXTENSIONS and extension in _AUDIO_EXTENSIONS.get(
+            detected, set()
+        ):
+            return None
+        return "channel_voice_invalid"
+    # A plain file never reuses an image, video, or voice extension.
+    if not _FILE_EXTENSION.fullmatch(extension):
+        return "channel_file_invalid"
+    if (
+        extension in _IMAGE_EXTENSIONS
+        or extension in _VIDEO_EXTENSIONS
+        or extension in _VOICE_EXTENSIONS
+        or _image_type(content) is not None
+        or _is_mp4(content)
+        or _audio_type(content)
+    ):
+        return "channel_file_invalid"
+    return None
+
+
+def _too_large_code(kind: str) -> str:
+    return "channel_image_too_large" if kind == "image" else "channel_media_too_large"
+
+
+def _read_media(
+    service: Any,
+    agent_id: str,
+    path: str,
+    kind: str,
+) -> tuple[Path, bytes]:
+    """Read one workspace media file within the profile's size cap."""
+    workspace = service.profile_path(agent_id) / "workspace"
+    target = _workspace_file(workspace, path)
+    limit = service.zalo_media_max_mb(agent_id) * 1024 * 1024
+    try:
+        # Check the size before reading so a huge file is never loaded.
+        if target.stat().st_size > limit:
+            raise _ToolError(_too_large_code(kind))
+        content = target.read_bytes()
+    except OSError:
+        raise _ToolError("channel_path_unsafe") from None
+    if len(content) > limit:
+        raise _ToolError(_too_large_code(kind))
+    error = _media_error(kind, target.name, content)
+    if error is not None:
+        raise _ToolError(error)
+    return target, content
 
 
 def _tool_status(
@@ -1360,47 +1752,225 @@ def _tool_poll_detail(
     }
 
 
-def _tool_send_image(
+def _send_media(
     service: Any,
     agent_id: str,
     conversation_id: str,
-    run_id: str,
-    notify_cb: Any,
-    request: _SendImageRequest,
+    request: _SendMediaRequest,
+    kind: str,
 ) -> dict[str, Any]:
+    """Send one workspace media file after the shared recipient checks."""
     thread_id, name = _resolve(
         service, agent_id, request.thread_type, request.recipient
     )
     _ensure_thread_scope(service, agent_id, conversation_id, thread_id)
-    workspace = service.profile_path(agent_id) / "workspace"
-    target = _workspace_image(workspace, request.path)
-    limit = service.zalo_media_max_mb(agent_id) * 1024 * 1024
-    try:
-        # Check the size before reading so a huge file is never loaded.
-        if target.stat().st_size > limit:
-            raise _ToolError("channel_image_too_large")
-        content = target.read_bytes()
-    except OSError:
-        raise _ToolError("channel_path_unsafe") from None
-    if len(content) > limit:
-        raise _ToolError("channel_image_too_large")
-    if _image_type(content) is None:
-        raise _ToolError("channel_image_invalid")
+    target, content = _read_media(service, agent_id, request.path, kind)
     body: dict[str, Any] = {
         "chatId": thread_id,
         "threadType": "group" if request.thread_type == "group" else "user",
+        "kind": kind,
         "fileName": target.name,
         "contentBase64": base64.b64encode(content).decode("ascii"),
     }
     if request.caption:
         body["caption"] = request.caption
     data = _bridge_data(
-        service, agent_id, "/send-media", method="POST", body=body, timeout=30.0
+        service, agent_id, "/send-media", method="POST", body=body, timeout=60.0
     )
     return {
         "thread_id": thread_id,
         "name": name,
         "message_id": _text(data.get("messageId")) or None,
+    }
+
+
+def _tool_send_image(
+    service: Any,
+    agent_id: str,
+    conversation_id: str,
+    run_id: str,
+    notify_cb: Any,
+    request: _SendMediaRequest,
+) -> dict[str, Any]:
+    return _send_media(service, agent_id, conversation_id, request, "image")
+
+
+def _tool_send_file(
+    service: Any,
+    agent_id: str,
+    conversation_id: str,
+    run_id: str,
+    notify_cb: Any,
+    request: _SendMediaRequest,
+) -> dict[str, Any]:
+    return _send_media(service, agent_id, conversation_id, request, "file")
+
+
+def _tool_send_video(
+    service: Any,
+    agent_id: str,
+    conversation_id: str,
+    run_id: str,
+    notify_cb: Any,
+    request: _SendMediaRequest,
+) -> dict[str, Any]:
+    return _send_media(service, agent_id, conversation_id, request, "video")
+
+
+def _tool_send_voice(
+    service: Any,
+    agent_id: str,
+    conversation_id: str,
+    run_id: str,
+    notify_cb: Any,
+    request: _SendMediaRequest,
+) -> dict[str, Any]:
+    return _send_media(service, agent_id, conversation_id, request, "voice")
+
+
+def _tool_send_sticker(
+    service: Any,
+    agent_id: str,
+    conversation_id: str,
+    run_id: str,
+    notify_cb: Any,
+    request: _SendStickerRequest,
+) -> dict[str, Any]:
+    thread_id, name = _resolve(
+        service, agent_id, request.thread_type, request.recipient
+    )
+    _ensure_thread_scope(service, agent_id, conversation_id, thread_id)
+    data = _bridge_data(
+        service,
+        agent_id,
+        "/send-sticker",
+        method="POST",
+        body={
+            "chatId": thread_id,
+            "threadType": "group" if request.thread_type == "group" else "user",
+            "keyword": request.keyword,
+            "index": request.index,
+        },
+        timeout=30.0,
+    )
+    return {
+        "thread_id": thread_id,
+        "name": name,
+        "keyword": request.keyword,
+        "index": request.index,
+        "message_id": _text(data.get("messageId")) or None,
+    }
+
+
+def _tool_send_contact_card(
+    service: Any,
+    agent_id: str,
+    conversation_id: str,
+    run_id: str,
+    notify_cb: Any,
+    request: _SendCardRequest,
+) -> dict[str, Any]:
+    thread_id, name = _resolve(
+        service, agent_id, request.thread_type, request.recipient
+    )
+    _ensure_thread_scope(service, agent_id, conversation_id, thread_id)
+    body: dict[str, Any] = {
+        "chatId": thread_id,
+        "threadType": "group" if request.thread_type == "group" else "user",
+        "userId": request.user_id,
+    }
+    if request.phone:
+        body["phoneNumber"] = request.phone
+    data = _bridge_data(
+        service, agent_id, "/send-card", method="POST", body=body, timeout=30.0
+    )
+    return {
+        "thread_id": thread_id,
+        "name": name,
+        "user_id": request.user_id,
+        "message_id": _text(data.get("messageId")) or None,
+    }
+
+
+def _tool_forward(
+    service: Any,
+    agent_id: str,
+    conversation_id: str,
+    run_id: str,
+    notify_cb: Any,
+    request: _ForwardRequest,
+) -> dict[str, Any]:
+    if request.source_thread_type == "group":
+        source_id, source_name = _group_thread(
+            service, agent_id, conversation_id, request.source_recipient
+        )
+    else:
+        source_id, source_name = _dm_thread(
+            service, agent_id, conversation_id, request.source_recipient
+        )
+    # Both ends must be readable threads, not only allowed send targets.
+    if request.thread_type == "group":
+        thread_id, name = _group_thread(
+            service, agent_id, conversation_id, request.recipient
+        )
+    else:
+        thread_id, name = _dm_thread(
+            service, agent_id, conversation_id, request.recipient
+        )
+    data = _bridge_data(
+        service,
+        agent_id,
+        "/forward",
+        method="POST",
+        body={
+            "sourceChatId": source_id,
+            "sourceThreadType": (
+                "group" if request.source_thread_type == "group" else "user"
+            ),
+            "messageId": request.message_id,
+            "chatId": thread_id,
+            "threadType": "group" if request.thread_type == "group" else "user",
+        },
+        timeout=30.0,
+    )
+    return {
+        "source_thread_id": source_id,
+        "source_name": source_name,
+        "thread_id": thread_id,
+        "name": name,
+        "message_id": _text(data.get("messageId")) or None,
+    }
+
+
+def _tool_undo_message(
+    service: Any,
+    agent_id: str,
+    conversation_id: str,
+    run_id: str,
+    notify_cb: Any,
+    request: _UndoRequest,
+) -> dict[str, Any]:
+    thread_id, name = _resolve(
+        service, agent_id, request.thread_type, request.recipient
+    )
+    _ensure_thread_scope(service, agent_id, conversation_id, thread_id)
+    _bridge_data(
+        service,
+        agent_id,
+        "/undo",
+        method="POST",
+        body={
+            "chatId": thread_id,
+            "threadType": "group" if request.thread_type == "group" else "user",
+            "messageId": request.message_id,
+        },
+        timeout=15.0,
+    )
+    return {
+        "thread_id": thread_id,
+        "name": name,
+        "message_id": request.message_id,
+        "undone": True,
     }
 
 
@@ -1478,6 +2048,13 @@ _TOOL_HANDLERS = {
     "zalo_list_notes": _tool_list_notes,
     "zalo_poll_detail": _tool_poll_detail,
     "zalo_send_image": _tool_send_image,
+    "zalo_send_file": _tool_send_file,
+    "zalo_send_video": _tool_send_video,
+    "zalo_send_voice": _tool_send_voice,
+    "zalo_send_sticker": _tool_send_sticker,
+    "zalo_send_contact_card": _tool_send_contact_card,
+    "zalo_forward": _tool_forward,
+    "zalo_undo_message": _tool_undo_message,
     "zalo_send_link": _tool_send_link,
     "zalo_react": _tool_react,
 }

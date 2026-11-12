@@ -630,6 +630,8 @@ class ChannelsService:
         text: str,
         platform: str = zalo_channels.ZALO_PLATFORM,
         thread_type: str = "dm",
+        quote_message_id: str | None = None,
+        mentions: list[str] | None = None,
     ) -> dict[str, Any]:
         """Deliver approved text, then link a personal thread to this conversation."""
         profile = self._profile(agent_id)
@@ -640,23 +642,30 @@ class ChannelsService:
                 "channel message is too long", status=400, code="channel_message_too_long"
             )
         try:
-            if platform == zalo_channels.ZALO_PLATFORM and thread_type == "group":
-                # The plugin standalone sender has no thread-type argument, so a
-                # personal group send must go straight to the authenticated
-                # bridge with ``threadType: "group"``.
+            if platform == zalo_channels.ZALO_PLATFORM and (
+                thread_type == "group" or quote_message_id or mentions
+            ):
+                # The plugin standalone sender has no thread-type, quote, or
+                # mention argument, so these personal sends go straight to the
+                # authenticated bridge.
                 config = self.repository.config(profile)
                 token = self._bridge_token(profile, config)
                 if token is None:
                     raise zalo_channels.ChannelDeliveryError(
                         "channel_bridge_unauthorized"
                     )
+                options: dict[str, Any] = {"thread_type": thread_type}
+                if quote_message_id:
+                    options["quote_message_id"] = quote_message_id
+                if mentions:
+                    options["mentions"] = list(mentions)
                 result = await asyncio.to_thread(
                     zalo_channels.bridge_send_text,
                     self._bridge_port(profile, config),
                     token,
                     thread_id,
                     text,
-                    thread_type="group",
+                    **options,
                 )
             else:
                 result = await zalo_channels.send_text(thread_id, text, platform=platform)

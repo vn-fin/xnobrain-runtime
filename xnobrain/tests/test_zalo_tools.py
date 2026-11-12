@@ -28,6 +28,13 @@ _TOOL_NAMES = (
     "zalo_list_notes",
     "zalo_poll_detail",
     "zalo_send_image",
+    "zalo_send_file",
+    "zalo_send_video",
+    "zalo_send_voice",
+    "zalo_send_sticker",
+    "zalo_send_contact_card",
+    "zalo_forward",
+    "zalo_undo_message",
     "zalo_send_link",
     "zalo_react",
 )
@@ -142,6 +149,36 @@ class ZaloToolSchemaTests(unittest.TestCase):
         link = zalo_tools._SCHEMAS["zalo_send_link"]["function"]["parameters"]
         self.assertEqual(set(link["required"]), {"recipient", "url"})
 
+    def test_send_extra_schemas_require_their_scope_fields(self):
+        expected = {
+            "zalo_send_file": {"recipient", "path"},
+            "zalo_send_video": {"recipient", "path"},
+            "zalo_send_voice": {"recipient", "path"},
+            "zalo_send_sticker": {"recipient", "keyword"},
+            "zalo_send_contact_card": {"recipient", "user_id"},
+            "zalo_forward": {"source_recipient", "message_id", "recipient"},
+            "zalo_undo_message": {"recipient", "message_id"},
+        }
+        for name, required in expected.items():
+            with self.subTest(name=name):
+                parameters = zalo_tools._SCHEMAS[name]["function"]["parameters"]
+                self.assertEqual(set(parameters.get("required") or []), required)
+                self.assertIs(parameters["additionalProperties"], False)
+
+    def test_send_extra_descriptions_ask_for_in_chat_confirmation(self):
+        for name in (
+            "zalo_send_file",
+            "zalo_send_video",
+            "zalo_send_voice",
+            "zalo_send_sticker",
+            "zalo_send_contact_card",
+            "zalo_forward",
+            "zalo_undo_message",
+        ):
+            with self.subTest(name=name):
+                description = zalo_tools._SCHEMAS[name]["function"]["description"]
+                self.assertIn("explicit confirmation in chat", description)
+
     def test_read_schemas_require_their_scope_fields(self):
         expected = {
             "zalo_read_history": {"recipient"},
@@ -167,7 +204,9 @@ class ZaloToolSchemaTests(unittest.TestCase):
         self.assertNotIn("required", user)
 
 
-class ZaloToolCallTests(unittest.TestCase):
+class _ZaloToolTestBase(unittest.TestCase):
+    """Shared binding, workspace, and bridge fake for the Zalo tool tests."""
+
     def setUp(self):
         channel_tools._BINDINGS.clear()
         channel_tools._PLATFORMS.clear()
@@ -198,11 +237,16 @@ class ZaloToolCallTests(unittest.TestCase):
             zalo_tools.call(name, args or {}, session_id=conversation_id)
         )
 
-    def _write_image(self, name="pic.png", content=_PNG):
+    def _write_file(self, name, content):
         path = self.workspace / name
         path.write_bytes(content)
         return path
 
+    def _write_image(self, name="pic.png", content=_PNG):
+        return self._write_file(name, content)
+
+
+class ZaloToolCallTests(_ZaloToolTestBase):
     def test_unbound_run_requires_authority(self):
         result = self._call("zalo_me", conversation_id="missing")
 
@@ -1086,6 +1130,376 @@ class ZaloReadToolTests(unittest.TestCase):
             [entry["thread_id"] for entry in result["data"]["groups"]], ["123"]
         )
         self.assertEqual(result["data"]["direct"][0]["trust"], "untrusted_external")
+
+
+class ZaloSendExtraTests(_ZaloToolTestBase):
+    """P-B send extras: media kinds, stickers, cards, forward, and undo."""
+
+    _MP4 = b"\x00\x00\x00\x20ftypisom" + b"\x01" * 16
+    _M4A = b"\x00\x00\x00\x20ftypM4A " + b"\x01" * 16
+    _OGG = b"OggS" + b"\x01" * 16
+
+    def _ok(self, data):
+        self.service.bridge_result = {"ok": True, "status": 200, "data": data}
+
+    def test_send_file_posts_the_kind_and_bytes(self):
+        self._bind()
+        self._write_file("report.pdf", b"%PDF-1.4 report")
+        self._ok({"success": True, "messageId": "9"})
+
+        with mock.patch("tools.approval._await_gateway_decision") as approval:
+            result = self._call(
+                "zalo_send_file",
+                {"recipient": "Nam", "path": "report.pdf", "caption": "report"},
+            )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["data"]["message_id"], "9")
+        path, method, body = self.service.bridge_calls[0]
+        self.assertEqual((path, method), ("/send-media", "POST"))
+        self.assertEqual(body["kind"], "file")
+        self.assertEqual(body["fileName"], "report.pdf")
+        self.assertEqual(body["caption"], "report")
+        self.assertEqual(body["threadType"], "user")
+        self.assertEqual(base64.b64decode(body["contentBase64"]), b"%PDF-1.4 report")
+        approval.assert_not_called()
+
+    def test_send_video_and_voice_use_their_kinds(self):
+        self._bind()
+        self._write_file("clip.mp4", self._MP4)
+        self._write_file("note.m4a", self._M4A)
+
+        video = self._call(
+            "zalo_send_video",
+            {"thread_type": "group", "recipient": "Team One", "path": "clip.mp4"},
+        )
+        self.assertTrue(video["success"])
+        self.assertEqual(self.service.bridge_calls[0][2]["kind"], "video")
+        self.assertEqual(self.service.bridge_calls[0][2]["threadType"], "group")
+
+        voice = self._call("zalo_send_voice", {"recipient": "Nam", "path": "note.m4a"})
+        self.assertTrue(voice["success"])
+        self.assertEqual(self.service.bridge_calls[1][2]["kind"], "voice")
+
+    def test_media_type_must_match_the_tool(self):
+        self._bind()
+        self._write_image("pic.png")
+        self._write_file("notes.txt", b"plain text")
+        self._write_file("clip.mp4", self._MP4)
+        self._write_file("note.ogg", self._OGG)
+
+        cases = [
+            ("zalo_send_video", "pic.png", "channel_video_invalid"),
+            ("zalo_send_video", "clip.mp4", None),
+            ("zalo_send_voice", "clip.mp4", "channel_voice_invalid"),
+            ("zalo_send_voice", "note.ogg", None),
+            ("zalo_send_file", "pic.png", "channel_file_invalid"),
+            ("zalo_send_file", "clip.mp4", "channel_file_invalid"),
+            ("zalo_send_file", "note.ogg", "channel_file_invalid"),
+            ("zalo_send_file", "notes.txt", None),
+        ]
+        for name, path, expected in cases:
+            with self.subTest(name=name, path=path):
+                self.service.bridge_calls.clear()
+                result = self._call(name, {"recipient": "Nam", "path": path})
+                if expected is None:
+                    self.assertTrue(result["success"])
+                else:
+                    self.assertEqual(result["error"]["code"], expected)
+                    self.assertEqual(self.service.bridge_calls, [])
+
+    def test_media_paths_and_sizes_are_checked_before_the_bridge(self):
+        self._bind()
+        outside = Path(self.temporary.name) / "outside.pdf"
+        outside.write_bytes(b"%PDF-1.4")
+        (self.workspace / "link.pdf").symlink_to(outside)
+        self._write_file("big.pdf", b"%PDF-1.4")
+
+        unsafe = self._call(
+            "zalo_send_file",
+            {"recipient": "Nam", "path": str(outside.resolve())},
+        )
+        self.assertEqual(unsafe["error"]["code"], "channel_path_unsafe")
+
+        symlink = self._call(
+            "zalo_send_file", {"recipient": "Nam", "path": "link.pdf"}
+        )
+        self.assertEqual(symlink["error"]["code"], "channel_path_unsafe")
+
+        self.service.media_max_mb = 0.0
+        oversized = self._call(
+            "zalo_send_file", {"recipient": "Nam", "path": "big.pdf"}
+        )
+        self.assertEqual(oversized["error"]["code"], "channel_media_too_large")
+        self.assertEqual(self.service.bridge_calls, [])
+
+    def test_send_sticker_searches_then_sends(self):
+        self._bind()
+        self._ok({"success": True, "messageId": "11"})
+
+        result = self._call(
+            "zalo_send_sticker",
+            {
+                "thread_type": "group",
+                "recipient": "Team One",
+                "keyword": "cat",
+                "index": 2,
+            },
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["data"]["message_id"], "11")
+        self.assertEqual(result["data"]["keyword"], "cat")
+        self.assertEqual(
+            self.service.bridge_calls[0],
+            (
+                "/send-sticker",
+                "POST",
+                {
+                    "chatId": "123",
+                    "threadType": "group",
+                    "keyword": "cat",
+                    "index": 2,
+                },
+            ),
+        )
+
+    def test_send_sticker_rejects_a_bad_index(self):
+        self._bind()
+
+        result = self._call(
+            "zalo_send_sticker", {"recipient": "Nam", "keyword": "cat", "index": 20}
+        )
+
+        self.assertEqual(result["error"]["code"], "channel_invalid_request")
+        self.assertEqual(self.service.bridge_calls, [])
+
+    def test_send_contact_card_posts_one_user(self):
+        self._bind()
+        self._ok({"success": True, "messageId": "12"})
+
+        result = self._call(
+            "zalo_send_contact_card",
+            {"recipient": "Nam", "user_id": "77", "phone": "+84912345678"},
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(
+            self.service.bridge_calls[0],
+            (
+                "/send-card",
+                "POST",
+                {
+                    "chatId": "111",
+                    "threadType": "user",
+                    "userId": "77",
+                    "phoneNumber": "+84912345678",
+                },
+            ),
+        )
+
+    def test_send_contact_card_requires_a_numeric_user_id(self):
+        self._bind()
+
+        result = self._call(
+            "zalo_send_contact_card", {"recipient": "Nam", "user_id": "abc"}
+        )
+
+        self.assertEqual(result["error"]["code"], "channel_invalid_request")
+        self.assertEqual(self.service.bridge_calls, [])
+
+    def test_forward_posts_the_source_and_target(self):
+        self._bind()
+        self._ok({"success": True, "messageId": "13"})
+
+        result = self._call(
+            "zalo_forward",
+            {
+                "source_recipient": "Nam",
+                "message_id": "555",
+                "thread_type": "group",
+                "recipient": "Team One",
+            },
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["data"]["source_thread_id"], "111")
+        self.assertEqual(result["data"]["thread_id"], "123")
+        self.assertEqual(
+            self.service.bridge_calls[0],
+            (
+                "/forward",
+                "POST",
+                {
+                    "sourceChatId": "111",
+                    "sourceThreadType": "user",
+                    "messageId": "555",
+                    "chatId": "123",
+                    "threadType": "group",
+                },
+            ),
+        )
+
+    def test_forward_source_must_be_readable(self):
+        self._bind()
+        self.service.dm_allowed = False
+
+        result = self._call(
+            "zalo_forward",
+            {"source_recipient": "Nam", "message_id": "555", "recipient": "Team One", "thread_type": "group"},
+        )
+
+        self.assertEqual(result["error"]["code"], "channel_dm_policy_blocked")
+        self.assertEqual(self.service.bridge_calls, [])
+
+    def test_forward_target_must_be_readable(self):
+        self._bind()
+        self.service.dm_allowed = False
+
+        result = self._call(
+            "zalo_forward",
+            {
+                "source_thread_type": "group",
+                "source_recipient": "Team One",
+                "message_id": "555",
+                "recipient": "Nam",
+            },
+        )
+
+        self.assertEqual(result["error"]["code"], "channel_dm_policy_blocked")
+        self.assertEqual(self.service.bridge_calls, [])
+
+    def test_forward_in_a_channel_run_stays_inside_the_run_thread(self):
+        self._bind(threads={"zalo": {"111": {"conversation_id": "conv-1"}}})
+
+        outside = self._call(
+            "zalo_forward",
+            {
+                "source_recipient": "Nam",
+                "message_id": "555",
+                "thread_type": "group",
+                "recipient": "Team One",
+            },
+        )
+        self.assertEqual(outside["error"]["code"], "channel_thread_out_of_scope")
+        self.assertEqual(self.service.bridge_calls, [])
+
+        self.service.bridge_calls.clear()
+        inside = self._call(
+            "zalo_forward",
+            {
+                "source_recipient": "Nam",
+                "message_id": "555",
+                "recipient": "Nam",
+            },
+        )
+        self.assertTrue(inside["success"])
+        self.assertEqual(self.service.bridge_calls[0][0], "/forward")
+
+    def test_undo_posts_the_message_id(self):
+        self._bind()
+        self._ok({"success": True})
+
+        result = self._call(
+            "zalo_undo_message", {"recipient": "Nam", "message_id": "555"}
+        )
+
+        self.assertTrue(result["success"])
+        self.assertTrue(result["data"]["undone"])
+        self.assertEqual(
+            self.service.bridge_calls[0],
+            (
+                "/undo",
+                "POST",
+                {"chatId": "111", "threadType": "user", "messageId": "555"},
+            ),
+        )
+
+    def test_undo_maps_the_bridge_refusal(self):
+        self._bind()
+        self.service.bridge_result = {
+            "ok": False,
+            "status": 403,
+            "data": None,
+            "error": "not_own_message",
+        }
+
+        result = self._call(
+            "zalo_undo_message", {"recipient": "Nam", "message_id": "555"}
+        )
+
+        self.assertEqual(result["error"]["code"], "channel_message_not_own")
+
+    def test_send_extras_require_an_approved_group(self):
+        self._bind()
+        self._write_file("report.pdf", b"%PDF-1.4")
+        self.service.group = {"status": "group_not_approved", "thread_id": "123"}
+
+        cases = [
+            (
+                "zalo_send_file",
+                {"thread_type": "group", "recipient": "123", "path": "report.pdf"},
+            ),
+            (
+                "zalo_send_sticker",
+                {"thread_type": "group", "recipient": "123", "keyword": "cat"},
+            ),
+            (
+                "zalo_send_contact_card",
+                {"thread_type": "group", "recipient": "123", "user_id": "77"},
+            ),
+            (
+                "zalo_forward",
+                {
+                    "source_recipient": "Nam",
+                    "message_id": "555",
+                    "thread_type": "group",
+                    "recipient": "123",
+                },
+            ),
+            (
+                "zalo_undo_message",
+                {"thread_type": "group", "recipient": "123", "message_id": "555"},
+            ),
+        ]
+        for name, args in cases:
+            with self.subTest(name=name):
+                result = self._call(name, args)
+                self.assertEqual(
+                    result["error"]["code"], "channel_group_not_approved"
+                )
+        self.assertEqual(self.service.bridge_calls, [])
+
+    def test_send_extras_are_out_of_scope_for_another_thread(self):
+        self._bind(threads={"zalo": {"999": {"conversation_id": "conv-1"}}})
+        self._write_file("report.pdf", b"%PDF-1.4")
+
+        cases = [
+            ("zalo_send_file", {"recipient": "Nam", "path": "report.pdf"}),
+            ("zalo_send_video", {"recipient": "Nam", "path": "report.pdf"}),
+            ("zalo_send_voice", {"recipient": "Nam", "path": "report.pdf"}),
+            ("zalo_send_sticker", {"recipient": "Nam", "keyword": "cat"}),
+            ("zalo_send_contact_card", {"recipient": "Nam", "user_id": "77"}),
+            ("zalo_undo_message", {"recipient": "Nam", "message_id": "555"}),
+        ]
+        for name, args in cases:
+            with self.subTest(name=name):
+                result = self._call(name, args)
+                self.assertEqual(
+                    result["error"]["code"], "channel_thread_out_of_scope"
+                )
+        self.assertEqual(self.service.bridge_calls, [])
+
+    def test_send_extras_deliver_inside_the_run_thread(self):
+        self._bind(threads={"zalo": {"111": {"conversation_id": "conv-1"}}})
+        self._write_file("report.pdf", b"%PDF-1.4")
+
+        result = self._call(
+            "zalo_send_file", {"recipient": "Nam", "path": "report.pdf"}
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(self.service.bridge_calls[0][0], "/send-media")
 
 
 class ZaloToolRegistryTests(unittest.TestCase):

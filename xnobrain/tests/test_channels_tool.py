@@ -253,6 +253,38 @@ class ChannelServiceSendTests(unittest.IsolatedAsyncioTestCase):
         send.assert_not_called()
         self.assertFalse((self.profile / "zalo" / "links.json").exists())
 
+    async def test_personal_reply_options_use_the_authenticated_bridge(self):
+        token = "a" * 64
+        (self.profile / "zalo").mkdir()
+        (self.profile / "zalo" / "bridge.token").write_text(token, encoding="utf-8")
+        with mock.patch.object(
+            ChannelsService, "_bridge_port", return_value=3110
+        ), mock.patch.object(
+            zalo_channels,
+            "bridge_send_text",
+            return_value={"message_id": "78"},
+        ) as send:
+            result = await self.service.send_message(
+                "agent-1",
+                "conv-1",
+                "111",
+                "Nam",
+                "hi @Lan",
+                quote_message_id="555",
+                mentions=["77"],
+            )
+
+        send.assert_called_once_with(
+            3110,
+            token,
+            "111",
+            "hi @Lan",
+            thread_type="dm",
+            quote_message_id="555",
+            mentions=["77"],
+        )
+        self.assertEqual(result["message_id"], "78")
+
     async def test_bot_send_uses_the_generalized_sender_without_a_personal_link(self):
         with mock.patch.object(
             zalo_channels, "send_text", mock.AsyncMock(return_value={"message_id": "7"})
@@ -709,6 +741,108 @@ class ChannelToolCallTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["error"]["code"], "channel_platform_not_configured")
         deliver.assert_not_called()
 
+    async def test_personal_send_passes_quote_and_mentions(self):
+        service = _FakeService(
+            {"status": "ok"},
+            group_resolution={
+                "status": "ok",
+                "thread_id": "123",
+                "name": "Team One",
+                "type": "group",
+            },
+        )
+        self._bind(service, platforms={"zalo"})
+        with mock.patch.object(
+            channel_tools, "_deliver", return_value={"message_id": "sent-4"}
+        ) as deliver:
+            result = self._call(
+                {
+                    "platform": "zalo",
+                    "thread_type": "group",
+                    "recipient": "Team One",
+                    "text": "hi @Lan",
+                    "quote_message_id": "555",
+                    "mentions": ["77"],
+                }
+            )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(deliver.call_args.kwargs["quote_message_id"], "555")
+        self.assertEqual(deliver.call_args.kwargs["mentions"], ["77"])
+
+    async def test_personal_send_keeps_the_old_call_without_reply_options(self):
+        service = _FakeService({"status": "ok", "thread_id": "111", "name": "Nam"})
+        self._bind(service)
+        with mock.patch.object(
+            channel_tools, "_deliver", return_value={"message_id": "sent-1"}
+        ) as deliver:
+            self._call({"recipient": "Nam", "text": "hello"})
+
+        self.assertNotIn("quote_message_id", deliver.call_args.kwargs)
+        self.assertNotIn("mentions", deliver.call_args.kwargs)
+
+    async def test_bot_send_rejects_quote_and_mentions(self):
+        service = _FakeService(
+            {"status": "ok"},
+            bot_resolution={"status": "ok", "thread_id": "chat_1", "name": "Nam"},
+        )
+        self._bind(service, platforms={"zalo_bot"})
+        with mock.patch.object(channel_tools, "_deliver") as deliver:
+            quoted = self._call(
+                {
+                    "platform": "zalo_bot",
+                    "recipient": "chat_1",
+                    "text": "hello",
+                    "quote_message_id": "555",
+                }
+            )
+            mentioned = self._call(
+                {
+                    "platform": "zalo_bot",
+                    "thread_type": "group",
+                    "recipient": "chat_1",
+                    "text": "hello",
+                    "mentions": ["77"],
+                }
+            )
+
+        self.assertEqual(quoted["error"]["code"], "channel_field_not_supported")
+        self.assertEqual(mentioned["error"]["code"], "channel_field_not_supported")
+        deliver.assert_not_called()
+
+    async def test_mentions_require_a_group_thread(self):
+        service = _FakeService({"status": "ok", "thread_id": "111", "name": "Nam"})
+        self._bind(service)
+        with mock.patch.object(channel_tools, "_deliver") as deliver:
+            result = self._call(
+                {"recipient": "Nam", "text": "hi", "mentions": ["77"]}
+            )
+
+        self.assertEqual(result["error"]["code"], "channel_invalid_request")
+        deliver.assert_not_called()
+
+    async def test_reply_options_are_validated_by_the_request_model(self):
+        service = _FakeService({"status": "ok", "thread_id": "111", "name": "Nam"})
+        self._bind(service)
+
+        cases = [
+            {"recipient": "Nam", "text": "hi", "quote_message_id": "abc"},
+            {"recipient": "Nam", "text": "hi", "mentions": ["abc"]},
+            {"recipient": "Nam", "text": "hi", "mentions": []},
+            {
+                "thread_type": "group",
+                "recipient": "Team One",
+                "text": "hi",
+                "mentions": ["77", "77"],
+            },
+        ]
+        for args in cases:
+            with self.subTest(args=args):
+                result = self._call(args)
+                self.assertEqual(
+                    result["error"]["code"], "channel_invalid_request"
+                )
+
     async def test_bind_requires_an_enabled_profile_and_registered_plugin(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -878,6 +1012,52 @@ class ZaloBridgeClientTests(unittest.TestCase):
                     )
                 self.assertFalse(result["ok"])
                 self.assertEqual(zalo_channels.bridge_error_code(result), expected)
+
+    def test_bridge_send_text_posts_quote_and_mentions(self):
+        response = mock.MagicMock()
+        response.status = 200
+        response.read.return_value = b'{"success":true,"messageId":"9"}'
+        with mock.patch.object(
+            zalo_channels.urllib.request, "urlopen", return_value=response
+        ) as urlopen:
+            response.__enter__.return_value = response
+            result = zalo_channels.bridge_send_text(
+                3110,
+                "b" * 64,
+                "123",
+                "hi @Lan",
+                thread_type="group",
+                quote_message_id="555",
+                mentions=["77"],
+            )
+
+        request = urlopen.call_args.args[0]
+        self.assertEqual(
+            json.loads(request.data),
+            {
+                "chatId": "123",
+                "threadType": "group",
+                "message": "hi @Lan",
+                "quoteMessageId": "555",
+                "mentions": ["77"],
+            },
+        )
+        self.assertEqual(result, {"message_id": "9"})
+
+    def test_bridge_send_text_rejects_malformed_reply_options(self):
+        cases = [
+            {"quote_message_id": "abc"},
+            {"thread_type": "user", "mentions": ["77"]},
+            {"thread_type": "group", "mentions": ["abc"]},
+            {"thread_type": "group", "mentions": [str(index) for index in range(21)]},
+        ]
+        for options in cases:
+            with self.subTest(options=options):
+                with self.assertRaises(zalo_channels.ChannelDeliveryError) as raised:
+                    zalo_channels.bridge_send_text(
+                        3110, "b" * 64, "123", "hi", **options
+                    )
+                self.assertEqual(raised.exception.code, "channel_recipient_invalid")
 
     async def test_register_tools_is_scoped_and_unbound_calls_fail(self):
         from hermes_constants import hermes_home_key

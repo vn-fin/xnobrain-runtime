@@ -4,10 +4,13 @@ import assert from 'node:assert/strict';
 import {
   MAX_GROUP_NAMES,
   MAX_MEDIA_BYTES,
+  MAX_MENTIONS,
   MAX_MESSAGE_LENGTH,
+  MAX_STICKER_SEARCH_LIMIT,
   READ_RATE_LIMIT_PER_MINUTE,
   REACTION_NAMES,
   SEND_RATE_LIMIT_PER_MINUTE,
+  UNDO_MAX_AGE_MS,
   chunkList,
   chunkText,
   constantTimeEqual,
@@ -16,29 +19,38 @@ import {
   createInfoGate,
   createTokenBucket,
   createTtlCache,
+  detectAudioType,
   detectImageType,
+  fileExtension,
   fillGroupNames,
   groupHistoryRecords,
   groupInfoCacheKey,
   groupInfoRecord,
   inboundQueueItem,
+  isMp4,
   isRateLimitError,
   markdownToZalo,
   mediaFromContent,
+  mentionPayloads,
   mentionsSelf,
+  messageRef,
   messageText,
   noteRecords,
   parseBearerToken,
   pollRecord,
+  quotePayload,
   quotesSelf,
   receiptFields,
   rememberGroupName,
   reminderRecords,
   safeImageFileName,
+  safeMediaFileName,
   splitStyledChunks,
+  undoExpired,
   unreadRecords,
   userInfoRecord,
   validateBoardBody,
+  validateForwardBody,
   validateGroupHistoryBody,
   validateGroupInfoBody,
   validateHistoryBody,
@@ -47,11 +59,14 @@ import {
   validateSearchBody,
   validateSeenBody,
   validateSendBody,
+  validateSendCardBody,
   validateSendLinkBody,
   validateSendMediaBody,
   validateSendMessageBody,
+  validateSendStickerBody,
   validateThreadTarget,
   validateTypingBody,
+  validateUndoBody,
   validateUserInfoBody,
 } from './lib.js';
 
@@ -124,6 +139,8 @@ test('validateSendMessageBody accepts 1..20000 characters', () => {
     chatId: '1',
     threadType: 'user',
     message: 'hello',
+    quoteMessageId: '',
+    mentions: [],
   });
   assert.equal(
     validateSendMessageBody({ chatId: '1', message: 'a'.repeat(MAX_MESSAGE_LENGTH) }).ok,
@@ -1398,6 +1415,302 @@ test('pollRecord and unreadRecords normalize upstream payloads', () => {
       groups: [{ thread_id: '43', last_message_id: '8', ts: 200 }],
     },
   );
+});
+
+test('validateSendMediaBody accepts file, video, and voice kinds', () => {
+  const mp4 = Buffer.concat([
+    Buffer.from([0, 0, 0, 0x20]),
+    Buffer.from('ftypisom', 'latin1'),
+    Buffer.alloc(16, 0x01),
+  ]);
+  const m4a = Buffer.concat([
+    Buffer.from([0, 0, 0, 0x20]),
+    Buffer.from('ftypM4A ', 'latin1'),
+    Buffer.alloc(16, 0x01),
+  ]);
+  const ogg = Buffer.concat([Buffer.from('OggS', 'latin1'), Buffer.alloc(16, 0x01)]);
+
+  const file = validateSendMediaBody({
+    chatId: '42',
+    kind: 'file',
+    fileName: '../report.pdf',
+    contentBase64: Buffer.from('%PDF-1.4 report').toString('base64'),
+  });
+  assert.equal(file.ok, true);
+  assert.equal(file.kind, 'file');
+  assert.equal(file.fileName, 'report.pdf');
+  assert.equal(file.mimeType, 'application/octet-stream');
+
+  const video = validateSendMediaBody({
+    chatId: '42',
+    kind: 'video',
+    fileName: 'clip.MP4',
+    contentBase64: mp4.toString('base64'),
+  });
+  assert.equal(video.ok, true);
+  assert.equal(video.kind, 'video');
+  assert.equal(video.fileName, 'clip.mp4');
+
+  const voice = validateSendMediaBody({
+    chatId: '42',
+    kind: 'voice',
+    fileName: 'note.m4a',
+    contentBase64: m4a.toString('base64'),
+  });
+  assert.equal(voice.ok, true);
+  assert.equal(voice.kind, 'voice');
+
+  const opus = validateSendMediaBody({
+    chatId: '42',
+    kind: 'voice',
+    fileName: 'note.opus',
+    contentBase64: ogg.toString('base64'),
+  });
+  assert.equal(opus.ok, true);
+});
+
+test('validateSendMediaBody rejects media that does not match its kind', () => {
+  const png = pngPayload(8);
+  const mp4 = Buffer.concat([
+    Buffer.from([0, 0, 0, 0x20]),
+    Buffer.from('ftypisom', 'latin1'),
+    Buffer.alloc(16, 0x01),
+  ]);
+  const base = { chatId: '42', contentBase64: png.toString('base64') };
+
+  assert.equal(validateSendMediaBody({ ...base, kind: 'archive' }).ok, false);
+  // A plain file never reuses an image, video, or voice extension.
+  assert.equal(
+    validateSendMediaBody({ ...base, kind: 'file', fileName: 'photo.png' }).ok,
+    false,
+  );
+  assert.equal(
+    validateSendMediaBody({ ...base, kind: 'file', fileName: 'no-extension' }).ok,
+    false,
+  );
+  assert.equal(
+    validateSendMediaBody({
+      chatId: '42',
+      kind: 'video',
+      fileName: 'clip.mp4',
+      contentBase64: png.toString('base64'),
+    }).ok,
+    false,
+  );
+  assert.equal(
+    validateSendMediaBody({
+      chatId: '42',
+      kind: 'video',
+      fileName: 'clip.avi',
+      contentBase64: mp4.toString('base64'),
+    }).ok,
+    false,
+  );
+  assert.equal(
+    validateSendMediaBody({
+      chatId: '42',
+      kind: 'voice',
+      fileName: 'note.m4a',
+      contentBase64: png.toString('base64'),
+    }).ok,
+    false,
+  );
+  assert.equal(
+    validateSendMediaBody({
+      chatId: '42',
+      kind: 'voice',
+      fileName: 'note.wav',
+      contentBase64: Buffer.from('RIFF\0\0\0\0WAVE').toString('base64'),
+    }).ok,
+    false,
+  );
+});
+
+test('validateSendMessageBody accepts a quote and group mentions', () => {
+  const quoted = validateSendMessageBody({
+    chatId: '42',
+    message: 'answer',
+    quoteMessageId: ' 99 ',
+  });
+  assert.equal(quoted.ok, true);
+  assert.equal(quoted.quoteMessageId, '99');
+
+  const mentioned = validateSendMessageBody({
+    chatId: '42',
+    threadType: 'group',
+    message: 'hi @Lan',
+    mentions: ['77', '78'],
+  });
+  assert.equal(mentioned.ok, true);
+  assert.deepEqual(mentioned.mentions, ['77', '78']);
+});
+
+test('validateSendMessageBody rejects malformed reply options', () => {
+  const base = { chatId: '42', message: 'hello' };
+  assert.equal(validateSendMessageBody({ ...base, quoteMessageId: 'abc' }).ok, false);
+  assert.equal(validateSendMessageBody({ ...base, quoteMessageId: 99 }).ok, false);
+  assert.equal(validateSendMessageBody({ ...base, mentions: ['77'] }).ok, false);
+  assert.equal(
+    validateSendMessageBody({ ...base, threadType: 'group', mentions: [] }).ok,
+    false,
+  );
+  assert.equal(
+    validateSendMessageBody({ ...base, threadType: 'group', mentions: ['77', '77'] }).ok,
+    false,
+  );
+  assert.equal(
+    validateSendMessageBody({
+      ...base,
+      threadType: 'group',
+      mentions: Array.from({ length: MAX_MENTIONS + 1 }, (_, index) => String(index + 1)),
+    }).ok,
+    false,
+  );
+});
+
+test('mentionPayloads locates every @name and rejects a missing one', () => {
+  const built = mentionPayloads('hi @Lan and @Minh, see this', [
+    { uid: '77', name: 'Lan' },
+    { uid: '78', name: 'Minh' },
+  ]);
+  assert.deepEqual(built, {
+    ok: true,
+    mentions: [
+      { pos: 3, uid: '77', len: 4 },
+      { pos: 12, uid: '78', len: 5 },
+    ],
+  });
+
+  const repeated = mentionPayloads('@Lan ping @Lan', [
+    { uid: '77', name: 'Lan' },
+    { uid: '78', name: 'Lan' },
+  ]);
+  assert.equal(repeated.ok, true);
+  assert.deepEqual(
+    repeated.mentions.map((entry) => entry.pos),
+    [0, 10],
+  );
+
+  assert.equal(mentionPayloads('hi there', [{ uid: '77', name: 'Lan' }]).ok, false);
+  assert.equal(mentionPayloads('hi @Lan', [{ uid: '', name: 'Lan' }]).ok, false);
+  assert.equal(mentionPayloads('hi @Lan', [{ uid: '77', name: '' }]).ok, false);
+});
+
+test('validateSendStickerBody requires a keyword and a bounded index', () => {
+  assert.deepEqual(
+    validateSendStickerBody({ chatId: '42', threadType: 'group', keyword: ' cat ' }),
+    {
+      ok: true,
+      chatId: '42',
+      threadType: 'group',
+      keyword: 'cat',
+      index: 0,
+    },
+  );
+  assert.equal(
+    validateSendStickerBody({ chatId: '42', keyword: 'cat', index: 3 }).index,
+    3,
+  );
+  assert.equal(validateSendStickerBody({ chatId: '42', keyword: '' }).ok, false);
+  assert.equal(validateSendStickerBody({ chatId: '42', keyword: 'x'.repeat(101) }).ok, false);
+  assert.equal(validateSendStickerBody({ chatId: '42', keyword: 'cat', index: -1 }).ok, false);
+  assert.equal(
+    validateSendStickerBody({
+      chatId: '42',
+      keyword: 'cat',
+      index: MAX_STICKER_SEARCH_LIMIT,
+    }).ok,
+    false,
+  );
+});
+
+test('validateSendCardBody accepts one visible user id', () => {
+  assert.deepEqual(validateSendCardBody({ chatId: '42', userId: ' 77 ' }), {
+    ok: true,
+    chatId: '42',
+    threadType: 'user',
+    userId: '77',
+    phoneNumber: '',
+  });
+  assert.equal(
+    validateSendCardBody({ chatId: '42', userId: '77', phoneNumber: '+84912345678' })
+      .phoneNumber,
+    '+84912345678',
+  );
+  assert.equal(validateSendCardBody({ chatId: '42', userId: 'abc' }).ok, false);
+  assert.equal(validateSendCardBody({ chatId: '42', userId: '77', phoneNumber: 'abc' }).ok, false);
+  assert.equal(validateSendCardBody({ chatId: '42' }).ok, false);
+});
+
+test('validateForwardBody and validateUndoBody validate both ends', () => {
+  assert.deepEqual(
+    validateForwardBody({
+      sourceChatId: '111',
+      messageId: '9',
+      chatId: '123',
+      threadType: 'group',
+    }),
+    {
+      ok: true,
+      sourceChatId: '111',
+      sourceThreadType: 'user',
+      messageId: '9',
+      chatId: '123',
+      threadType: 'group',
+    },
+  );
+  assert.equal(validateForwardBody({ sourceChatId: 'x', messageId: '9', chatId: '1' }).ok, false);
+  assert.equal(validateForwardBody({ sourceChatId: '1', messageId: 'x', chatId: '1' }).ok, false);
+  assert.equal(validateForwardBody({ sourceChatId: '1', messageId: '9' }).ok, false);
+
+  assert.deepEqual(validateUndoBody({ chatId: '111', messageId: '9' }), {
+    ok: true,
+    chatId: '111',
+    threadType: 'user',
+    messageId: '9',
+  });
+  assert.equal(validateUndoBody({ chatId: '111' }).ok, false);
+  assert.equal(validateUndoBody({ chatId: '111', messageId: 'x' }).ok, false);
+});
+
+test('undoExpired refuses messages outside the undo window', () => {
+  const now = 1_700_000_000_000;
+  assert.equal(undoExpired(now - 1_000, { now }), false);
+  assert.equal(undoExpired(now - UNDO_MAX_AGE_MS, { now }), false);
+  assert.equal(undoExpired(now - UNDO_MAX_AGE_MS - 1, { now }), true);
+  assert.equal(undoExpired(0, { now }), true);
+  assert.equal(undoExpired('bad', { now }), true);
+});
+
+test('messageRef and quotePayload shape a quotable message', () => {
+  const reference = messageRef(
+    {
+      msgId: 9,
+      cliMsgId: '1700000000000',
+      uidFrom: '111',
+      msgType: 'webchat',
+      ts: 1_700_000_000_000,
+      content: 'hello',
+    },
+    { threadId: '111', threadType: 'user', isSelf: false },
+  );
+  assert.equal(reference.msgId, '9');
+  assert.equal(reference.cliMsgId, '1700000000000');
+  assert.equal(reference.threadType, 'user');
+
+  assert.deepEqual(quotePayload(reference), {
+    content: 'hello',
+    msgType: 'webchat',
+    propertyExt: undefined,
+    uidFrom: '111',
+    msgId: '9',
+    cliMsgId: '1700000000000',
+    ts: 1_700_000_000_000,
+    ttl: 0,
+  });
+  assert.equal(quotePayload(null), null);
+  assert.equal(quotePayload({ msgId: '9' }), null);
+  assert.equal(messageRef({}, { threadId: '1' }), null);
 });
 
 test('userInfoRecord accepts getUsers and findUser shapes', () => {

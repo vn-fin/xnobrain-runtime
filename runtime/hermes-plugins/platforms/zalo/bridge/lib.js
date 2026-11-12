@@ -18,6 +18,19 @@ export const MAX_URL_LENGTH = 2_000;
 export const MAX_MEDIA_BYTES = 10 * 1024 * 1024;
 export const MAX_MEDIA_BASE64_LENGTH = 14 * 1024 * 1024;
 
+/** Outbound media families; zca-js picks the upload path from the extension. */
+export const OUTBOUND_MEDIA_KINDS = Object.freeze(['image', 'file', 'video', 'voice']);
+/** Sticker search results considered for one send. */
+export const MAX_STICKER_SEARCH_LIMIT = 20;
+export const MAX_STICKER_KEYWORD_LENGTH = 100;
+/** Mention entries accepted in one group message. */
+export const MAX_MENTIONS = 20;
+/**
+ * Zalo only lets the sender undo a recent message; anything older is refused
+ * before the bridge calls `undo`.
+ */
+export const UNDO_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
 export const READ_RATE_LIMIT_PER_MINUTE = 30;
 export const SEND_RATE_LIMIT_PER_MINUTE = 20;
 /** `getGroupChatHistory` is the heaviest read, so it has its own smaller bucket. */
@@ -65,6 +78,13 @@ const IMAGE_SIGNATURES = Object.freeze([
   { extension: 'jpg', mime: 'image/jpeg', bytes: [0xff, 0xd8, 0xff] },
   { extension: 'png', mime: 'image/png', bytes: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] },
 ]);
+
+/** File extensions the dedicated media tools own. */
+export const IMAGE_EXTENSIONS = Object.freeze(['jpg', 'jpeg', 'png', 'gif', 'webp']);
+export const VIDEO_EXTENSIONS = Object.freeze(['mp4']);
+export const VOICE_EXTENSIONS = Object.freeze(['m4a', 'mp3', 'aac', 'ogg', 'opus']);
+/** A plain file name extension: letters and digits only, no dot tricks. */
+export const FILE_EXTENSION_PATTERN = /^[A-Za-z0-9]{1,10}$/;
 
 /** Zalo content types that carry an attachment. */
 const MEDIA_KINDS = Object.freeze({
@@ -719,7 +739,7 @@ function isValidMessageText(message) {
   );
 }
 
-/** Validate a `POST /send` body, including `threadType`. */
+/** Validate a `POST /send` body, including `threadType` and reply options. */
 export function validateSendMessageBody(body) {
   const target = validateThreadTarget(body);
   if (!target.ok) {
@@ -728,11 +748,39 @@ export function validateSendMessageBody(body) {
   if (!isValidMessageText(body.message)) {
     return { ok: false, error: 'invalid_request' };
   }
+  let quoteMessageId = '';
+  if (body.quoteMessageId !== undefined && body.quoteMessageId !== null) {
+    const id = typeof body.quoteMessageId === 'string' ? body.quoteMessageId.trim() : '';
+    if (!isValidThreadId(id)) {
+      return { ok: false, error: 'invalid_request' };
+    }
+    quoteMessageId = id;
+  }
+  let mentions = [];
+  if (body.mentions !== undefined && body.mentions !== null) {
+    if (
+      target.threadType !== 'group' ||
+      !Array.isArray(body.mentions) ||
+      body.mentions.length === 0 ||
+      body.mentions.length > MAX_MENTIONS
+    ) {
+      return { ok: false, error: 'invalid_request' };
+    }
+    for (const value of body.mentions) {
+      const id = typeof value === 'string' ? value.trim() : '';
+      if (!isValidThreadId(id) || mentions.includes(id)) {
+        return { ok: false, error: 'invalid_request' };
+      }
+      mentions.push(id);
+    }
+  }
   return {
     ok: true,
     chatId: target.chatId,
     threadType: target.threadType,
     message: body.message,
+    quoteMessageId,
+    mentions,
   };
 }
 
@@ -785,28 +833,162 @@ export function detectImageType(buffer) {
  * Reduce a client file name to a safe basename with the detected extension.
  */
 export function safeImageFileName(name, extension) {
-  const fallback = `image.${extension}`;
+  return safeMediaFileName(name, extension, 'image');
+}
+
+/**
+ * Reduce a client file name to a safe basename with one fixed extension.
+ *
+ * The extension is always the validated one, never whatever the caller sent.
+ */
+export function safeMediaFileName(name, extension, fallback = 'file') {
   const raw = typeof name === 'string' ? name.split(/[\\/]/).pop() : '';
   const cleaned = String(raw || '')
     .replace(/[\u0000-\u001f\u007f]/g, '')
     .trim()
     .slice(0, 100);
+  const baseName = `${fallback}.${extension}`;
   if (!cleaned || cleaned === '.' || cleaned === '..') {
-    return fallback;
+    return baseName;
   }
   const dot = cleaned.lastIndexOf('.');
   const base = (dot > 0 ? cleaned.slice(0, dot) : cleaned).trim();
   if (!base || base === '.' || base === '..') {
-    return fallback;
+    return baseName;
   }
   return `${base}.${extension}`;
 }
 
-/** Validate a `POST /send-media` body and decode the image bytes. */
+/** Lowercase extension of a client file name, or an empty string. */
+export function fileExtension(name) {
+  const raw = typeof name === 'string' ? name.split(/[\\/]/).pop() : '';
+  const dot = String(raw || '').lastIndexOf('.');
+  if (dot <= 0) {
+    return '';
+  }
+  return String(raw).slice(dot + 1).toLowerCase();
+}
+
+/** True for an MP4 container (ISO base media `ftyp` box). */
+export function isMp4(buffer) {
+  return (
+    Boolean(buffer) &&
+    typeof buffer.length === 'number' &&
+    buffer.length >= 12 &&
+    buffer[4] === 0x66 &&
+    buffer[5] === 0x74 &&
+    buffer[6] === 0x79 &&
+    buffer[7] === 0x70
+  );
+}
+
+/**
+ * Detect a supported audio container by its magic bytes.
+ *
+ * @returns {'m4a' | 'mp3' | 'aac' | 'ogg' | ''}
+ */
+export function detectAudioType(buffer) {
+  if (!buffer || typeof buffer.length !== 'number') {
+    return '';
+  }
+  if (isMp4(buffer)) {
+    return 'm4a';
+  }
+  if (buffer.length >= 3 && buffer[0] === 0x49 && buffer[1] === 0x44 && buffer[2] === 0x33) {
+    return 'mp3';
+  }
+  if (
+    buffer.length >= 4 &&
+    buffer[0] === 0x4f &&
+    buffer[1] === 0x67 &&
+    buffer[2] === 0x67 &&
+    buffer[3] === 0x53
+  ) {
+    return 'ogg';
+  }
+  if (buffer.length >= 2 && buffer[0] === 0xff) {
+    // ADTS AAC uses 0xFFF1/0xFFF9; MPEG audio frames use 0xFFEx.
+    const second = buffer[1];
+    if ((second & 0xf6) === 0xf0) {
+      return 'aac';
+    }
+    if ((second & 0xe0) === 0xe0) {
+      return 'mp3';
+    }
+  }
+  return '';
+}
+
+/**
+ * Check one media payload against its declared family.
+ *
+ * @returns {{ok: true, fileName: string, mimeType: string} |
+ *           {ok: false, error: string}}
+ */
+function mediaPayload(kind, name, buffer) {
+  const extension = fileExtension(name);
+  if (kind === 'image') {
+    const detected = detectImageType(buffer);
+    if (!detected) {
+      return { ok: false, error: 'invalid_request' };
+    }
+    return {
+      ok: true,
+      fileName: safeMediaFileName(name, detected.extension, 'image'),
+      mimeType: detected.mime,
+    };
+  }
+  if (kind === 'video') {
+    if (!VIDEO_EXTENSIONS.includes(extension) || !isMp4(buffer)) {
+      return { ok: false, error: 'invalid_request' };
+    }
+    return {
+      ok: true,
+      fileName: safeMediaFileName(name, extension, 'video'),
+      mimeType: 'video/mp4',
+    };
+  }
+  if (kind === 'voice') {
+    const detected = detectAudioType(buffer);
+    const compatible =
+      detected === extension || (detected === 'ogg' && extension === 'opus');
+    if (!VOICE_EXTENSIONS.includes(extension) || !detected || !compatible) {
+      return { ok: false, error: 'invalid_request' };
+    }
+    return {
+      ok: true,
+      fileName: safeMediaFileName(name, extension, 'voice'),
+      mimeType: `audio/${extension === 'opus' ? 'opus' : extension}`,
+    };
+  }
+  // A plain file never reuses an image, video or voice extension.
+  if (
+    !FILE_EXTENSION_PATTERN.test(extension) ||
+    IMAGE_EXTENSIONS.includes(extension) ||
+    VIDEO_EXTENSIONS.includes(extension) ||
+    VOICE_EXTENSIONS.includes(extension) ||
+    detectImageType(buffer) ||
+    isMp4(buffer) ||
+    detectAudioType(buffer)
+  ) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  return {
+    ok: true,
+    fileName: safeMediaFileName(name, extension, 'file'),
+    mimeType: 'application/octet-stream',
+  };
+}
+
+/** Validate a `POST /send-media` body and decode the media bytes. */
 export function validateSendMediaBody(body) {
   const target = validateThreadTarget(body);
   if (!target.ok) {
     return target;
+  }
+  const kind = body.kind === undefined || body.kind === null ? 'image' : body.kind;
+  if (!OUTBOUND_MEDIA_KINDS.includes(kind)) {
+    return { ok: false, error: 'invalid_request' };
   }
   if (typeof body.fileName !== 'string' || !body.fileName.trim()) {
     return { ok: false, error: 'invalid_request' };
@@ -829,17 +1011,18 @@ export function validateSendMediaBody(body) {
   if (!buffer.length || buffer.length > MAX_MEDIA_BYTES) {
     return { ok: false, error: 'invalid_request' };
   }
-  const detected = detectImageType(buffer);
-  if (!detected) {
-    return { ok: false, error: 'invalid_request' };
+  const payload = mediaPayload(kind, body.fileName, buffer);
+  if (!payload.ok) {
+    return payload;
   }
   return {
     ok: true,
     chatId: target.chatId,
     threadType: target.threadType,
-    fileName: safeImageFileName(body.fileName, detected.extension),
+    kind,
+    fileName: payload.fileName,
     caption: typeof body.caption === 'string' ? body.caption : '',
-    mimeType: detected.mime,
+    mimeType: payload.mimeType,
     buffer,
   };
 }
@@ -877,6 +1060,209 @@ export function validateSendLinkBody(body) {
     threadType: target.threadType,
     url,
     message,
+  };
+}
+
+/** Validate a `POST /send-sticker` body. */
+export function validateSendStickerBody(body) {
+  const target = validateThreadTarget(body);
+  if (!target.ok) {
+    return target;
+  }
+  const keyword = typeof body.keyword === 'string' ? body.keyword.trim() : '';
+  if (!keyword || keyword.length > MAX_STICKER_KEYWORD_LENGTH) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const index = boundedInteger(body.index, {
+    min: 0,
+    max: MAX_STICKER_SEARCH_LIMIT - 1,
+    fallback: 0,
+  });
+  if (index === null) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  return {
+    ok: true,
+    chatId: target.chatId,
+    threadType: target.threadType,
+    keyword,
+    index,
+  };
+}
+
+/** Validate a `POST /send-card` body. */
+export function validateSendCardBody(body) {
+  const target = validateThreadTarget(body);
+  if (!target.ok) {
+    return target;
+  }
+  const userId = typeof body.userId === 'string' ? body.userId.trim() : '';
+  if (!isValidThreadId(userId)) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  let phoneNumber = '';
+  if (body.phoneNumber !== undefined && body.phoneNumber !== null && body.phoneNumber !== '') {
+    if (typeof body.phoneNumber !== 'string') {
+      return { ok: false, error: 'invalid_request' };
+    }
+    phoneNumber = body.phoneNumber.trim();
+    if (!PHONE_PATTERN.test(phoneNumber) || phoneNumber.length > MAX_PHONE_LENGTH + 1) {
+      return { ok: false, error: 'invalid_request' };
+    }
+  }
+  return {
+    ok: true,
+    chatId: target.chatId,
+    threadType: target.threadType,
+    userId,
+    phoneNumber,
+  };
+}
+
+/** Validate a `POST /forward` body: one stored source message, one target. */
+export function validateForwardBody(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const sourceChatId = typeof body.sourceChatId === 'string' ? body.sourceChatId.trim() : '';
+  const sourceThreadType = parseThreadType(body.sourceThreadType);
+  if (!isValidThreadId(sourceChatId) || !sourceThreadType) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const messageId = typeof body.messageId === 'string' ? body.messageId.trim() : '';
+  if (!isValidThreadId(messageId)) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const target = validateThreadTarget(body);
+  if (!target.ok) {
+    return target;
+  }
+  return {
+    ok: true,
+    sourceChatId,
+    sourceThreadType,
+    messageId,
+    chatId: target.chatId,
+    threadType: target.threadType,
+  };
+}
+
+/** Validate a `POST /undo` body. */
+export function validateUndoBody(body) {
+  const target = validateThreadTarget(body);
+  if (!target.ok) {
+    return target;
+  }
+  const messageId = typeof body.messageId === 'string' ? body.messageId.trim() : '';
+  if (!isValidThreadId(messageId)) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  return {
+    ok: true,
+    chatId: target.chatId,
+    threadType: target.threadType,
+    messageId,
+  };
+}
+
+/**
+ * Build zca-js mention entries from the message text.
+ *
+ * Every mention must already appear as `@DisplayName` in the text; the bridge
+ * only validates and locates it, so a send can never silently rewrite the
+ * message. Returns `{ok: false}` when a name is missing.
+ */
+export function mentionPayloads(text, members) {
+  const message = typeof text === 'string' ? text : '';
+  const entries = [];
+  const spans = [];
+  for (const member of Array.isArray(members) ? members : []) {
+    const uid = normalizeMessageId(member?.uid);
+    const name = String(member?.name || '');
+    if (!uid || !name) {
+      return { ok: false, error: 'invalid_request' };
+    }
+    const token = `@${name}`;
+    let position = message.indexOf(token);
+    while (position >= 0) {
+      const overlaps = spans.some(
+        (span) => position < span.end && position + token.length > span.start,
+      );
+      if (!overlaps) {
+        break;
+      }
+      position = message.indexOf(token, position + 1);
+    }
+    if (position < 0) {
+      return { ok: false, error: 'invalid_request' };
+    }
+    spans.push({ start: position, end: position + token.length });
+    entries.push({ pos: position, uid, len: token.length });
+  }
+  return { ok: true, mentions: entries };
+}
+
+/** True when a stored message is too old for Zalo's undo window. */
+export function undoExpired(timestamp, { now = Date.now() } = {}) {
+  const parsed = Number(timestamp);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return true;
+  }
+  return Number(now) - parsed > UNDO_MAX_AGE_MS;
+}
+
+/**
+ * Shape the quote object zca-js needs from one remembered message reference.
+ */
+export function quotePayload(reference) {
+  if (!reference || typeof reference !== 'object') {
+    return null;
+  }
+  const msgId = normalizeMessageId(reference.msgId);
+  const cliMsgId = normalizeMessageId(reference.cliMsgId);
+  if (!msgId || !cliMsgId) {
+    return null;
+  }
+  return {
+    content: reference.content,
+    msgType: String(reference.msgType || 'webchat'),
+    propertyExt: reference.propertyExt,
+    uidFrom: normalizeMessageId(reference.uidFrom),
+    msgId,
+    cliMsgId,
+    ts: Number(reference.ts) || 0,
+    ttl: Number(reference.ttl) || 0,
+  };
+}
+
+/**
+ * Remember the fields of one live message so it can be quoted or undone later.
+ *
+ * Only identity and reply metadata are kept; the bridge never persists this in
+ * a log.
+ */
+export function messageRef(data, { threadId, threadType, isSelf = false } = {}) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return null;
+  }
+  const msgId = normalizeMessageId(data.msgId ?? data.realMsgId);
+  const cliMsgId = normalizeMessageId(data.cliMsgId);
+  const thread = normalizeMessageId(threadId);
+  if (!msgId || !cliMsgId || !thread) {
+    return null;
+  }
+  return {
+    msgId,
+    cliMsgId,
+    threadId: thread,
+    threadType: threadType === 'group' ? 'group' : 'user',
+    uidFrom: normalizeMessageId(data.uidFrom),
+    msgType: String(data.msgType || ''),
+    ts: Number(data.ts) || 0,
+    ttl: Number(data.ttl) || 0,
+    content: data.content,
+    propertyExt: data.propertyExt,
+    isSelf: Boolean(isSelf),
   };
 }
 

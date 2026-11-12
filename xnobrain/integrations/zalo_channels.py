@@ -360,6 +360,14 @@ def bridge_error_code(result: Any) -> str:
         return "channel_not_connected"
     if error in {"unauthorized", "no_token"}:
         return "channel_bridge_unauthorized"
+    named = {
+        "unsupported": "channel_media_unsupported",
+        "not_own_message": "channel_message_not_own",
+        "too_old": "channel_message_too_old",
+        "recipient_not_found": "channel_recipient_not_found",
+    }.get(error)
+    if named is not None:
+        return named
     return {
         401: "channel_bridge_unauthorized",
         404: "channel_message_not_found",
@@ -389,6 +397,8 @@ def bridge_send_text(
     text: str,
     *,
     thread_type: str = "group",
+    quote_message_id: str | None = None,
+    mentions: list[str] | None = None,
     timeout: float = 30.0,
 ) -> dict[str, Any]:
     """Send text through the authenticated bridge with an explicit thread type."""
@@ -396,17 +406,29 @@ def bridge_send_text(
         raise ChannelDeliveryError("channel_recipient_invalid")
     if thread_type not in {"user", "group"}:
         raise ChannelDeliveryError("channel_recipient_invalid")
+    body: dict[str, Any] = {
+        "chatId": str(thread_id),
+        "threadType": thread_type,
+        "message": text,
+    }
+    if quote_message_id:
+        if not _THREAD_ID.fullmatch(str(quote_message_id)):
+            raise ChannelDeliveryError("channel_recipient_invalid")
+        body["quoteMessageId"] = str(quote_message_id)
+    if mentions:
+        if thread_type != "group":
+            raise ChannelDeliveryError("channel_recipient_invalid")
+        ids = [str(item) for item in mentions]
+        if not ids or len(ids) > 20 or not all(_THREAD_ID.fullmatch(item) for item in ids):
+            raise ChannelDeliveryError("channel_recipient_invalid")
+        body["mentions"] = ids
     result = _bridge_request(
         port,
         "/send",
         method="POST",
         token=token,
         timeout=timeout,
-        body={
-            "chatId": str(thread_id),
-            "threadType": thread_type,
-            "message": text,
-        },
+        body=body,
     )
     if not result.get("ok"):
         raise ChannelDeliveryError(bridge_error_code(result))

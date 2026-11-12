@@ -22,9 +22,13 @@
  *   POST /reminders   - group reminders
  *   POST /notes      - group notes
  *   POST /poll-detail - one poll
- *   POST /send        - chunked text message
- *   POST /send-media  - image attachment
+ *   POST /send        - chunked text message (optional quote and mentions)
+ *   POST /send-media  - image, file, video, or voice attachment
  *   POST /send-link   - link preview
+ *   POST /send-sticker - sticker search then send
+ *   POST /send-card   - contact card for one visible user
+ *   POST /forward     - forward one stored message
+ *   POST /undo        - undo one message this account sent
  *   POST /react       - reaction on a recent inbound message
  *   POST /typing      - typing indicator (best effort)
  *   POST /seen        - delivered/seen receipts (best effort)
@@ -73,9 +77,11 @@ import {
   GROUP_INFO_BATCH_SIZE,
   GROUP_INFO_CACHE_TTL_MS,
   LIST_CACHE_TTL_MS,
+  MAX_HISTORY_READ_LIMIT,
   MAX_QUEUE_SIZE,
   MAX_RELOGIN_ATTEMPTS,
   MAX_SEARCH_SCAN,
+  MAX_STICKER_SEARCH_LIMIT,
   READ_RATE_LIMIT_PER_MINUTE,
   SEND_RATE_LIMIT_PER_MINUTE,
   chunkList,
@@ -96,7 +102,9 @@ import {
   isNewerMessageId,
   markdownToZalo,
   mediaFromContent,
+  mentionPayloads,
   mentionsSelf,
+  messageRef,
   messageText,
   nextQrExpiryAttempt,
   normalizeMessageId,
@@ -104,6 +112,7 @@ import {
   parseBearerToken,
   pollRecord,
   pushToQueue,
+  quotePayload,
   quotesSelf,
   readHistoryRecords,
   receiptFields,
@@ -115,9 +124,11 @@ import {
   shouldQueueMessage,
   splitStyledChunks,
   trimHistoryLines,
+  undoExpired,
   unreadRecords,
   userInfoRecord,
   validateBoardBody,
+  validateForwardBody,
   validateGroupHistoryBody,
   validateGroupInfoBody,
   validateHistoryBody,
@@ -125,10 +136,13 @@ import {
   validateReactBody,
   validateSearchBody,
   validateSeenBody,
+  validateSendCardBody,
   validateSendLinkBody,
   validateSendMediaBody,
   validateSendMessageBody,
+  validateSendStickerBody,
   validateTypingBody,
+  validateUndoBody,
   validateUserInfoBody,
 } from './lib.js';
 
@@ -141,6 +155,10 @@ const BACKFILL_WAIT_MS = 2_500;
 const MAX_BACKFILL_MESSAGES = 500;
 const MAX_SEEN_IDS = 2_000;
 const MAX_REMEMBERED_MESSAGES = 500;
+/** Bounded message-id to cliMsgId memory used for quotes and undo. */
+const MAX_MESSAGE_REFS = 2_000;
+/** How long a quote or undo waits for the live echo of a just-sent message. */
+const MESSAGE_REF_WAIT_MS = 2_000;
 
 const args = process.argv.slice(2);
 
@@ -192,6 +210,8 @@ const infoGate = createInfoGate();
 // Recently received inbound messages, used to resolve reaction and receipt
 // targets. Bounded so a long-running bridge cannot grow without limit.
 const inboundMessages = new Map();
+// Live message identity for quote replies and undo, keyed by thread and id.
+const messageRefs = new Map();
 const groupNames = new Map();
 // Group ids with a name lookup currently in flight.
 const groupNameLookups = new Set();
@@ -400,6 +420,145 @@ function rememberInboundMessage(messageId, entry) {
   }
 }
 
+function messageRefKey(threadId, messageId) {
+  return `${normalizeMessageId(threadId)}:${normalizeMessageId(messageId)}`;
+}
+
+/** Remember one live message so a later quote or undo can find its ids. */
+function rememberMessageRef(reference) {
+  if (!reference) {
+    return;
+  }
+  const key = messageRefKey(reference.threadId, reference.msgId);
+  messageRefs.delete(key);
+  messageRefs.set(key, reference);
+  while (messageRefs.size > MAX_MESSAGE_REFS) {
+    messageRefs.delete(messageRefs.keys().next().value);
+  }
+}
+
+function readMessageRef(threadId, messageId) {
+  return messageRefs.get(messageRefKey(threadId, messageId));
+}
+
+/** Remember every message of one `getGroupChatHistory` page. */
+function rememberGroupHistoryRefs(groupId, messages) {
+  for (const message of Array.isArray(messages) ? messages : []) {
+    rememberMessageRef(
+      messageRef(message?.data, {
+        threadId: groupId,
+        threadType: 'group',
+        isSelf: message?.isSelf,
+      }),
+    );
+  }
+}
+
+/** Remember the identity of one live listener message, self or inbound. */
+function rememberLiveMessage(message) {
+  if (
+    !message ||
+    (message.type !== ThreadType.User && message.type !== ThreadType.Group)
+  ) {
+    return;
+  }
+  const data = message.data || {};
+  const threadType = threadTypeName(message.type);
+  const threadId = normalizeMessageId(
+    message.threadId || (threadType === 'user' ? data.uidFrom : ''),
+  );
+  rememberMessageRef(
+    messageRef(data, {
+      threadId,
+      threadType,
+      isSelf: Boolean(message.isSelf),
+    }),
+  );
+}
+
+function delay(ms) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    if (typeof timer.unref === 'function') {
+      timer.unref();
+    }
+  });
+}
+
+/**
+ * Find the identity of one stored message.
+ *
+ * The live listener memory answers most quotes; group messages can always be
+ * looked up again through `getGroupChatHistory`. A just-sent message may not
+ * have echoed yet, so the lookup waits briefly before giving up.
+ */
+async function findMessageRef(threadId, threadType, messageId) {
+  const deadline = Date.now() + MESSAGE_REF_WAIT_MS;
+  let reference = readMessageRef(threadId, messageId);
+  while (!reference && Date.now() < deadline) {
+    await delay(100);
+    reference = readMessageRef(threadId, messageId);
+  }
+  if (reference || threadType !== 'group' || !isConnected()) {
+    return reference || null;
+  }
+  if (!groupHistoryBucket.take()) {
+    const error = new Error('rate_limited');
+    error.code = 'rate_limited';
+    throw error;
+  }
+  const history = await api.getGroupChatHistory(threadId, MAX_HISTORY_READ_LIMIT);
+  rememberGroupHistoryRefs(threadId, history?.groupMsgs);
+  return readMessageRef(threadId, messageId) || null;
+}
+
+/** Find one stored history record for a thread and message id. */
+function storedMessage(threadId, messageId) {
+  const thread = normalizeMessageId(threadId);
+  const id = normalizeMessageId(messageId);
+  return (
+    readHistoryRecords(readHistoryLines()).find(
+      (record) => record.threadId === thread && record.messageId === id,
+    ) || null
+  );
+}
+
+/**
+ * Resolve the display names of the requested group members.
+ *
+ * Returns null when any id is not a member of the group, so a mention can
+ * never point at somebody outside the conversation.
+ */
+async function groupMentionMembers(groupId, uids) {
+  const info = await infoGate.run(
+    groupInfoCacheKey([groupId]),
+    () => api.getGroupInfo([groupId]),
+    { ttlMs: GROUP_INFO_CACHE_TTL_MS },
+  );
+  const group = info?.gridInfoMap?.[groupId];
+  if (!group) {
+    return null;
+  }
+  const memberIds = new Set(
+    (Array.isArray(group.memberIds) ? group.memberIds : []).map(normalizeMessageId),
+  );
+  for (const uid of uids) {
+    if (!memberIds.has(uid)) {
+      return null;
+    }
+  }
+  const profiles = await infoGate.run(
+    `groupmembers:${groupId}:${uids.join(',')}`,
+    () => api.getGroupMembersInfo(uids),
+    { ttlMs: GROUP_INFO_CACHE_TTL_MS },
+  );
+  const map = profiles?.profiles || {};
+  return uids.map((uid) => ({
+    uid,
+    name: String(map[uid]?.displayName || map[uid]?.zaloName || ''),
+  }));
+}
+
 function threadTypeName(type) {
   return type === ThreadType.Group ? 'group' : 'user';
 }
@@ -575,6 +734,13 @@ function handleOldMessages(messages, threadType) {
       message?.threadId ||
         (threadType === ThreadType.User ? message?.data?.uidFrom : ''),
     );
+    rememberMessageRef(
+      messageRef(message?.data, {
+        threadId,
+        threadType: threadTypeName(threadType),
+        isSelf: message?.isSelf,
+      }),
+    );
     if (
       threadType === ThreadType.User &&
       backfillState &&
@@ -607,6 +773,13 @@ function collectBackfillMessage(message, threadId) {
   if (!text.trim() && media.length === 0) {
     return;
   }
+  rememberMessageRef(
+    messageRef(data, {
+      threadId,
+      threadType: 'user',
+      isSelf: Boolean(message?.isSelf),
+    }),
+  );
   backfillState.collected.push({
     messageId,
     threadId,
@@ -905,6 +1078,7 @@ function attachListener() {
     requestCatchUp();
   });
   listener.on('message', (message) => {
+    rememberLiveMessage(message);
     ingestMessage(message);
   });
   listener.on('old_messages', (messages, threadType) => {
@@ -1336,6 +1510,7 @@ app.post('/group-history', async (req, res) => {
   }
   try {
     const history = await api.getGroupChatHistory(body.groupId, body.limit);
+    rememberGroupHistoryRefs(body.groupId, history?.groupMsgs);
     return res.json({
       messages: groupHistoryRecords(history?.groupMsgs),
       more: Number(history?.more) || 0,
@@ -1541,6 +1716,44 @@ app.post('/send', async (req, res) => {
   if (chunks.length === 0) {
     return fail(res, 400, 'invalid_request');
   }
+  // A quote or a mention belongs to one message; a split reply cannot carry it.
+  if ((body.quoteMessageId || body.mentions.length > 0) && chunks.length !== 1) {
+    return fail(res, 400, 'invalid_request');
+  }
+  let quote = null;
+  if (body.quoteMessageId) {
+    // The lookup is scoped to this thread, so a message id from any other chat
+    // is never quotable.
+    try {
+      const reference = await findMessageRef(
+        body.chatId,
+        body.threadType,
+        body.quoteMessageId,
+      );
+      quote = quotePayload(reference);
+    } catch (error) {
+      return fromInfoError(res, error);
+    }
+    if (!quote) {
+      return fail(res, 404, 'not_found');
+    }
+  }
+  let mentionList = [];
+  if (body.mentions.length > 0) {
+    try {
+      const members = await groupMentionMembers(body.chatId, body.mentions);
+      if (!members) {
+        return fail(res, 400, 'invalid_request');
+      }
+      const built = mentionPayloads(chunks[0].msg, members);
+      if (!built.ok) {
+        return fail(res, 400, 'invalid_request');
+      }
+      mentionList = built.mentions;
+    } catch (error) {
+      return fromInfoError(res, error);
+    }
+  }
   // Every chunk is one outbound message and consumes one send credit.
   if (!sendBucket.take(chunks.length)) {
     return fail(res, 429, 'rate_limited');
@@ -1553,6 +1766,12 @@ app.post('/send', async (req, res) => {
       const content = chunk.styles.length
         ? { msg: chunk.msg, styles: chunk.styles }
         : { msg: chunk.msg };
+      if (quote) {
+        content.quote = quote;
+      }
+      if (mentionList.length) {
+        content.mentions = mentionList;
+      }
       const sent = await api.sendMessage(content, body.chatId, threadType);
       const messageId = sent?.message?.msgId;
       messageIds.push(messageId === undefined || messageId === null ? null : String(messageId));
@@ -1602,12 +1821,14 @@ app.post('/send-media', async (req, res) => {
     tempDir = mkdtempSync(path.join(tmpdir(), 'zalo-bridge-media-'));
     const filePath = path.join(tempDir, body.fileName);
     writeFileSync(filePath, body.buffer, { mode: 0o600 });
+    // zca-js picks the upload path from the extension: images go to
+    // photo_original, MP4 to the video path, everything else to a file.
     const sent = await api.sendMessage(
       { msg: body.caption, attachments: [filePath] },
       body.chatId,
       toZaloThreadType(body.threadType),
     );
-    const messageId = sent?.message?.msgId;
+    const messageId = sent?.message?.msgId ?? sent?.attachment?.[0]?.msgId;
     const normalized =
       messageId === undefined || messageId === null ? null : String(messageId);
     if (normalized) {
@@ -1620,7 +1841,7 @@ app.post('/send-media', async (req, res) => {
         timestamp: Date.now(),
         threadType: body.threadType,
         direction: 'out',
-        type: 'image',
+        type: body.kind,
       });
     }
     return res.json({
@@ -1677,6 +1898,205 @@ app.post('/send-link', async (req, res) => {
       success: true,
       messageId: normalized,
     });
+  } catch {
+    return fail(res, 500, 'send_failed');
+  }
+});
+
+app.post('/send-sticker', async (req, res) => {
+  const body = validateSendStickerBody(req.body);
+  if (!body.ok) {
+    return fail(res, 400, 'invalid_request');
+  }
+  if (!isConnected()) {
+    return fail(res, 503, 'not_connected');
+  }
+  // The keyword search is an upstream read and the sticker is one send.
+  if (!readBucket.take() || !sendBucket.take()) {
+    return fail(res, 429, 'rate_limited');
+  }
+  try {
+    const results = await api.searchSticker(body.keyword, MAX_STICKER_SEARCH_LIMIT);
+    const sticker = Array.isArray(results) ? results[body.index] : null;
+    if (!sticker) {
+      return fail(res, 404, 'not_found');
+    }
+    const sent = await api.sendSticker(
+      {
+        id: Number(sticker.sticker_id),
+        cateId: Number(sticker.cate_id),
+        type: Number(sticker.type),
+      },
+      body.chatId,
+      toZaloThreadType(body.threadType),
+    );
+    const messageId = normalizeMessageId(sent?.msgId);
+    if (messageId) {
+      appendHistory({
+        messageId,
+        threadId: body.chatId,
+        senderId: ownId,
+        senderName: 'me',
+        text: '',
+        timestamp: Date.now(),
+        threadType: body.threadType,
+        direction: 'out',
+        type: 'sticker',
+      });
+    }
+    return res.json({ success: true, messageId: messageId || null });
+  } catch {
+    return fail(res, 500, 'send_failed');
+  }
+});
+
+app.post('/send-card', async (req, res) => {
+  const body = validateSendCardBody(req.body);
+  if (!body.ok) {
+    return fail(res, 400, 'invalid_request');
+  }
+  if (!isConnected()) {
+    return fail(res, 503, 'not_connected');
+  }
+  if (!sendBucket.take()) {
+    return fail(res, 429, 'rate_limited');
+  }
+  // `sendCard` fetches the target's QR code first; checking it here reports an
+  // id this account cannot see before anything is sent.
+  try {
+    const qr = await infoGate.run(
+      `card:${body.userId}`,
+      () => api.getQR(body.userId),
+      { ttlMs: LIST_CACHE_TTL_MS },
+    );
+    if (!qr || !qr[body.userId]) {
+      return fail(res, 404, 'recipient_not_found');
+    }
+  } catch (error) {
+    return fromInfoError(res, error);
+  }
+  try {
+    const options = { userId: body.userId };
+    if (body.phoneNumber) {
+      options.phoneNumber = body.phoneNumber;
+    }
+    const sent = await api.sendCard(
+      options,
+      body.chatId,
+      toZaloThreadType(body.threadType),
+    );
+    const messageId = normalizeMessageId(sent?.msgId);
+    if (messageId) {
+      appendHistory({
+        messageId,
+        threadId: body.chatId,
+        senderId: ownId,
+        senderName: 'me',
+        text: '',
+        timestamp: Date.now(),
+        threadType: body.threadType,
+        direction: 'out',
+        type: 'card',
+      });
+    }
+    return res.json({ success: true, messageId: messageId || null });
+  } catch {
+    return fail(res, 500, 'send_failed');
+  }
+});
+
+app.post('/forward', async (req, res) => {
+  const body = validateForwardBody(req.body);
+  if (!body.ok) {
+    return fail(res, 400, 'invalid_request');
+  }
+  if (!isConnected()) {
+    return fail(res, 503, 'not_connected');
+  }
+  const stored = storedMessage(body.sourceChatId, body.messageId);
+  if (!stored) {
+    return fail(res, 404, 'not_found');
+  }
+  if (!stored.text.trim()) {
+    // zca-js forwards a text payload; a media-only message cannot be forwarded.
+    return fail(res, 400, 'unsupported');
+  }
+  if (!sendBucket.take()) {
+    return fail(res, 429, 'rate_limited');
+  }
+  try {
+    const sent = await api.forwardMessage(
+      {
+        message: stored.text,
+        reference: {
+          id: stored.messageId,
+          ts: stored.ts,
+          logSrcType: 0,
+          fwLvl: 1,
+        },
+      },
+      [body.chatId],
+      toZaloThreadType(body.threadType),
+    );
+    const forwarded = Array.isArray(sent?.success) ? sent.success[0] : null;
+    const messageId = normalizeMessageId(forwarded?.msgId);
+    if (!messageId) {
+      return fail(res, 500, 'send_failed');
+    }
+    appendHistory({
+      messageId,
+      threadId: body.chatId,
+      senderId: ownId,
+      senderName: 'me',
+      text: stored.text,
+      timestamp: Date.now(),
+      threadType: body.threadType,
+      direction: 'out',
+      type: 'forward',
+    });
+    return res.json({ success: true, messageId });
+  } catch {
+    return fail(res, 500, 'send_failed');
+  }
+});
+
+app.post('/undo', async (req, res) => {
+  const body = validateUndoBody(req.body);
+  if (!body.ok) {
+    return fail(res, 400, 'invalid_request');
+  }
+  if (!isConnected()) {
+    return fail(res, 503, 'not_connected');
+  }
+  const stored = storedMessage(body.chatId, body.messageId);
+  if (!stored) {
+    return fail(res, 404, 'not_found');
+  }
+  if (stored.direction !== 'out') {
+    return fail(res, 403, 'not_own_message');
+  }
+  if (undoExpired(stored.ts)) {
+    return fail(res, 400, 'too_old');
+  }
+  let reference;
+  try {
+    reference = await findMessageRef(body.chatId, body.threadType, body.messageId);
+  } catch (error) {
+    return fromInfoError(res, error);
+  }
+  if (!reference) {
+    return fail(res, 404, 'not_found');
+  }
+  if (!sendBucket.take()) {
+    return fail(res, 429, 'rate_limited');
+  }
+  try {
+    await api.undo(
+      { msgId: body.messageId, cliMsgId: reference.cliMsgId },
+      body.chatId,
+      toZaloThreadType(body.threadType),
+    );
+    return res.json({ success: true });
   } catch {
     return fail(res, 500, 'send_failed');
   }

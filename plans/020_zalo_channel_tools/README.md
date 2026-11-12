@@ -221,8 +221,34 @@ bridge validation test and a send-scope or approval test as applicable.
 - Deferred: `getGroupChatHistory` paging. zca-js 2.2.0 accepts only
   `(groupId, count)`, so the tool reports `more` and `last_action_id` but cannot
   request the next page.
-- **Phase 2 (send extras):** not started. **Phase 3 (group utilities):** not
-  started. **Phase 4 (admin):** not started.
+- **Phase 2 — send extras: done 2026-11-12.** Tool -> bridge endpoint ->
+  zca-js: quote reply and @mention -> `POST /send` ->
+  `sendMessage` (`quote`, `mentions`); `zalo_send_file` -> `POST /send-media`
+  (`kind: file`) -> `sendMessage` attachment + `uploadAttachment` ("others");
+  `zalo_send_video` -> `POST /send-media` (`kind: video`) -> `sendMessage`
+  attachment + `uploadAttachment` ("video", MP4 only); `zalo_send_voice` ->
+  `POST /send-media` (`kind: voice`) -> `sendMessage` attachment (delivered as
+  an audio file, see below); `zalo_send_sticker` -> `POST /send-sticker` ->
+  `searchSticker`, `sendSticker`; `zalo_send_contact_card` -> `POST /send-card`
+  -> `sendCard`; `zalo_forward` -> `POST /forward` -> `forwardMessage`;
+  `zalo_undo_message` -> `POST /undo` -> `undo`.
+  - Quote and mention ids are resolved from live listener messages and, for
+    groups, from `getGroupChatHistory`; the bridge resolves the quoted message
+    inside the target thread only, and mention positions are computed from
+    `@DisplayName` occurrences in the text, so a send never rewrites it.
+  - `zalo_bot` rejects `quote_message_id` and `mentions` with
+    `channel_field_not_supported`.
+  - Deviations from the table: `sendVideo`/`sendVoice` need a URL that Zalo's
+    servers fetch, so a workspace file goes through `sendMessage` with an
+    attachment instead; a voice recording therefore arrives as an audio file
+    attachment, not a recorded voice note. `forwardMessage` forwards text only,
+    so a media-only message is refused. Undo is limited locally to messages
+    this account sent within 24 hours and needs the message's `cliMsgId`, which
+    the bridge keeps from live events (or group history).
+  - The bridge now stores outbound image, file, video, voice, sticker, card,
+    and forward messages in `history.jsonl` and reads the attachment message id
+    from the send response.
+- **Phase 3 (group utilities):** not started. **Phase 4 (admin):** not started.
 
 ## Track B — Zalo Bot
 
