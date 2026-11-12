@@ -172,7 +172,53 @@ class IntegrationConnectToolTests(unittest.TestCase):
         request = result["connect_request"]
         self.assertEqual(request["display_name"], "mcp.example.com")
         self.assertEqual(request["auth_kind"], "none")
+        self.assertEqual(request["server_name"], "mcp-example-com")
         self.assertEqual(request["url"], "https://mcp.example.com/mcp")
+
+    def test_custom_server_name_is_derived_from_host(self):
+        result = self._call({"kind": "custom_mcp", "url": "https://MCP.Example.com/mcp"})
+        self.assertTrue(result["success"])
+        self.assertEqual(result["connect_request"]["server_name"], "mcp-example-com")
+
+    def test_custom_explicit_server_name_is_used(self):
+        result = self._call(
+            {
+                "kind": "custom_mcp",
+                "url": "https://mcp.example.com/mcp",
+                "server_name": "my_server-1",
+            }
+        )
+        self.assertTrue(result["success"])
+        self.assertEqual(result["connect_request"]["server_name"], "my_server-1")
+
+    def test_custom_invalid_server_name_is_rejected(self):
+        for server_name in ("MCP", "-leading", "with space", "a" * 65):
+            result = self._call(
+                {
+                    "kind": "custom_mcp",
+                    "url": "https://mcp.example.com/mcp",
+                    "server_name": server_name,
+                }
+            )
+            self.assertFalse(result["success"], server_name)
+            self.assertEqual(result["error"]["code"], "invalid_server_name")
+
+    def test_manage_mcp_payload_for_allowed_agent(self):
+        result = self._call({"kind": "manage_mcp"})
+        self.assertTrue(result["success"])
+        request = result["connect_request"]
+        self.assertEqual(len(request["id"]), 32)
+        self.assertEqual(request["kind"], "manage_mcp")
+        self.assertEqual(request["agent_id"], "big-brother")
+        self.assertEqual(request["display_name"], "big-brother")
+        self.assertNotIn("auth_kind", request)
+        self.assertNotIn("url", request)
+
+    def test_manage_mcp_unknown_agent_is_reported(self):
+        self.service.agent_missing = True
+        result = self._call({"kind": "manage_mcp"})
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error"]["code"], "agent_not_found")
 
     def test_install_tools_requires_binding_and_skips_delegated_children(self):
         profile = "/tmp/connect-test-profile"
@@ -237,6 +283,24 @@ class IntegrationConnectEventTests(unittest.TestCase):
         )
         self.assertNotIn("headers", json.dumps(event))
         self.assertNotIn("secret", json.dumps(event))
+
+    def test_manage_mcp_result_needs_no_auth_kind(self):
+        event = _integration_connect_event(
+            json.dumps(
+                {
+                    "success": True,
+                    "connect_request": {
+                        "id": "a" * 32,
+                        "kind": "manage_mcp",
+                        "agent_id": "big-brother",
+                        "display_name": "Big Brother",
+                    },
+                }
+            )
+        )
+        self.assertIsNotNone(event)
+        self.assertEqual(event["request"]["kind"], "manage_mcp")
+        self.assertNotIn("auth_kind", event["request"])
 
     def test_failed_or_malformed_results_emit_nothing(self):
         self.assertIsNone(_integration_connect_event(json.dumps({"success": False})))

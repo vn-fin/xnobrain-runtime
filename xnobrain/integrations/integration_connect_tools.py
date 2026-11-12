@@ -3,6 +3,7 @@
 import copy
 import ipaddress
 import json
+import re
 import threading
 import uuid
 from contextlib import contextmanager
@@ -22,8 +23,9 @@ _SCHEMAS = {}
 
 TOOL_NAME = "xnobrain_integration_connect"
 TOOLSET = "xnobrain_integration_connect"
-CONNECT_KINDS = {"catalog_mcp", "plugin_mcp", "custom_mcp"}
+CONNECT_KINDS = {"catalog_mcp", "plugin_mcp", "custom_mcp", "manage_mcp"}
 AUTH_KINDS = {"oauth", "api_key", "none"}
+SERVER_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 MAX_CATALOG_CANDIDATES = 5
 CONNECT_GUIDANCE = (
     "When the user asks to add, connect or sign in to an MCP server, integration, "
@@ -32,9 +34,11 @@ CONNECT_GUIDANCE = (
     "first (for example 'composio'); the XNOBrain catalog is not the Hermes plugin "
     "index, so do not use `hermes plugins search` to decide. If the result is "
     "catalog_unknown, retry with one of its candidates; use kind='custom_mcp' only "
-    "when no candidate fits. It shows a connect card where the user enters "
-    "credentials or signs in. Do not use `agent mcp add`, the terminal or config "
-    "edits for this, and never ask for API keys or tokens in chat."
+    "when no candidate fits, and it accepts an optional server_name. To list or "
+    "disconnect an agent's MCP servers, use kind='manage_mcp'. It shows a connect "
+    "card where the user enters credentials or signs in. Do not use `agent mcp add`, "
+    "the terminal or config edits for this, and never ask for API keys or tokens in "
+    "chat."
 )
 INSTRUCTION = (
     "A connect card is shown in the chat. Ask the user to finish there. "
@@ -47,7 +51,7 @@ class IntegrationConnectArguments(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    kind: Literal["catalog_mcp", "plugin_mcp", "custom_mcp"]
+    kind: Literal["catalog_mcp", "plugin_mcp", "custom_mcp", "manage_mcp"]
     agent_id: str | None = Field(default=BIG_BROTHER_AGENT_ID)
     catalog_id: str | None = None
     plugin_id: str | None = None
@@ -110,6 +114,8 @@ def _connect_request(service, request: IntegrationConnectArguments, trusted) -> 
         payload = _catalog_request(service, request, target)
     elif request.kind == "plugin_mcp":
         payload = _plugin_request(service, request, target, trusted)
+    elif request.kind == "manage_mcp":
+        payload = _manage_request(target)
     else:
         payload = _custom_request(request, target)
 
@@ -215,8 +221,31 @@ def _custom_request(request: IntegrationConnectArguments, target: str) -> dict:
         "agent_id": target,
         "display_name": host[:200],
         "auth_kind": "none",
+        "server_name": _custom_server_name(request.server_name, host),
         "url": url,
     }
+
+
+def _manage_request(target: str) -> dict:
+    return {
+        "id": uuid.uuid4().hex,
+        "kind": "manage_mcp",
+        "agent_id": target,
+        "display_name": target[:200],
+    }
+
+
+def _custom_server_name(raw_name: str | None, host: str) -> str:
+    name = str(raw_name or "").strip()
+    if name:
+        if not SERVER_NAME_RE.fullmatch(name):
+            raise _ConnectError("invalid_server_name")
+        return name
+    derived = re.sub(r"[^a-z0-9_-]", "-", host.lower()).strip("-")
+    derived = derived[:64].strip("-")
+    if not derived:
+        raise _ConnectError("invalid_server_name")
+    return derived
 
 
 def _validated_public_https(url: str) -> str:
@@ -292,8 +321,9 @@ def _function_schema() -> dict:
             "server, integration, connector or app. Try kind='catalog_mcp' with "
             "catalog_id (lowercase app name, e.g. 'composio') first; on catalog_unknown "
             "retry with a returned candidate, and use kind='custom_mcp' only when nothing "
-            "fits. The XNOBrain catalog is not the Hermes plugin index. "
-            "It shows a connect card in the chat "
+            "fits; custom_mcp accepts an optional server_name. To list or disconnect an "
+            "agent's MCP servers, use kind='manage_mcp'. The XNOBrain catalog is not the "
+            "Hermes plugin index. It shows a connect card in the chat "
             "where the user enters credentials or signs in themselves, so never use "
             "`agent mcp add` or ask for keys in chat. Read-only: it never installs, "
             "never changes settings, and never accepts credentials."

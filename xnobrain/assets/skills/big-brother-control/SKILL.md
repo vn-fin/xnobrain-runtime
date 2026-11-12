@@ -118,8 +118,11 @@ To add or sign in to an MCP server or plugin MCP, call
 `kind="catalog_mcp"` with the lowercase app name as `catalog_id` first; the
 XNOBrain catalog is separate from the Hermes plugin index, so a miss in
 `hermes plugins search` means nothing. On `catalog_unknown`, retry with a
-returned candidate, and use `kind="custom_mcp"` only when none fits. Never ask
-the user to paste API keys or tokens in chat, and never pass them to
+returned candidate, and use `kind="custom_mcp"` only when none fits; it accepts
+an optional `server_name` (lowercase letters, digits, `-`, `_`; up to 64
+characters). To list or disconnect an agent's MCP servers, use
+`kind="manage_mcp"`; the card performs the change, never the tool. Never ask the
+user to paste API keys or tokens in chat, and never pass them to
 `agent mcp add`.
 
 Use `agent auth add` for provider credentials and `agent config set` for

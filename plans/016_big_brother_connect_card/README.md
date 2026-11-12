@@ -262,3 +262,15 @@ UI (Vitest):
    or behind a Runtime switch (e.g. `RUNTIME_BIG_BROTHER_SUGGESTIONS`)?
 2. Should the terminal `agent mcp add --header …` path be blocked for Big
    Brother, or is the skill rule enough for now?
+
+## Follow-up (2026-11-12)
+
+- `custom_mcp` accepts an optional `server_name` (validated as
+  `^[a-z0-9][a-z0-9_-]{0,63}$`, error `invalid_server_name`). When omitted it is
+  derived from the URL host and included in the connect request.
+- New read-only `manage_mcp` kind shows a card where the user can see and
+  disconnect an agent's MCP servers. It reuses the other kinds' target-agent
+  authorization and never disconnects anything itself.
+- The CLI guard is added: inside an agent run, `agent mcp add` refuses
+  `--header`, `-H`, `--env` and `-e` (including `=` forms) with exit 2. This
+  resolves open question 2; the skill rule remains a shortcut guard only.

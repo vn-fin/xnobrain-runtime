@@ -1,6 +1,29 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Refuse MCP credentials on the command line when an agent launched this CLI.
+# shortcut: an agent can still edit config files directly; the connect card is the supported path.
+if [[ -n "${HERMES_SESSION_ID:-}" ]]; then
+  mcp_add=false
+  mcp_seen=false
+  for argument in "$@"; do
+    if [[ "$mcp_add" == true ]]; then
+      case "$argument" in
+        --header|--header=*|-H|-H*|--env|--env=*|-e|-e*)
+          echo "Refusing to store MCP credentials from an agent run; ask the user to connect through the chat connect card." >&2
+          exit 2
+          ;;
+      esac
+    elif [[ "$argument" == "mcp" ]]; then
+      mcp_seen=true
+    elif [[ "$mcp_seen" == true && "$argument" == "add" ]]; then
+      mcp_add=true
+    elif [[ "$mcp_seen" == true ]]; then
+      mcp_seen=false
+    fi
+  done
+fi
+
 # Native profile commands run in a separate process. Resolve the workspace's
 # current Router key at invocation time, without persisting it in a profile.
 script_dir="$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")"

@@ -51,7 +51,7 @@ SKILL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 MAX_TEXT_CHARS = 200_000
 MAX_FILE_BYTES = 5 * 1024 * 1024
 TODO_STATUSES = {"pending", "in_progress", "completed", "cancelled"}
-CONNECT_KINDS = {"catalog_mcp", "plugin_mcp", "custom_mcp"}
+CONNECT_KINDS = {"catalog_mcp", "plugin_mcp", "custom_mcp", "manage_mcp"}
 CONNECT_AUTH_KINDS = {"oauth", "api_key", "none"}
 MAX_TODO_ITEMS = 256
 MAX_TODO_CONTENT_CHARS = 4000
@@ -189,7 +189,7 @@ def _integration_connect_event(result: Any) -> dict[str, Any] | None:
         or kind not in CONNECT_KINDS
         or not agent_id
         or not display_name
-        or auth_kind not in CONNECT_AUTH_KINDS
+        or (kind != "manage_mcp" and auth_kind not in CONNECT_AUTH_KINDS)
     ):
         return None
 
@@ -198,8 +198,9 @@ def _integration_connect_event(result: Any) -> dict[str, Any] | None:
         "kind": kind,
         "agent_id": agent_id,
         "display_name": display_name,
-        "auth_kind": auth_kind,
     }
+    if auth_kind in CONNECT_AUTH_KINDS:
+        request["auth_kind"] = auth_kind
     for key in ("catalog_id", "plugin_id", "server_name", "url", "reason"):
         value = text(key)
         if value is not None:
