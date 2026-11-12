@@ -34,6 +34,15 @@ _TOOL_NAMES = (
     "zalo_mute",
     "zalo_labels",
     "zalo_mark_unread",
+    "zalo_group_members",
+    "zalo_group_settings",
+    "zalo_group_roles",
+    "zalo_group_pending",
+    "zalo_group_link",
+    "zalo_create_group",
+    "zalo_friend_requests",
+    "zalo_friend_alias",
+    "zalo_quick_reply",
     "zalo_send_image",
     "zalo_send_file",
     "zalo_send_video",
@@ -139,6 +148,8 @@ class _FakeService:
 class ZaloToolSchemaTests(unittest.TestCase):
     def test_every_zalo_schema_is_strict(self):
         self.assertEqual(set(zalo_tools._SCHEMAS), set(_TOOL_NAMES))
+        self.assertEqual(set(zalo_tools._MODELS), set(_TOOL_NAMES))
+        self.assertEqual(set(zalo_tools._TOOL_HANDLERS), set(_TOOL_NAMES))
         for name in _TOOL_NAMES:
             function = zalo_tools._SCHEMAS[name]["function"]
             self.assertEqual(function["name"], name)
@@ -1999,6 +2010,800 @@ class ZaloGroupUtilityTests(_ZaloToolTestBase):
                     result["error"]["code"], "channel_invalid_request"
                 )
         self.assertEqual(self.service.bridge_calls, [])
+
+
+class ZaloAdminToolTests(_ZaloToolTestBase):
+    """P-B phase 4 group administration and account utilities."""
+
+    _ADMIN_TOOLS = (
+        "zalo_group_members",
+        "zalo_group_settings",
+        "zalo_group_roles",
+        "zalo_group_pending",
+        "zalo_group_link",
+        "zalo_create_group",
+        "zalo_friend_requests",
+        "zalo_friend_alias",
+        "zalo_quick_reply",
+    )
+
+    def _ok(self, data):
+        self.service.bridge_result = {"ok": True, "status": 200, "data": data}
+
+    def test_admin_descriptions_ask_for_confirmation_and_warn(self):
+        for name in self._ADMIN_TOOLS:
+            with self.subTest(name=name):
+                description = zalo_tools._SCHEMAS[name]["function"]["description"]
+                self.assertIn("explicit confirmation in chat", description)
+                self.assertTrue(
+                    description.rstrip().endswith(
+                        "wait for their explicit confirmation in chat."
+                    )
+                )
+                self.assertIn(
+                    "Not available in a run started from a channel thread",
+                    description,
+                )
+                self.assertIn("may not be reversible", description)
+
+    def test_admin_schemas_require_their_scope_fields(self):
+        expected = {
+            "zalo_group_members": {"action", "recipient"},
+            "zalo_group_settings": {"action", "recipient"},
+            "zalo_group_roles": {"action", "recipient", "user_ids"},
+            "zalo_group_pending": {"action", "recipient"},
+            "zalo_group_link": {"action", "recipient"},
+            "zalo_create_group": {"name", "user_ids"},
+            "zalo_friend_requests": {"action"},
+            "zalo_friend_alias": {"action"},
+            "zalo_quick_reply": {"action"},
+        }
+        for name, required in expected.items():
+            with self.subTest(name=name):
+                parameters = zalo_tools._SCHEMAS[name]["function"]["parameters"]
+                self.assertEqual(set(parameters.get("required") or []), required)
+                self.assertIs(parameters["additionalProperties"], False)
+        settings = zalo_tools._SCHEMAS["zalo_group_settings"]["function"]["parameters"]
+        self.assertIs(settings["properties"]["settings"]["additionalProperties"], False)
+        self.assertEqual(
+            set(settings["properties"]["settings"]["properties"]),
+            set(zalo_tools._GROUP_SETTING_FIELDS),
+        )
+
+    def test_every_admin_tool_is_denied_in_a_channel_run(self):
+        self._bind(threads={"zalo": {"123": {"conversation_id": "conv-1"}}})
+
+        cases = [
+            ("zalo_group_members", {"action": "list", "recipient": "Team One"}),
+            (
+                "zalo_group_members",
+                {"action": "add", "recipient": "Team One", "user_ids": ["7"]},
+            ),
+            (
+                "zalo_group_settings",
+                {"action": "rename", "recipient": "Team One", "name": "New"},
+            ),
+            (
+                "zalo_group_roles",
+                {
+                    "action": "add_deputy",
+                    "recipient": "Team One",
+                    "user_ids": ["7"],
+                },
+            ),
+            ("zalo_group_pending", {"action": "list", "recipient": "Team One"}),
+            ("zalo_group_link", {"action": "get", "recipient": "Team One"}),
+            ("zalo_create_group", {"name": "New", "user_ids": ["7"]}),
+            ("zalo_friend_requests", {"action": "list_sent"}),
+            (
+                "zalo_friend_requests",
+                {"action": "accept", "user_id": "7"},
+            ),
+            ("zalo_friend_alias", {"action": "list"}),
+            (
+                "zalo_friend_alias",
+                {"action": "set", "friend_id": "7", "alias": "Boss"},
+            ),
+            ("zalo_quick_reply", {"action": "list"}),
+            (
+                "zalo_quick_reply",
+                {
+                    "action": "add",
+                    "keyword": "hi",
+                    "title": "Hello",
+                },
+            ),
+        ]
+        for name, args in cases:
+            with self.subTest(name=name, args=args):
+                result = self._call(name, args)
+                self.assertEqual(
+                    result["error"]["code"], "channel_thread_out_of_scope"
+                )
+        self.assertEqual(self.service.bridge_calls, [])
+
+    def test_admin_group_tools_require_an_approved_group(self):
+        self._bind()
+        self.service.group = {"status": "group_not_approved", "thread_id": "123"}
+
+        cases = [
+            ("zalo_group_members", {"action": "list", "recipient": "123"}),
+            (
+                "zalo_group_members",
+                {"action": "remove", "recipient": "123", "user_ids": ["7"]},
+            ),
+            (
+                "zalo_group_settings",
+                {"action": "update", "recipient": "123", "settings": {"join_appr": True}},
+            ),
+            (
+                "zalo_group_roles",
+                {
+                    "action": "remove_deputy",
+                    "recipient": "123",
+                    "user_ids": ["7"],
+                },
+            ),
+            (
+                "zalo_group_pending",
+                {"action": "approve", "recipient": "123", "user_ids": ["7"]},
+            ),
+            ("zalo_group_link", {"action": "enable", "recipient": "123"}),
+        ]
+        for name, args in cases:
+            with self.subTest(name=name):
+                result = self._call(name, args)
+                self.assertEqual(
+                    result["error"]["code"], "channel_group_not_approved"
+                )
+        self.assertEqual(self.service.bridge_calls, [])
+
+    def test_admin_group_tools_recheck_the_shared_thread_resolution(self):
+        self._bind()
+        self.service.threads["123"] = {
+            "status": "group_not_approved",
+            "thread_id": "123",
+            "name": "Team One",
+            "type": "group",
+        }
+
+        result = self._call(
+            "zalo_group_members", {"action": "list", "recipient": "Team One"}
+        )
+
+        self.assertEqual(result["error"]["code"], "channel_group_not_approved")
+        self.assertEqual(self.service.bridge_calls, [])
+
+    def test_group_members_list_wraps_members_as_untrusted(self):
+        self._bind()
+        self._ok(
+            {
+                "name": "Team One",
+                "member_count": 3,
+                "members": [
+                    {"user_id": "1", "display_name": "Owner", "role": "creator"},
+                    {"user_id": "2", "display_name": "Admin", "role": "admin"},
+                ],
+                "has_more": True,
+            }
+        )
+
+        result = self._call(
+            "zalo_group_members",
+            {"action": "list", "recipient": "Team One", "limit": 20},
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["data"]["group_id"], "123")
+        self.assertEqual(result["data"]["name"], "Team One")
+        self.assertEqual(result["data"]["member_count"], 3)
+        self.assertTrue(result["data"]["has_more"])
+        self.assertEqual(
+            result["data"]["members"][0],
+            {
+                "trust": "untrusted_external",
+                "user_id": "1",
+                "display_name": "Owner",
+                "role": "creator",
+            },
+        )
+        self.assertEqual(
+            self.service.bridge_calls[0],
+            (
+                "/group-members",
+                "POST",
+                {"action": "list", "groupId": "123", "memberLimit": 20},
+            ),
+        )
+
+    def test_group_members_add_and_remove_post_their_ids(self):
+        self._bind()
+        self._ok({"requested": 2, "changed": ["7"], "failed": ["8"]})
+
+        added = self._call(
+            "zalo_group_members",
+            {"action": "add", "recipient": "Team One", "user_ids": ["7", "8"]},
+        )
+        removed = self._call(
+            "zalo_group_members",
+            {"action": "remove", "recipient": "Team One", "user_ids": ["9"]},
+        )
+
+        self.assertEqual(added["data"]["requested"], 2)
+        self.assertEqual(added["data"]["changed"], ["7"])
+        self.assertEqual(added["data"]["failed"], ["8"])
+        self.assertTrue(removed["success"])
+        self.assertEqual(
+            self.service.bridge_calls[0],
+            (
+                "/group-members",
+                "POST",
+                {"action": "add", "groupId": "123", "memberIds": ["7", "8"]},
+            ),
+        )
+        self.assertEqual(
+            self.service.bridge_calls[1],
+            (
+                "/group-members",
+                "POST",
+                {"action": "remove", "groupId": "123", "memberIds": ["9"]},
+            ),
+        )
+
+    def test_group_members_validate_actions_and_user_ids(self):
+        self._bind()
+
+        cases = [
+            {"action": "list", "recipient": "Team One", "user_ids": ["7"]},
+            {"action": "add", "recipient": "Team One"},
+            {"action": "remove", "recipient": "Team One", "user_ids": []},
+            {"action": "add", "recipient": "Team One", "user_ids": ["x"]},
+            {"action": "add", "recipient": "Team One", "user_ids": ["7", "7"]},
+            {
+                "action": "add",
+                "recipient": "Team One",
+                "user_ids": [str(index) for index in range(21)],
+            },
+            {"action": "list", "recipient": "Team One", "limit": 101},
+            {"action": "kick", "recipient": "Team One"},
+        ]
+        for args in cases:
+            with self.subTest(args=args):
+                result = self._call("zalo_group_members", args)
+                self.assertEqual(
+                    result["error"]["code"], "channel_invalid_request"
+                )
+        self.assertEqual(self.service.bridge_calls, [])
+
+    def test_group_settings_rename_posts_the_new_name(self):
+        self._bind()
+        self._ok({"name": "New Name", "renamed": True})
+
+        result = self._call(
+            "zalo_group_settings",
+            {"action": "rename", "recipient": "Team One", "name": "  New Name  "},
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["data"]["name"], "New Name")
+        self.assertTrue(result["data"]["renamed"])
+        self.assertEqual(
+            self.service.bridge_calls[0],
+            (
+                "/group-settings",
+                "POST",
+                {"action": "rename", "groupId": "123", "name": "New Name"},
+            ),
+        )
+
+    def test_group_settings_update_sends_only_the_changed_keys(self):
+        self._bind()
+        self._ok(
+            {
+                "settings": {
+                    "blockName": True,
+                    "signAdminMsg": False,
+                    "setTopicOnly": False,
+                    "enableMsgHistory": False,
+                    "joinAppr": True,
+                    "lockCreatePost": False,
+                    "lockCreatePoll": False,
+                    "lockSendMsg": True,
+                    "lockViewMember": False,
+                }
+            }
+        )
+
+        result = self._call(
+            "zalo_group_settings",
+            {
+                "action": "update",
+                "recipient": "Team One",
+                "settings": {"lock_send_msg": True, "join_appr": True},
+            },
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(
+            self.service.bridge_calls[0],
+            (
+                "/group-settings",
+                "POST",
+                {
+                    "action": "update",
+                    "groupId": "123",
+                    "settings": {"joinAppr": True, "lockSendMsg": True},
+                },
+            ),
+        )
+        self.assertTrue(result["data"]["settings"]["lock_send_msg"])
+        self.assertFalse(result["data"]["settings"]["sign_admin_msg"])
+
+    def test_group_settings_require_one_payload(self):
+        self._bind()
+
+        cases = [
+            {"action": "rename", "recipient": "Team One"},
+            {"action": "rename", "recipient": "Team One", "name": "  "},
+            {"action": "rename", "recipient": "Team One", "name": "x" * 101},
+            {
+                "action": "rename",
+                "recipient": "Team One",
+                "name": "New",
+                "settings": {"join_appr": True},
+            },
+            {"action": "update", "recipient": "Team One"},
+            {"action": "update", "recipient": "Team One", "settings": {}},
+            {
+                "action": "update",
+                "recipient": "Team One",
+                "settings": {"change_owner": True},
+            },
+            {"action": "rename", "recipient": "Team One", "name": "New", "extra": 1},
+        ]
+        for args in cases:
+            with self.subTest(args=args):
+                result = self._call("zalo_group_settings", args)
+                self.assertEqual(
+                    result["error"]["code"], "channel_invalid_request"
+                )
+        self.assertEqual(self.service.bridge_calls, [])
+
+    def test_group_roles_post_deputy_changes(self):
+        self._bind()
+        self._ok({"requested": 1, "changed": ["7"], "failed": []})
+
+        result = self._call(
+            "zalo_group_roles",
+            {"action": "add_deputy", "recipient": "Team One", "user_ids": ["7"]},
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["data"]["changed"], ["7"])
+        self.assertEqual(
+            self.service.bridge_calls[0],
+            (
+                "/group-roles",
+                "POST",
+                {"action": "add_deputy", "groupId": "123", "memberIds": ["7"]},
+            ),
+        )
+
+    def test_group_pending_lists_and_reviews_requests(self):
+        self._bind()
+        self._ok(
+            {
+                "pending": [
+                    {"user_id": "7", "display_name": "Lan"},
+                ],
+                "truncated": False,
+            }
+        )
+
+        listed = self._call(
+            "zalo_group_pending",
+            {"action": "list", "recipient": "Team One", "limit": 10},
+        )
+
+        self.assertEqual(
+            listed["data"]["pending"],
+            [
+                {
+                    "trust": "untrusted_external",
+                    "user_id": "7",
+                    "display_name": "Lan",
+                }
+            ],
+        )
+        self.assertEqual(
+            self.service.bridge_calls[0],
+            (
+                "/group-pending",
+                "POST",
+                {"action": "list", "groupId": "123", "limit": 10},
+            ),
+        )
+
+        self.service.bridge_calls.clear()
+        self._ok(
+            {
+                "results": [
+                    {"user_id": "7", "status": "success"},
+                    {"user_id": "8", "status": "already_member"},
+                ]
+            }
+        )
+        reviewed = self._call(
+            "zalo_group_pending",
+            {"action": "approve", "recipient": "Team One", "user_ids": ["7", "8"]},
+        )
+
+        self.assertEqual(reviewed["data"]["changed"], 1)
+        self.assertEqual(reviewed["data"]["results"][1]["status"], "already_member")
+        self.assertEqual(
+            self.service.bridge_calls[0],
+            (
+                "/group-pending",
+                "POST",
+                {"action": "approve", "groupId": "123", "memberIds": ["7", "8"]},
+            ),
+        )
+
+    def test_group_link_reads_and_changes_the_invite_link(self):
+        self._bind()
+        self._ok(
+            {
+                "enabled": True,
+                "link": "https://zalo.me/g/abcdef",
+                "expiration_date": 1700000000,
+            }
+        )
+
+        result = self._call(
+            "zalo_group_link", {"action": "enable", "recipient": "Team One"}
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["data"]["group_id"], "123")
+        self.assertTrue(result["data"]["enabled"])
+        self.assertEqual(result["data"]["link"], "https://zalo.me/g/abcdef")
+        self.assertTrue(result["data"]["changed"])
+        self.assertEqual(
+            self.service.bridge_calls[0],
+            (
+                "/group-link",
+                "POST",
+                {"action": "enable", "groupId": "123"},
+            ),
+        )
+
+        self.service.bridge_calls.clear()
+        fetched = self._call(
+            "zalo_group_link", {"action": "get", "recipient": "Team One"}
+        )
+        self.assertFalse(fetched["data"]["changed"])
+        self.assertEqual(
+            self.service.bridge_calls[0],
+            ("/group-link", "POST", {"action": "get", "groupId": "123"}),
+        )
+
+    def test_create_group_posts_the_name_and_members(self):
+        self._bind()
+        self._ok(
+            {
+                "group_id": "555",
+                "name": "New Team",
+                "requested": 2,
+                "changed": ["7", "8"],
+                "failed": [],
+            }
+        )
+
+        result = self._call(
+            "zalo_create_group", {"name": " New Team ", "user_ids": ["7", "8"]}
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["data"]["group_id"], "555")
+        self.assertEqual(result["data"]["changed"], ["7", "8"])
+        self.assertEqual(
+            self.service.bridge_calls[0],
+            (
+                "/create-group",
+                "POST",
+                {"name": "New Team", "memberIds": ["7", "8"]},
+            ),
+        )
+
+    def test_create_group_requires_a_name_and_members(self):
+        self._bind()
+
+        cases = [
+            {"name": "  ", "user_ids": ["7"]},
+            {"name": "Team", "user_ids": []},
+            {"name": "Team", "user_ids": ["x"]},
+            {"name": "Team", "user_ids": [str(index) for index in range(21)]},
+            {"user_ids": ["7"]},
+        ]
+        for args in cases:
+            with self.subTest(args=args):
+                result = self._call("zalo_create_group", args)
+                self.assertEqual(
+                    result["error"]["code"], "channel_invalid_request"
+                )
+        self.assertEqual(self.service.bridge_calls, [])
+
+    def test_friend_requests_list_both_directions(self):
+        self._bind()
+        self._ok(
+            {
+                "received": [
+                    {
+                        "user_id": "7",
+                        "display_name": "Lan",
+                        "message": "Add me",
+                        "ts": 5,
+                    }
+                ]
+            }
+        )
+
+        received = self._call(
+            "zalo_friend_requests", {"action": "list_received", "limit": 10}
+        )
+
+        self.assertEqual(
+            received["data"]["received"],
+            [
+                {
+                    "trust": "untrusted_external",
+                    "user_id": "7",
+                    "display_name": "Lan",
+                    "message": "Add me",
+                    "ts": 5,
+                }
+            ],
+        )
+        self.assertEqual(
+            self.service.bridge_calls[0],
+            ("/friend-requests", "POST", {"action": "list_received", "limit": 10}),
+        )
+
+        self.service.bridge_calls.clear()
+        self._ok({"sent": []})
+        sent = self._call("zalo_friend_requests", {"action": "list_sent"})
+        self.assertEqual(sent["data"]["sent"], [])
+
+    def test_friend_request_actions_post_one_user(self):
+        self._bind()
+        self._ok({})
+
+        result = self._call(
+            "zalo_friend_requests",
+            {"action": "send", "user_id": "7", "message": "  hi  "},
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["data"]["user_id"], "7")
+        self.assertTrue(result["data"]["changed"])
+        self.assertEqual(
+            self.service.bridge_calls[0],
+            (
+                "/friend-requests",
+                "POST",
+                {"action": "send", "userId": "7", "message": "hi"},
+            ),
+        )
+
+        self.service.bridge_calls.clear()
+        self._call("zalo_friend_requests", {"action": "reject", "user_id": "8"})
+        self.assertEqual(
+            self.service.bridge_calls[0],
+            ("/friend-requests", "POST", {"action": "reject", "userId": "8"}),
+        )
+
+    def test_friend_requests_validate_action_payloads(self):
+        self._bind()
+
+        cases = [
+            {"action": "list_sent", "user_id": "7"},
+            {"action": "accept"},
+            {"action": "accept", "user_id": "x"},
+            {"action": "accept", "user_id": "7", "message": "hi"},
+            {"action": "send", "user_id": "7", "message": "x" * 501},
+            {"action": "list_sent", "limit": 0},
+            {"action": "block", "user_id": "7"},
+        ]
+        for args in cases:
+            with self.subTest(args=args):
+                result = self._call("zalo_friend_requests", args)
+                self.assertEqual(
+                    result["error"]["code"], "channel_invalid_request"
+                )
+        self.assertEqual(self.service.bridge_calls, [])
+
+    def test_friend_alias_lists_sets_and_removes(self):
+        self._bind()
+        self._ok({"aliases": [{"user_id": "7", "alias": "Boss"}]})
+
+        listed = self._call(
+            "zalo_friend_alias", {"action": "list", "page": 2, "count": 10}
+        )
+
+        self.assertEqual(
+            listed["data"]["aliases"],
+            [{"trust": "untrusted_external", "user_id": "7", "alias": "Boss"}],
+        )
+        self.assertEqual(
+            self.service.bridge_calls[0],
+            ("/friend-alias", "POST", {"action": "list", "page": 2, "count": 10}),
+        )
+
+        self.service.bridge_calls.clear()
+        self._ok({})
+        alias = self._call(
+            "zalo_friend_alias",
+            {"action": "set", "friend_id": "7", "alias": " Boss "},
+        )
+        self.assertEqual(alias["data"]["alias"], "Boss")
+        self.assertEqual(
+            self.service.bridge_calls[0],
+            ("/friend-alias", "POST", {"action": "set", "friendId": "7", "alias": "Boss"}),
+        )
+
+        self.service.bridge_calls.clear()
+        removed = self._call(
+            "zalo_friend_alias", {"action": "remove", "friend_id": "7"}
+        )
+        self.assertIsNone(removed["data"]["alias"])
+        self.assertEqual(
+            self.service.bridge_calls[0],
+            ("/friend-alias", "POST", {"action": "remove", "friendId": "7"}),
+        )
+
+    def test_friend_alias_validates_its_payload(self):
+        self._bind()
+
+        cases = [
+            {"action": "list", "friend_id": "7"},
+            {"action": "set"},
+            {"action": "set", "friend_id": "7"},
+            {"action": "set", "friend_id": "7", "alias": "x" * 65},
+            {"action": "remove", "friend_id": "7", "alias": "Boss"},
+            {"action": "list", "count": 201},
+        ]
+        for args in cases:
+            with self.subTest(args=args):
+                result = self._call("zalo_friend_alias", args)
+                self.assertEqual(
+                    result["error"]["code"], "channel_invalid_request"
+                )
+        self.assertEqual(self.service.bridge_calls, [])
+
+    def test_quick_reply_lists_adds_updates_and_removes(self):
+        self._bind()
+        self._ok(
+            {
+                "quick_replies": [
+                    {
+                        "item_id": 3,
+                        "keyword": "hi",
+                        "title": "Hello",
+                        "created_time": 10,
+                        "updated_time": 20,
+                    }
+                ]
+            }
+        )
+
+        listed = self._call("zalo_quick_reply", {"action": "list"})
+
+        self.assertEqual(
+            listed["data"]["quick_replies"][0],
+            {
+                "trust": "untrusted_external",
+                "item_id": 3,
+                "keyword": "hi",
+                "title": "Hello",
+                "created_time": 10,
+                "updated_time": 20,
+            },
+        )
+        self.assertEqual(
+            self.service.bridge_calls[0],
+            ("/quick-reply", "POST", {"action": "list"}),
+        )
+
+        self.service.bridge_calls.clear()
+        self._ok(
+            {
+                "quick_reply": {
+                    "item_id": 4,
+                    "keyword": "bye",
+                    "title": "Goodbye",
+                    "created_time": 30,
+                    "updated_time": 30,
+                }
+            }
+        )
+        added = self._call(
+            "zalo_quick_reply",
+            {"action": "add", "keyword": " bye ", "title": " Goodbye "},
+        )
+        self.assertEqual(added["data"]["quick_reply"]["item_id"], 4)
+        self.assertEqual(
+            self.service.bridge_calls[0],
+            (
+                "/quick-reply",
+                "POST",
+                {"action": "add", "keyword": "bye", "title": "Goodbye"},
+            ),
+        )
+
+        self.service.bridge_calls.clear()
+        self._call(
+            "zalo_quick_reply",
+            {"action": "update", "item_id": 4, "keyword": "bye", "title": "Bye now"},
+        )
+        self.assertEqual(
+            self.service.bridge_calls[0],
+            (
+                "/quick-reply",
+                "POST",
+                {
+                    "action": "update",
+                    "itemId": 4,
+                    "keyword": "bye",
+                    "title": "Bye now",
+                },
+            ),
+        )
+
+        self.service.bridge_calls.clear()
+        removed = self._call(
+            "zalo_quick_reply", {"action": "remove", "item_id": 4}
+        )
+        self.assertTrue(removed["data"]["removed"])
+        self.assertEqual(
+            self.service.bridge_calls[0],
+            ("/quick-reply", "POST", {"action": "remove", "itemId": 4}),
+        )
+
+    def test_quick_reply_validates_its_payload(self):
+        self._bind()
+
+        cases = [
+            {"action": "list", "item_id": 3},
+            {"action": "add", "keyword": "hi"},
+            {"action": "add", "keyword": "", "title": "Hello"},
+            {"action": "add", "keyword": "hi", "title": "x" * 1001},
+            {"action": "update", "keyword": "hi", "title": "Hello"},
+            {"action": "update", "item_id": 4, "keyword": "hi"},
+            {"action": "remove"},
+            {"action": "remove", "item_id": 4, "title": "Hello"},
+        ]
+        for args in cases:
+            with self.subTest(args=args):
+                result = self._call("zalo_quick_reply", args)
+                self.assertEqual(
+                    result["error"]["code"], "channel_invalid_request"
+                )
+        self.assertEqual(self.service.bridge_calls, [])
+
+    def test_admin_bridge_failures_map_to_the_channel_codes(self):
+        self._bind()
+        self.service.bridge_result = {
+            "ok": False,
+            "status": 429,
+            "data": None,
+            "error": "rate_limited",
+        }
+
+        result = self._call(
+            "zalo_quick_reply", {"action": "list"}
+        )
+
+        self.assertEqual(result["error"]["code"], "channel_rate_limited")
 
 
 class ZaloToolRegistryTests(unittest.TestCase):

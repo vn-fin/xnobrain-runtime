@@ -2,7 +2,23 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  FRIEND_ALIAS_ACTIONS,
+  FRIEND_REQUEST_ACTIONS,
+  GROUP_LINK_ACTIONS,
+  GROUP_PENDING_ACTIONS,
+  GROUP_ROLE_ACTIONS,
+  GROUP_SETTING_KEYS,
+  GROUP_SETTING_ACTIONS,
+  MAX_ALIAS_PAGE_SIZE,
+  MAX_FRIEND_ALIAS_LENGTH,
+  MAX_FRIEND_REQUEST_MESSAGE_LENGTH,
+  MAX_GROUP_MEMBER_CHANGE,
+  MAX_GROUP_MEMBER_LIMIT,
+  MAX_GROUP_NAME_LENGTH,
   MAX_GROUP_NAMES,
+  MAX_PENDING_MEMBERS,
+  MAX_QUICK_REPLY_TITLE_LENGTH,
+  MAX_QUICK_REPLIES,
   MAX_MEDIA_BYTES,
   MAX_MENTIONS,
   MAX_MESSAGE_LENGTH,
@@ -12,10 +28,12 @@ import {
   MAX_REMINDER_EMOJI_LENGTH,
   MAX_REMINDER_MINUTES,
   MAX_STICKER_SEARCH_LIMIT,
+  QUICK_REPLY_ACTIONS,
   READ_RATE_LIMIT_PER_MINUTE,
   REACTION_NAMES,
   SEND_RATE_LIMIT_PER_MINUTE,
   UNDO_MAX_AGE_MS,
+  aliasRecords,
   chunkList,
   chunkText,
   constantTimeEqual,
@@ -31,33 +49,51 @@ import {
   groupHistoryRecords,
   groupInfoCacheKey,
   groupInfoRecord,
+  groupMembersRecord,
+  groupSettingsOptions,
+  groupSettingsRecord,
   inboundQueueItem,
   isMp4,
   isRateLimitError,
   markdownToZalo,
   mediaFromContent,
+  memberChangeRecord,
   mentionPayloads,
   mentionsSelf,
   messageRef,
   messageText,
   noteRecords,
   parseBearerToken,
+  pendingMemberRecords,
   pollRecord,
+  quickReplyRecords,
   quotePayload,
   quotesSelf,
+  receivedFriendRequestRecords,
   receiptFields,
   rememberGroupName,
   reminderRecords,
+  reviewResults,
+  reviewStatusName,
   safeImageFileName,
   safeMediaFileName,
+  sentFriendRequestRecords,
   splitStyledChunks,
   undoExpired,
   unreadRecords,
   userInfoRecord,
   validateBoardBody,
+  validateCreateGroupBody,
   validateForwardBody,
+  validateFriendAliasBody,
+  validateFriendRequestsBody,
   validateGroupHistoryBody,
   validateGroupInfoBody,
+  validateGroupLinkBody,
+  validateGroupMembersBody,
+  validateGroupPendingBody,
+  validateGroupRolesBody,
+  validateGroupSettingsBody,
   validateHistoryBody,
   validateLabelsBody,
   validateMuteBody,
@@ -65,6 +101,7 @@ import {
   validatePinBody,
   validatePollCreateBody,
   validatePollDetailBody,
+  validateQuickReplyBody,
   validateReactBody,
   validateReminderCreateBody,
   validateSearchBody,
@@ -1976,4 +2013,411 @@ test('userInfoRecord accepts getUsers and findUser shapes', () => {
     gender: 0,
     birthday: '',
   });
+});
+
+/* ------------------------------------------------------------------------- *
+ * Group administration and account utilities (plan 020 P-B phase 4).
+ * ------------------------------------------------------------------------- */
+
+test('validateGroupMembersBody lists, adds, and removes within bounds', () => {
+  assert.deepEqual(validateGroupMembersBody({ groupId: '123' }), {
+    ok: true,
+    action: 'list',
+    groupId: '123',
+    memberLimit: 50,
+  });
+  assert.deepEqual(
+    validateGroupMembersBody({ action: 'list', groupId: '123', memberLimit: 100 }),
+    { ok: true, action: 'list', groupId: '123', memberLimit: 100 },
+  );
+  assert.deepEqual(
+    validateGroupMembersBody({ action: 'add', groupId: '123', memberIds: ['7', '7', '8'] }),
+    { ok: true, action: 'add', groupId: '123', memberIds: ['7', '8'] },
+  );
+  assert.equal(MAX_GROUP_MEMBER_LIMIT, 100);
+  assert.equal(MAX_GROUP_MEMBER_CHANGE, 20);
+});
+
+test('validateGroupMembersBody rejects malformed groups, lists, and limits', () => {
+  const bad = [
+    null,
+    {},
+    { groupId: 'abc' },
+    { action: 'rename', groupId: '123' },
+    { groupId: '123', memberLimit: 101 },
+    { groupId: '123', memberLimit: 0, action: 'list', memberIds: ['1'] },
+    { action: 'add', groupId: '123', memberIds: [] },
+    { action: 'add', groupId: '123', memberIds: ['x'] },
+    { action: 'remove', groupId: '123' },
+    {
+      action: 'add',
+      groupId: '123',
+      memberIds: Array.from({ length: MAX_GROUP_MEMBER_CHANGE + 1 }, (_, i) => String(i + 1)),
+    },
+    { action: 'list', groupId: '123', memberIds: ['1'] },
+  ];
+  for (const body of bad) {
+    assert.equal(validateGroupMembersBody(body).ok, false, JSON.stringify(body));
+  }
+});
+
+test('validateGroupSettingsBody takes a rename or a partial settings change', () => {
+  assert.deepEqual(
+    validateGroupSettingsBody({ action: 'rename', groupId: '123', name: '  Team One  ' }),
+    { ok: true, action: 'rename', groupId: '123', name: 'Team One' },
+  );
+  assert.deepEqual(
+    validateGroupSettingsBody({
+      action: 'update',
+      groupId: '123',
+      settings: { lockSendMsg: true, joinAppr: false },
+    }),
+    {
+      ok: true,
+      action: 'update',
+      groupId: '123',
+      settings: { lockSendMsg: true, joinAppr: false },
+    },
+  );
+  // The rename name is capped and must not be empty.
+  assert.equal(MAX_GROUP_NAME_LENGTH, 100);
+  assert.equal(
+    validateGroupSettingsBody({ action: 'rename', groupId: '123', name: ' x'.repeat(60) }).ok,
+    false,
+  );
+  const bad = [
+    {},
+    { action: 'rename', groupId: '123' },
+    { action: 'rename', groupId: '123', name: '   ' },
+    { action: 'update', groupId: '123' },
+    { action: 'update', groupId: '123', settings: {} },
+    { action: 'update', groupId: '123', settings: { unknown: true } },
+    { action: 'update', groupId: '123', settings: { lockSendMsg: 'yes' } },
+    { action: 'update', groupId: '123', settings: [] },
+  ];
+  for (const body of bad) {
+    assert.equal(validateGroupSettingsBody(body).ok, false, JSON.stringify(body));
+  }
+  assert.deepEqual(GROUP_SETTING_ACTIONS, ['rename', 'update']);
+  assert.equal(GROUP_SETTING_KEYS.length, 9);
+});
+
+test('validateGroupRolesBody needs a deputy action and member ids', () => {
+  assert.deepEqual(
+    validateGroupRolesBody({ action: 'add_deputy', groupId: '5', memberIds: ['7'] }),
+    { ok: true, action: 'add_deputy', groupId: '5', memberIds: ['7'] },
+  );
+  for (const body of [
+    { groupId: '5', memberIds: ['7'] },
+    { action: 'add_deputy', groupId: '5', memberIds: [] },
+    { action: 'remove_deputy', groupId: '5' },
+  ]) {
+    assert.equal(validateGroupRolesBody(body).ok, false, JSON.stringify(body));
+  }
+  assert.deepEqual(GROUP_ROLE_ACTIONS, ['add_deputy', 'remove_deputy']);
+});
+
+test('validateGroupPendingBody lists or reviews join requests', () => {
+  assert.deepEqual(validateGroupPendingBody({ groupId: '5' }), {
+    ok: true,
+    action: 'list',
+    groupId: '5',
+    limit: 50,
+  });
+  assert.deepEqual(
+    validateGroupPendingBody({ action: 'approve', groupId: '5', memberIds: ['9'] }),
+    { ok: true, action: 'approve', groupId: '5', memberIds: ['9'] },
+  );
+  assert.equal(MAX_PENDING_MEMBERS, 100);
+  for (const body of [
+    { groupId: '5', limit: 101 },
+    { action: 'approve', groupId: '5' },
+    { action: 'list', groupId: '5', memberIds: ['9'] },
+  ]) {
+    assert.equal(validateGroupPendingBody(body).ok, false, JSON.stringify(body));
+  }
+  assert.deepEqual(GROUP_PENDING_ACTIONS, ['list', 'approve', 'reject']);
+});
+
+test('validateGroupLinkBody accepts get, enable, and disable', () => {
+  assert.deepEqual(validateGroupLinkBody({ groupId: '5' }), {
+    ok: true,
+    action: 'get',
+    groupId: '5',
+  });
+  assert.deepEqual(validateGroupLinkBody({ action: 'disable', groupId: '5' }), {
+    ok: true,
+    action: 'disable',
+    groupId: '5',
+  });
+  assert.equal(validateGroupLinkBody({ action: 'rotate', groupId: '5' }).ok, false);
+  assert.deepEqual(GROUP_LINK_ACTIONS, ['get', 'enable', 'disable']);
+});
+
+test('validateCreateGroupBody requires a name and one to twenty members', () => {
+  assert.deepEqual(validateCreateGroupBody({ name: ' Team ', memberIds: ['7', '8'] }), {
+    ok: true,
+    name: 'Team',
+    memberIds: ['7', '8'],
+  });
+  for (const body of [
+    { name: '', memberIds: ['7'] },
+    { name: 'Team', memberIds: [] },
+    { name: 'Team', memberIds: ['x'] },
+    { name: 'Team' },
+  ]) {
+    assert.equal(validateCreateGroupBody(body).ok, false, JSON.stringify(body));
+  }
+});
+
+test('validateFriendRequestsBody validates each action', () => {
+  assert.deepEqual(validateFriendRequestsBody({ action: 'list_sent' }), {
+    ok: true,
+    action: 'list_sent',
+    limit: 50,
+  });
+  assert.deepEqual(validateFriendRequestsBody({ action: 'accept', userId: '42' }), {
+    ok: true,
+    action: 'accept',
+    userId: '42',
+  });
+  assert.deepEqual(
+    validateFriendRequestsBody({ action: 'send', userId: '42', message: '  hi  ' }),
+    { ok: true, action: 'send', userId: '42', message: 'hi' },
+  );
+  assert.deepEqual(validateFriendRequestsBody({ action: 'send', userId: '42' }), {
+    ok: true,
+    action: 'send',
+    userId: '42',
+    message: '',
+  });
+  assert.equal(MAX_FRIEND_REQUEST_MESSAGE_LENGTH, 500);
+  for (const body of [
+    {},
+    { action: 'send' },
+    { action: 'accept', userId: 'abc' },
+    { action: 'send', userId: '42', message: 'x'.repeat(501) },
+    { action: 'list_sent', limit: 0 },
+  ]) {
+    assert.equal(validateFriendRequestsBody(body).ok, false, JSON.stringify(body));
+  }
+  assert.deepEqual(FRIEND_REQUEST_ACTIONS, [
+    'list_sent',
+    'list_received',
+    'accept',
+    'reject',
+    'send',
+    'undo',
+  ]);
+});
+
+test('validateFriendAliasBody handles list, set, and remove', () => {
+  assert.deepEqual(validateFriendAliasBody({}), {
+    ok: true,
+    action: 'list',
+    page: 1,
+    count: 50,
+  });
+  assert.equal(MAX_ALIAS_PAGE_SIZE, 200);
+  assert.deepEqual(validateFriendAliasBody({ action: 'remove', friendId: '42' }), {
+    ok: true,
+    action: 'remove',
+    friendId: '42',
+  });
+  assert.deepEqual(
+    validateFriendAliasBody({ action: 'set', friendId: '42', alias: ' Boss ' }),
+    { ok: true, action: 'set', friendId: '42', alias: 'Boss' },
+  );
+  assert.equal(MAX_FRIEND_ALIAS_LENGTH, 64);
+  for (const body of [
+    { action: 'set', friendId: '42' },
+    { action: 'set', friendId: '42', alias: 'x'.repeat(65) },
+    { action: 'remove' },
+    { action: 'list', count: 201 },
+  ]) {
+    assert.equal(validateFriendAliasBody(body).ok, false, JSON.stringify(body));
+  }
+  assert.deepEqual(FRIEND_ALIAS_ACTIONS, ['list', 'set', 'remove']);
+});
+
+test('validateQuickReplyBody bounds keywords, titles, and item ids', () => {
+  assert.deepEqual(validateQuickReplyBody({}), { ok: true, action: 'list' });
+  assert.deepEqual(validateQuickReplyBody({ action: 'remove', itemId: 3 }), {
+    ok: true,
+    action: 'remove',
+    itemId: 3,
+  });
+  assert.deepEqual(
+    validateQuickReplyBody({ action: 'add', keyword: ' hi ', title: 'Hello' }),
+    { ok: true, action: 'add', keyword: 'hi', title: 'Hello' },
+  );
+  assert.deepEqual(
+    validateQuickReplyBody({ action: 'update', itemId: 3, keyword: 'hi', title: 'Hello' }),
+    { ok: true, action: 'update', itemId: 3, keyword: 'hi', title: 'Hello' },
+  );
+  assert.equal(MAX_QUICK_REPLY_TITLE_LENGTH, 1_000);
+  for (const body of [
+    { action: 'add', keyword: '', title: 'Hi' },
+    { action: 'add', keyword: 'hi', title: 'x'.repeat(1_001) },
+    { action: 'update', keyword: 'hi', title: 'Hi' },
+    { action: 'remove' },
+  ]) {
+    assert.equal(validateQuickReplyBody(body).ok, false, JSON.stringify(body));
+  }
+  assert.deepEqual(QUICK_REPLY_ACTIONS, ['list', 'add', 'update', 'remove']);
+});
+
+test('groupMembersRecord marks roles and reports the remaining members', () => {
+  const record = groupMembersRecord(
+    {
+      groupId: '5',
+      name: 'Team',
+      totalMember: 3,
+      creatorId: '1',
+      adminIds: ['2'],
+      memberIds: ['1', '2', '3'],
+    },
+    {
+      1: { displayName: 'Owner' },
+      2: { displayName: 'Admin' },
+      3: { displayName: 'Member' },
+    },
+    { memberLimit: 2 },
+  );
+  assert.deepEqual(record, {
+    group_id: '5',
+    name: 'Team',
+    member_count: 3,
+    members: [
+      { user_id: '1', display_name: 'Owner', role: 'creator' },
+      { user_id: '2', display_name: 'Admin', role: 'admin' },
+    ],
+    has_more: true,
+  });
+  assert.equal(groupMembersRecord({ memberIds: [] }, null, { memberLimit: 6 }).has_more, false);
+});
+
+test('groupSettingsOptions keeps the current value of every unmentioned key', () => {
+  const current = { lockSendMsg: 1, joinAppr: 0, blockName: 1 };
+  assert.deepEqual(groupSettingsOptions(current, { joinAppr: true }), {
+    blockName: true,
+    signAdminMsg: false,
+    setTopicOnly: false,
+    enableMsgHistory: false,
+    joinAppr: true,
+    lockCreatePost: false,
+    lockCreatePoll: false,
+    lockSendMsg: true,
+    lockViewMember: false,
+  });
+  assert.deepEqual(groupSettingsRecord(current), {
+    blockName: true,
+    signAdminMsg: false,
+    setTopicOnly: false,
+    enableMsgHistory: false,
+    joinAppr: false,
+    lockCreatePost: false,
+    lockCreatePoll: false,
+    lockSendMsg: true,
+    lockViewMember: false,
+  });
+});
+
+test('pendingMemberRecords and reviewResults shape join requests', () => {
+  const pending = pendingMemberRecords(
+    [
+      { uid: '7', dpn: 'Lan', avatar: 'https://a' },
+      { uid: 'x', dpn: 'Nope' },
+    ],
+    { limit: 1 },
+  );
+  assert.deepEqual(pending, [{ user_id: '7', display_name: 'Lan' }]);
+  assert.deepEqual(
+    reviewResults(['7', '8'], { 7: 0, 8: 178 }),
+    [
+      { user_id: '7', status: 'success' },
+      { user_id: '8', status: 'already_member' },
+    ],
+  );
+  assert.equal(reviewStatusName(170), 'not_pending');
+  assert.equal(reviewStatusName(166), 'no_permission');
+  assert.equal(reviewStatusName(999), 'unknown');
+});
+
+test('memberChangeRecord reports changed and failed ids only', () => {
+  assert.deepEqual(memberChangeRecord(['7', '8', '9'], ['8', '99']), {
+    requested: 3,
+    changed: ['7', '9'],
+    failed: ['8'],
+  });
+  assert.deepEqual(memberChangeRecord(['7'], null), {
+    requested: 1,
+    changed: ['7'],
+    failed: [],
+  });
+});
+
+test('sentFriendRequestRecords keeps display fields and caps the list', () => {
+  const records = sentFriendRequestRecords({
+    42: {
+      userId: '42',
+      displayName: 'Nam',
+      zaloName: 'nam',
+      fReqInfo: { message: 'Hello', time: 1_000 },
+    },
+    43: { userId: '43', zaloName: 'lan', fReqInfo: { time: 2_000 } },
+  });
+  assert.deepEqual(records, [
+    { user_id: '42', display_name: 'Nam', message: 'Hello', ts: 1_000 },
+    { user_id: '43', display_name: 'lan', message: '', ts: 2_000 },
+  ]);
+  assert.equal(sentFriendRequestRecords({ 42: {} }, { limit: 1 }).length, 1);
+});
+
+test('receivedFriendRequestRecords keeps only incoming requests', () => {
+  const response = {
+    recommItems: [
+      {
+        dataInfo: {
+          userId: '7',
+          displayName: 'Lan',
+          recommType: 2,
+          recommTime: 500,
+          recommInfo: { message: 'Add me' },
+        },
+      },
+      { dataInfo: { userId: '8', displayName: 'Suggested', recommType: 1 } },
+      { dataInfo: { userId: 'x', displayName: 'Bad', recommType: 2 } },
+    ],
+  };
+  assert.deepEqual(receivedFriendRequestRecords(response), [
+    { user_id: '7', display_name: 'Lan', message: 'Add me', ts: 500 },
+  ]);
+});
+
+test('aliasRecords and quickReplyRecords shape their responses', () => {
+  assert.deepEqual(
+    aliasRecords({ items: [{ userId: '7', alias: 'Boss' }, { userId: 'x', alias: 'No' }] }),
+    [{ user_id: '7', alias: 'Boss' }],
+  );
+  const quick = quickReplyRecords([
+    {
+      id: 3,
+      keyword: 'hi',
+      message: { title: 'Hello there' },
+      createdTime: 10,
+      lastModified: 20,
+    },
+    { id: 0, keyword: 'bad' },
+  ]);
+  assert.deepEqual(quick, [
+    {
+      item_id: 3,
+      keyword: 'hi',
+      title: 'Hello there',
+      created_time: 10,
+      updated_time: 20,
+    },
+  ]);
+  assert.equal(MAX_QUICK_REPLIES, 200);
 });

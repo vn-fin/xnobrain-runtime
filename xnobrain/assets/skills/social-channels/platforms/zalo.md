@@ -58,6 +58,22 @@ only through `xnobrain_integration_connect` with `kind="channel"` and
   one; `zalo_mark_unread` adds or clears an unread mark.
 - `zalo_labels` lists conversation labels or adds/removes one conversation in
   one label.
+- `zalo_group_members` lists an approved group's members (user id, display
+  name, role) or adds/removes up to 20 members.
+- `zalo_group_settings` renames an approved group or changes its settings
+  (name/avatar lock, highlighted admin messages, topic-only pinning, message
+  history for new members, join approval, posting/poll/send locks, member-list
+  lock). Only the settings given are changed.
+- `zalo_group_roles` adds or removes group deputies.
+- `zalo_group_pending` lists pending join requests or approves/rejects up to 20
+  of them.
+- `zalo_group_link` reads, enables, or disables the group invite link.
+- `zalo_create_group` creates a group from a name and 1-20 existing Zalo users.
+- `zalo_friend_requests` lists sent or received requests, or accepts, rejects,
+  sends, or undoes one.
+- `zalo_friend_alias` lists, sets, or removes one friend alias.
+- `zalo_quick_reply` lists, adds, updates, or removes one quick message
+  (keyword plus title).
 
 ## Limits
 
@@ -73,9 +89,18 @@ only through `xnobrain_integration_connect` with `kind="channel"` and
   its own chat.
 - The group utilities (`zalo_create_poll`, `zalo_create_note`,
   `zalo_create_reminder`, `zalo_pin_conversation`, `zalo_mute`, `zalo_labels`,
-  `zalo_mark_unread`) are unavailable in a run that started from a channel
-  chat. Polls and notes are group-only; reminders, pin, mute, labels, and unread
-  marks follow the same group-approval and `dm_policy` rules as reads.
+  `zalo_mark_unread`) and the group and account administration tools
+  (`zalo_group_members`, `zalo_group_settings`, `zalo_group_roles`,
+  `zalo_group_pending`, `zalo_group_link`, `zalo_create_group`,
+  `zalo_friend_requests`, `zalo_friend_alias`, `zalo_quick_reply`) are
+  unavailable in a run that started from a channel chat. Polls and notes are
+  group-only; reminders, pin, mute, labels, and unread marks follow the same
+  group-approval and `dm_policy` rules as reads. Every admin group action needs
+  an owner-approved group, and changing a group owner is never exposed.
+- Group and account administration changes affect real people or this account
+  and may not be reversible. Member and join-request writes take 1-20 user ids
+  and lists return at most 100 entries. Every write needs explicit confirmation
+  in chat.
 - Sends, reactions, forwards, undos, and every group utility change need
   explicit confirmation in chat, and a channel run may act only in its own
   thread. `zalo_forward` needs both the source and the target inside that
@@ -88,4 +113,4 @@ only through `xnobrain_integration_connect` with `kind="channel"` and
   sides. Deleting that file removes the stored history.
 - Zalo reads are rate limited by the bridge: 30 reads per minute and 10 group
   history calls per minute. Sends, sticker searches, forwards, undos, and every
-  group utility change share 20 calls per minute.
+  group utility or administration change share 20 calls per minute.

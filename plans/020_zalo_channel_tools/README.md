@@ -1,6 +1,6 @@
 # 020 — Zalo channel tools (personal account and Zalo Bot)
 
-Status: plan, not started.
+Status: plan; P-A and P-B done (2026-11-12), Track B not started.
 
 Builds on `plans/015_zalo_personal_channel/` (bridge, adapter, gateway hosting)
 and `plans/019_gateway_channel_turns/` (channel turns run in the main Runtime
@@ -269,7 +269,43 @@ bridge validation test and a send-scope or approval test as applicable.
     label's `conversations` (tokens `u<id>`/`g<id>`, matching the pin API's
     conversation form), and sends the read `version` back.
   - Not in this phase: `addPollOptions`, `lockPoll`, `editNote`, `editReminder`,
-    and `removeReminder` are not exposed. **Phase 4 (admin):** not started.
+    and `removeReminder` are not exposed.
+- **Phase 4 (admin): done 2026-11-12.** Tool -> bridge endpoint -> zca-js:
+  `zalo_group_members` -> `POST /group-members` -> `getGroupInfo`,
+  `getGroupMembersInfo`, `addUserToGroup`, `removeUserFromGroup`;
+  `zalo_group_settings` -> `POST /group-settings` -> `changeGroupName`,
+  `updateGroupSettings`; `zalo_group_roles` -> `POST /group-roles` ->
+  `addGroupDeputy`, `removeGroupDeputy`; `zalo_group_pending` ->
+  `POST /group-pending` -> `getPendingGroupMembers`,
+  `reviewPendingMemberRequest`; `zalo_group_link` -> `POST /group-link` ->
+  `getGroupLinkDetail`, `enableGroupLink`, `disableGroupLink`;
+  `zalo_create_group` -> `POST /create-group` -> `createGroup`;
+  `zalo_friend_requests` -> `POST /friend-requests` ->
+  `getSentFriendRequest`, `getFriendRecommendations` (only `recommType` 2,
+  received requests), `acceptFriendRequest`, `rejectFriendRequest`,
+  `sendFriendRequest`, `undoFriendRequest`; `zalo_friend_alias` ->
+  `POST /friend-alias` -> `getAliasList`, `changeFriendAlias`,
+  `removeFriendAlias`; `zalo_quick_reply` -> `POST /quick-reply` ->
+  `getQuickMessageList`, `addQuickMessage`, `updateQuickMessage`,
+  `removeQuickMessage`.
+  - All nine tools are always refused in a channel-originated run
+    (`channel_thread_out_of_scope`), group actions require an owner-approved
+    group, member and join-request writes take 1-20 ids, lists are capped at
+    100, reads use the read bucket, writes use the send bucket, and every write
+    description demands in-chat confirmation with a warning that it affects
+    real people or the account and may not be reversible. No names, ids, or
+    quick-reply text are logged.
+  - `updateGroupSettings` writes every supported key, so the bridge merges the
+    requested keys over the group's current settings; only the keys the caller
+    passed change. `addMemberOnly` is not part of zca-js 2.2.0's options.
+  - Skipped: `changeGroupAvatar` (avatar changes stay unexposed, per the
+    never-exposed list in this plan). zca-js 2.2.0 has no API that lists
+    received friend requests directly, so `list_received` filters
+    `getFriendRecommendations` to `recommType 2`. `createGroup` keeps its
+    zca-js behaviour of naming the group from `name` only, with no avatar.
+  - **Track P-B is complete (2026-11-12):** read tools, send extras, group
+    utilities, and the personal admin tools above have a strict schema, a
+    bridge validation test, and a scope/approval test.
 
 ## Track B — Zalo Bot
 

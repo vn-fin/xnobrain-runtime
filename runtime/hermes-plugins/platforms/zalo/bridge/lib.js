@@ -82,6 +82,52 @@ export const MUTE_DURATION_NAMES = Object.freeze([
 ]);
 export const LABEL_ACTIONS = Object.freeze(['list', 'add', 'remove']);
 
+/** Group administration bounds (plan 020 P-B phase 4). */
+export const MAX_GROUP_MEMBER_CHANGE = 20;
+export const MAX_PENDING_MEMBERS = 100;
+export const MAX_GROUP_NAME_LENGTH = 100;
+export const MAX_CREATE_GROUP_MEMBERS = 20;
+export const MAX_FRIEND_REQUEST_MESSAGE_LENGTH = 500;
+export const MAX_FRIEND_REQUESTS = 100;
+export const MAX_FRIEND_ALIAS_LENGTH = 64;
+export const MAX_ALIASES = 200;
+export const MAX_ALIAS_PAGE_SIZE = 200;
+export const MAX_QUICK_REPLY_KEYWORD_LENGTH = 100;
+export const MAX_QUICK_REPLY_TITLE_LENGTH = 1_000;
+export const MAX_QUICK_REPLIES = 200;
+
+/** Received friend requests are recommendation items of this type. */
+export const RECEIVED_FRIEND_REQUEST_TYPE = 2;
+
+/** `updateGroupSettings` booleans this bridge may change. */
+export const GROUP_SETTING_KEYS = Object.freeze([
+  'blockName',
+  'signAdminMsg',
+  'setTopicOnly',
+  'enableMsgHistory',
+  'joinAppr',
+  'lockCreatePost',
+  'lockCreatePoll',
+  'lockSendMsg',
+  'lockViewMember',
+]);
+
+export const GROUP_MEMBER_ACTIONS = Object.freeze(['list', 'add', 'remove']);
+export const GROUP_SETTING_ACTIONS = Object.freeze(['rename', 'update']);
+export const GROUP_ROLE_ACTIONS = Object.freeze(['add_deputy', 'remove_deputy']);
+export const GROUP_PENDING_ACTIONS = Object.freeze(['list', 'approve', 'reject']);
+export const GROUP_LINK_ACTIONS = Object.freeze(['get', 'enable', 'disable']);
+export const FRIEND_REQUEST_ACTIONS = Object.freeze([
+  'list_sent',
+  'list_received',
+  'accept',
+  'reject',
+  'send',
+  'undo',
+]);
+export const FRIEND_ALIAS_ACTIONS = Object.freeze(['list', 'set', 'remove']);
+export const QUICK_REPLY_ACTIONS = Object.freeze(['list', 'add', 'update', 'remove']);
+
 /** Cache lifetime for a group-info lookup (single group or batch). */
 export const GROUP_INFO_CACHE_TTL_MS = 10 * 60_000;
 
@@ -2740,4 +2786,515 @@ export function splitStyledChunks(msg, styles, size = MAX_CHUNK_LENGTH) {
     }
     return { msg: chunk, styles: chunkStyles };
   });
+}
+
+/* ------------------------------------------------------------------------- *
+ * Group administration (plan 020 P-B phase 4).
+ *
+ * Every validator here runs before an upstream call and every shaper drops
+ * fields the Runtime tool must not receive. Nothing in this section logs.
+ * ------------------------------------------------------------------------- */
+
+/** One deduplicated numeric-id list, or null when the input is unusable. */
+function idList(value, { min = 1, max = MAX_GROUP_MEMBER_CHANGE } = {}) {
+  if (!Array.isArray(value) || value.length < min || value.length > max) {
+    return null;
+  }
+  const ids = [];
+  for (const item of value) {
+    const id = numericId(item);
+    if (!id) {
+      return null;
+    }
+    if (!ids.includes(id)) {
+      ids.push(id);
+    }
+  }
+  return ids.length >= min ? ids : null;
+}
+
+function actionName(body, allowed, fallback) {
+  const value = body.action === undefined || body.action === null ? fallback : body.action;
+  return allowed.includes(value) ? value : '';
+}
+
+/** Validate a `POST /group-members` body. */
+export function validateGroupMembersBody(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const action = actionName(body, GROUP_MEMBER_ACTIONS, 'list');
+  const groupId = numericId(body.groupId);
+  if (!action || !groupId) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  if (action === 'list') {
+    if (body.memberIds !== undefined) {
+      return { ok: false, error: 'invalid_request' };
+    }
+    const memberLimit = boundedInteger(body.memberLimit, {
+      min: 0,
+      max: MAX_GROUP_MEMBER_LIMIT,
+      fallback: GROUP_INFO_BATCH_SIZE,
+    });
+    if (memberLimit === null) {
+      return { ok: false, error: 'invalid_request' };
+    }
+    return { ok: true, action, groupId, memberLimit };
+  }
+  const memberIds = idList(body.memberIds);
+  if (!memberIds) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  return { ok: true, action, groupId, memberIds };
+}
+
+/** Validate a `POST /group-settings` body. */
+export function validateGroupSettingsBody(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const action = actionName(body, GROUP_SETTING_ACTIONS, '');
+  const groupId = numericId(body.groupId);
+  if (!action || !groupId) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  if (action === 'rename') {
+    const name = trimmedText(body.name, MAX_GROUP_NAME_LENGTH);
+    if (!name) {
+      return { ok: false, error: 'invalid_request' };
+    }
+    return { ok: true, action, groupId, name };
+  }
+  const raw = body.settings;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const settings = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (!GROUP_SETTING_KEYS.includes(key) || typeof value !== 'boolean') {
+      return { ok: false, error: 'invalid_request' };
+    }
+    settings[key] = value;
+  }
+  if (Object.keys(settings).length === 0) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  return { ok: true, action, groupId, settings };
+}
+
+/** Validate a `POST /group-roles` body. */
+export function validateGroupRolesBody(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const action = actionName(body, GROUP_ROLE_ACTIONS, '');
+  const groupId = numericId(body.groupId);
+  const memberIds = idList(body.memberIds);
+  if (!action || !groupId || !memberIds) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  return { ok: true, action, groupId, memberIds };
+}
+
+/** Validate a `POST /group-pending` body. */
+export function validateGroupPendingBody(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const action = actionName(body, GROUP_PENDING_ACTIONS, 'list');
+  const groupId = numericId(body.groupId);
+  if (!action || !groupId) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  if (action === 'list') {
+    if (body.memberIds !== undefined) {
+      return { ok: false, error: 'invalid_request' };
+    }
+    const limit = boundedInteger(body.limit, {
+      min: 1,
+      max: MAX_PENDING_MEMBERS,
+      fallback: GROUP_INFO_BATCH_SIZE,
+    });
+    if (limit === null) {
+      return { ok: false, error: 'invalid_request' };
+    }
+    return { ok: true, action, groupId, limit };
+  }
+  const memberIds = idList(body.memberIds);
+  if (!memberIds) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  return { ok: true, action, groupId, memberIds };
+}
+
+/** Validate a `POST /group-link` body. */
+export function validateGroupLinkBody(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const action = actionName(body, GROUP_LINK_ACTIONS, 'get');
+  const groupId = numericId(body.groupId);
+  if (!action || !groupId) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  return { ok: true, action, groupId };
+}
+
+/** Validate a `POST /create-group` body. */
+export function validateCreateGroupBody(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const name = trimmedText(body.name, MAX_GROUP_NAME_LENGTH);
+  const memberIds = idList(body.memberIds, { max: MAX_CREATE_GROUP_MEMBERS });
+  if (!name || !memberIds) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  return { ok: true, name, memberIds };
+}
+
+/** Validate a `POST /friend-requests` body. */
+export function validateFriendRequestsBody(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const action = actionName(body, FRIEND_REQUEST_ACTIONS, '');
+  if (!action) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  if (action === 'list_sent' || action === 'list_received') {
+    const limit = boundedInteger(body.limit, {
+      min: 1,
+      max: MAX_FRIEND_REQUESTS,
+      fallback: GROUP_INFO_BATCH_SIZE,
+    });
+    if (limit === null) {
+      return { ok: false, error: 'invalid_request' };
+    }
+    return { ok: true, action, limit };
+  }
+  const userId = numericId(body.userId);
+  if (!userId) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  if (action !== 'send') {
+    return { ok: true, action, userId };
+  }
+  // Zalo accepts an empty friend-request note, so a missing message is ''.
+  const raw = body.message === undefined || body.message === null ? '' : body.message;
+  if (typeof raw !== 'string' || raw.trim().length > MAX_FRIEND_REQUEST_MESSAGE_LENGTH) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  return { ok: true, action, userId, message: raw.trim() };
+}
+
+/** Validate a `POST /friend-alias` body. */
+export function validateFriendAliasBody(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const action = actionName(body, FRIEND_ALIAS_ACTIONS, 'list');
+  if (!action) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  if (action === 'list') {
+    const page = boundedInteger(body.page, { min: 1, max: 10_000, fallback: 1 });
+    const count = boundedInteger(body.count, {
+      min: 1,
+      max: MAX_ALIAS_PAGE_SIZE,
+      fallback: GROUP_INFO_BATCH_SIZE,
+    });
+    if (page === null || count === null) {
+      return { ok: false, error: 'invalid_request' };
+    }
+    return { ok: true, action, page, count };
+  }
+  const friendId = numericId(body.friendId);
+  if (!friendId) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  if (action === 'remove') {
+    return { ok: true, action, friendId };
+  }
+  const alias = trimmedText(body.alias, MAX_FRIEND_ALIAS_LENGTH);
+  if (!alias) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  return { ok: true, action, friendId, alias };
+}
+
+/** Validate a `POST /quick-reply` body. */
+export function validateQuickReplyBody(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  const action = actionName(body, QUICK_REPLY_ACTIONS, 'list');
+  if (!action) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  if (action === 'list') {
+    return { ok: true, action };
+  }
+  const itemId = boundedInteger(body.itemId, {
+    min: 1,
+    max: Number.MAX_SAFE_INTEGER,
+    fallback: 0,
+  });
+  if (action === 'remove') {
+    if (!itemId) {
+      return { ok: false, error: 'invalid_request' };
+    }
+    return { ok: true, action, itemId };
+  }
+  const keyword = trimmedText(body.keyword, MAX_QUICK_REPLY_KEYWORD_LENGTH);
+  const title = trimmedText(body.title, MAX_QUICK_REPLY_TITLE_LENGTH);
+  if (!keyword || !title) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  if (action === 'add') {
+    return { ok: true, action, keyword, title };
+  }
+  if (!itemId) {
+    return { ok: false, error: 'invalid_request' };
+  }
+  return { ok: true, action, itemId, keyword, title };
+}
+
+/**
+ * Shape one group and its member list for the Runtime tool.
+ *
+ * @param {object} group zca-js `GroupInfo`
+ * @param {Record<string, object>} profiles `getGroupMembersInfo` profiles map
+ */
+export function groupMembersRecord(group, profiles, { memberLimit = GROUP_INFO_BATCH_SIZE } = {}) {
+  const info = group || {};
+  const memberIds = Array.isArray(info.memberIds) ? info.memberIds : [];
+  const limit = Math.max(
+    0,
+    Math.min(MAX_GROUP_MEMBER_LIMIT, Math.floor(Number(memberLimit) || 0)),
+  );
+  const map = profiles && typeof profiles === 'object' ? profiles : {};
+  const members = [];
+  for (const memberId of memberIds) {
+    if (members.length >= limit) {
+      break;
+    }
+    const id = normalizeMessageId(memberId);
+    if (!THREAD_ID_PATTERN.test(id)) {
+      continue;
+    }
+    const profile = map[id] || {};
+    members.push({
+      user_id: id,
+      display_name: String(profile.displayName || profile.zaloName || ''),
+      role: groupMemberRole(info, id),
+    });
+  }
+  return {
+    group_id: normalizeMessageId(info.groupId),
+    name: String(info.name || ''),
+    member_count: Number(info.totalMember) || memberIds.length,
+    members,
+    // Zalo may cap `memberIds` itself and say so in `hasMoreMember`.
+    has_more: memberIds.length > members.length || Number(info.hasMoreMember) === 1,
+  };
+}
+
+/** Current `updateGroupSettings` booleans for the tool result. */
+export function groupSettingsRecord(setting) {
+  const source = setting && typeof setting === 'object' ? setting : {};
+  const record = {};
+  for (const key of GROUP_SETTING_KEYS) {
+    record[key] = Boolean(source[key]);
+  }
+  return record;
+}
+
+/**
+ * Merge requested group settings over the current ones.
+ *
+ * `updateGroupSettings` writes every supported key, so an unmentioned key must
+ * keep its current value instead of being reset to 0.
+ */
+export function groupSettingsOptions(current, requested) {
+  const source = current && typeof current === 'object' ? current : {};
+  const wanted = requested && typeof requested === 'object' ? requested : {};
+  const options = {};
+  for (const key of GROUP_SETTING_KEYS) {
+    options[key] =
+      wanted[key] === undefined ? Boolean(source[key]) : Boolean(wanted[key]);
+  }
+  return options;
+}
+
+/** Shape `getPendingGroupMembers` users for the Runtime tool. */
+export function pendingMemberRecords(users, { limit = MAX_PENDING_MEMBERS } = {}) {
+  const records = [];
+  const cap = Math.max(1, Math.min(MAX_PENDING_MEMBERS, Math.floor(Number(limit) || 0)));
+  for (const item of Array.isArray(users) ? users : []) {
+    const userId = normalizeMessageId(item?.uid);
+    if (!THREAD_ID_PATTERN.test(userId)) {
+      continue;
+    }
+    records.push({
+      user_id: userId,
+      display_name: String(item?.dpn || ''),
+    });
+    if (records.length >= cap) {
+      break;
+    }
+  }
+  return records;
+}
+
+/** Name one `reviewPendingMemberRequest` status code. */
+export function reviewStatusName(value) {
+  switch (Number(value)) {
+    case 0:
+      return 'success';
+    case 170:
+      return 'not_pending';
+    case 178:
+      return 'already_member';
+    case 166:
+      return 'no_permission';
+    default:
+      return 'unknown';
+  }
+}
+
+/** Shape `reviewPendingMemberRequest` results for the requested members only. */
+export function reviewResults(memberIds, response) {
+  const map = response && typeof response === 'object' ? response : {};
+  const results = [];
+  for (const value of Array.isArray(memberIds) ? memberIds : []) {
+    const userId = normalizeMessageId(value);
+    if (!THREAD_ID_PATTERN.test(userId)) {
+      continue;
+    }
+    results.push({ user_id: userId, status: reviewStatusName(map[userId]) });
+  }
+  return results;
+}
+
+/** Shape the ids an add/remove member call changed and refused. */
+export function memberChangeRecord(memberIds, failedIds) {
+  const requested = [];
+  for (const value of Array.isArray(memberIds) ? memberIds : []) {
+    const id = normalizeMessageId(value);
+    if (THREAD_ID_PATTERN.test(id) && !requested.includes(id)) {
+      requested.push(id);
+    }
+  }
+  const failed = [];
+  for (const value of Array.isArray(failedIds) ? failedIds : []) {
+    const id = normalizeMessageId(value);
+    if (requested.includes(id) && !failed.includes(id)) {
+      failed.push(id);
+    }
+  }
+  return {
+    requested: requested.length,
+    changed: requested.filter((id) => !failed.includes(id)),
+    failed,
+  };
+}
+
+/** Shape `getSentFriendRequest` for the Runtime tool. */
+export function sentFriendRequestRecords(response, { limit = MAX_FRIEND_REQUESTS } = {}) {
+  const map = response && typeof response === 'object' ? response : {};
+  const records = [];
+  for (const [key, item] of Object.entries(map)) {
+    const userId = normalizeMessageId(item?.userId ?? key);
+    if (!THREAD_ID_PATTERN.test(userId)) {
+      continue;
+    }
+    records.push({
+      user_id: userId,
+      display_name: String(item?.displayName || item?.zaloName || ''),
+      message: String(item?.fReqInfo?.message || '').slice(
+        0,
+        MAX_FRIEND_REQUEST_MESSAGE_LENGTH,
+      ),
+      ts: Number(item?.fReqInfo?.time) || 0,
+    });
+    if (records.length >= limit) {
+      break;
+    }
+  }
+  return records;
+}
+
+/** Shape received friend requests from `getFriendRecommendations`. */
+export function receivedFriendRequestRecords(
+  response,
+  { limit = MAX_FRIEND_REQUESTS } = {},
+) {
+  const items = Array.isArray(response?.recommItems) ? response.recommItems : [];
+  const records = [];
+  for (const item of items) {
+    const info = item?.dataInfo;
+    if (!info || Number(info.recommType) !== RECEIVED_FRIEND_REQUEST_TYPE) {
+      continue;
+    }
+    const userId = normalizeMessageId(info.userId);
+    if (!THREAD_ID_PATTERN.test(userId)) {
+      continue;
+    }
+    records.push({
+      user_id: userId,
+      display_name: String(info.displayName || info.zaloName || ''),
+      message: String(info.recommInfo?.message || '').slice(
+        0,
+        MAX_FRIEND_REQUEST_MESSAGE_LENGTH,
+      ),
+      ts: Number(info.recommTime) || 0,
+    });
+    if (records.length >= limit) {
+      break;
+    }
+  }
+  return records;
+}
+
+/** Shape `getAliasList` for the Runtime tool. */
+export function aliasRecords(response, { limit = MAX_ALIASES } = {}) {
+  const records = [];
+  for (const item of Array.isArray(response?.items) ? response.items : []) {
+    const userId = normalizeMessageId(item?.userId);
+    if (!THREAD_ID_PATTERN.test(userId)) {
+      continue;
+    }
+    records.push({
+      user_id: userId,
+      alias: String(item?.alias || ''),
+    });
+    if (records.length >= limit) {
+      break;
+    }
+  }
+  return records;
+}
+
+/** Shape `getQuickMessageList`, `addQuickMessage`, `updateQuickMessage`. */
+export function quickReplyRecords(items, { limit = MAX_QUICK_REPLIES } = {}) {
+  const records = [];
+  for (const item of Array.isArray(items) ? items : []) {
+    const itemId = Number(item?.id);
+    if (!Number.isInteger(itemId) || itemId <= 0) {
+      continue;
+    }
+    records.push({
+      item_id: itemId,
+      keyword: String(item?.keyword || ''),
+      title: String(item?.message?.title || ''),
+      created_time: Number(item?.createdTime) || 0,
+      updated_time: Number(item?.lastModified) || 0,
+    });
+    if (records.length >= limit) {
+      break;
+    }
+  }
+  return records;
 }

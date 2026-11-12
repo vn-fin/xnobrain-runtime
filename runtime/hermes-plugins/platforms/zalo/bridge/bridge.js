@@ -30,6 +30,15 @@
  *   GET  /labels     - conversation labels
  *   POST /labels     - add or remove one conversation from a label
  *   POST /unread-mark - add or remove an unread mark
+ *   POST /group-members - list, add, or remove group members
+ *   POST /group-settings - rename a group or change its settings
+ *   POST /group-roles - add or remove a group deputy
+ *   POST /group-pending - list, approve, or reject join requests
+ *   POST /group-link - read, enable, or disable a group invite link
+ *   POST /create-group - create a group with known members
+ *   POST /friend-requests - list, accept, reject, send, or undo friend requests
+ *   POST /friend-alias - list, set, or remove a friend alias
+ *   POST /quick-reply - list, add, update, or remove quick messages
  *   POST /send        - chunked text message (optional quote and mentions)
  *   POST /send-media  - image, file, video, or voice attachment
  *   POST /send-link   - link preview
@@ -95,6 +104,7 @@ import {
   MAX_STICKER_SEARCH_LIMIT,
   READ_RATE_LIMIT_PER_MINUTE,
   SEND_RATE_LIMIT_PER_MINUTE,
+  aliasRecords,
   applyLabelChange,
   chunkList,
   classifyCloseCode,
@@ -108,6 +118,9 @@ import {
   groupHistoryRecords,
   groupInfoCacheKey,
   groupInfoRecord,
+  groupMembersRecord,
+  groupSettingsOptions,
+  groupSettingsRecord,
   historyEntry,
   inboundQueueItem,
   isLoopback,
@@ -115,6 +128,7 @@ import {
   labelEntries,
   markdownToZalo,
   mediaFromContent,
+  memberChangeRecord,
   mentionPayloads,
   mentionsSelf,
   messageRef,
@@ -124,17 +138,22 @@ import {
   noteRecord,
   noteRecords,
   parseBearerToken,
+  pendingMemberRecords,
   pollRecord,
   pushToQueue,
+  quickReplyRecords,
   quotePayload,
   quotesSelf,
   readHistoryRecords,
+  receivedFriendRequestRecords,
   receiptFields,
   reloginDelayMs,
   rememberCursor,
   rememberGroupName,
   reminderRecords,
+  reviewResults,
   selectHistoryRecords,
+  sentFriendRequestRecords,
   shouldQueueMessage,
   splitStyledChunks,
   trimHistoryLines,
@@ -142,7 +161,16 @@ import {
   unreadRecords,
   userInfoRecord,
   validateBoardBody,
+  validateCreateGroupBody,
   validateForwardBody,
+  validateFriendAliasBody,
+  validateFriendRequestsBody,
+  validateGroupLinkBody,
+  validateGroupMembersBody,
+  validateGroupPendingBody,
+  validateGroupRolesBody,
+  validateGroupSettingsBody,
+  validateQuickReplyBody,
   validateGroupHistoryBody,
   validateGroupInfoBody,
   validateHistoryBody,
@@ -1961,6 +1989,392 @@ app.post('/unread-mark', async (req, res) => {
     return res.json({ success: true, unread: body.unread });
   } catch {
     return fail(res, 500, 'send_failed');
+  }
+});
+
+// Read one group through the info gate; the admin endpoints merge or list
+// against fresh data because a previous write here may have changed it.
+async function loadGroupInfo(groupId) {
+  const info = await infoGate.run(
+    groupInfoCacheKey([groupId]),
+    () => api.getGroupInfo([groupId]),
+    { ttlMs: GROUP_INFO_CACHE_TTL_MS, force: true },
+  );
+  const group = info?.gridInfoMap?.[groupId] || null;
+  if (group) {
+    rememberGroupName(groupNames, groupId, String(group.name || ''));
+  }
+  return group;
+}
+
+app.post('/group-members', async (req, res) => {
+  const body = validateGroupMembersBody(req.body);
+  if (!body.ok) {
+    return fail(res, 400, 'invalid_request');
+  }
+  if (!isConnected()) {
+    return fail(res, 503, 'not_connected');
+  }
+  if (body.action === 'list') {
+    if (!readBucket.take()) {
+      return fail(res, 429, 'rate_limited');
+    }
+    try {
+      const group = await loadGroupInfo(body.groupId);
+      if (!group) {
+        return fail(res, 404, 'not_found');
+      }
+      const memberIds = Array.isArray(group.memberIds)
+        ? group.memberIds.slice(0, body.memberLimit)
+        : [];
+      let profiles = null;
+      if (memberIds.length) {
+        profiles = await infoGate.run(
+          `groupmembers:${body.groupId}:${memberIds.join(',')}`,
+          () => api.getGroupMembersInfo(memberIds),
+          { ttlMs: GROUP_INFO_CACHE_TTL_MS },
+        );
+      }
+      return res.json(
+        groupMembersRecord(group, profiles?.profiles, {
+          memberLimit: body.memberLimit,
+        }),
+      );
+    } catch (error) {
+      return fromInfoError(res, error);
+    }
+  }
+  if (!sendBucket.take()) {
+    return fail(res, 429, 'rate_limited');
+  }
+  try {
+    const response =
+      body.action === 'add'
+        ? await api.addUserToGroup(body.memberIds, body.groupId)
+        : await api.removeUserFromGroup(body.memberIds, body.groupId);
+    return res.json({
+      success: true,
+      action: body.action,
+      ...memberChangeRecord(body.memberIds, response?.errorMembers),
+    });
+  } catch {
+    return fail(res, 500, 'send_failed');
+  }
+});
+
+app.post('/group-settings', async (req, res) => {
+  const body = validateGroupSettingsBody(req.body);
+  if (!body.ok) {
+    return fail(res, 400, 'invalid_request');
+  }
+  if (!isConnected()) {
+    return fail(res, 503, 'not_connected');
+  }
+  if (!sendBucket.take()) {
+    return fail(res, 429, 'rate_limited');
+  }
+  try {
+    if (body.action === 'rename') {
+      const response = await api.changeGroupName(body.name, body.groupId);
+      const status = Number(response?.status);
+      rememberGroupName(groupNames, body.groupId, body.name);
+      return res.json({
+        success: true,
+        action: body.action,
+        name: body.name,
+        status: Number.isFinite(status) ? status : null,
+        renamed: !Number.isFinite(status) || status === 0,
+      });
+    }
+    // zca-js writes every setting key, so merge over the current values. The
+    // merge is one upstream read, so it takes a read credit as well.
+    if (!readBucket.take()) {
+      return fail(res, 429, 'rate_limited');
+    }
+    const group = await loadGroupInfo(body.groupId);
+    if (!group) {
+      return fail(res, 404, 'not_found');
+    }
+    const options = groupSettingsOptions(group.setting, body.settings);
+    await api.updateGroupSettings(options, body.groupId);
+    return res.json({
+      success: true,
+      action: body.action,
+      settings: groupSettingsRecord(options),
+    });
+  } catch (error) {
+    return fromInfoError(res, error);
+  }
+});
+
+app.post('/group-roles', async (req, res) => {
+  const body = validateGroupRolesBody(req.body);
+  if (!body.ok) {
+    return fail(res, 400, 'invalid_request');
+  }
+  if (!isConnected()) {
+    return fail(res, 503, 'not_connected');
+  }
+  if (!sendBucket.take()) {
+    return fail(res, 429, 'rate_limited');
+  }
+  try {
+    if (body.action === 'add_deputy') {
+      await api.addGroupDeputy(body.memberIds, body.groupId);
+    } else {
+      await api.removeGroupDeputy(body.memberIds, body.groupId);
+    }
+    return res.json({
+      success: true,
+      action: body.action,
+      ...memberChangeRecord(body.memberIds, null),
+    });
+  } catch {
+    return fail(res, 500, 'send_failed');
+  }
+});
+
+app.post('/group-pending', async (req, res) => {
+  const body = validateGroupPendingBody(req.body);
+  if (!body.ok) {
+    return fail(res, 400, 'invalid_request');
+  }
+  if (!isConnected()) {
+    return fail(res, 503, 'not_connected');
+  }
+  if (body.action === 'list') {
+    if (!readBucket.take()) {
+      return fail(res, 429, 'rate_limited');
+    }
+    try {
+      const response = await api.getPendingGroupMembers(body.groupId);
+      const users = Array.isArray(response?.users) ? response.users : [];
+      const pending = pendingMemberRecords(users, { limit: body.limit });
+      return res.json({
+        pending,
+        truncated: users.length > pending.length,
+      });
+    } catch (error) {
+      return fromInfoError(res, error);
+    }
+  }
+  if (!sendBucket.take()) {
+    return fail(res, 429, 'rate_limited');
+  }
+  try {
+    const response = await api.reviewPendingMemberRequest(
+      { members: body.memberIds, isApprove: body.action === 'approve' },
+      body.groupId,
+    );
+    return res.json({
+      success: true,
+      action: body.action,
+      results: reviewResults(body.memberIds, response),
+    });
+  } catch {
+    return fail(res, 500, 'send_failed');
+  }
+});
+
+app.post('/group-link', async (req, res) => {
+  const body = validateGroupLinkBody(req.body);
+  if (!body.ok) {
+    return fail(res, 400, 'invalid_request');
+  }
+  if (!isConnected()) {
+    return fail(res, 503, 'not_connected');
+  }
+  const bucket = body.action === 'get' ? readBucket : sendBucket;
+  if (!bucket.take()) {
+    return fail(res, 429, 'rate_limited');
+  }
+  try {
+    let detail;
+    if (body.action === 'enable') {
+      detail = await api.enableGroupLink(body.groupId);
+    } else if (body.action === 'disable') {
+      await api.disableGroupLink(body.groupId);
+      detail = { enabled: 0, link: '', expiration_date: 0 };
+    } else {
+      detail = await api.getGroupLinkDetail(body.groupId);
+    }
+    return res.json({
+      success: true,
+      action: body.action,
+      enabled: Number(detail?.enabled) === 1,
+      link: String(detail?.link || ''),
+      expiration_date: Number(detail?.expiration_date) || 0,
+    });
+  } catch (error) {
+    return fromInfoError(res, error);
+  }
+});
+
+app.post('/create-group', async (req, res) => {
+  const body = validateCreateGroupBody(req.body);
+  if (!body.ok) {
+    return fail(res, 400, 'invalid_request');
+  }
+  if (!isConnected()) {
+    return fail(res, 503, 'not_connected');
+  }
+  if (!sendBucket.take()) {
+    return fail(res, 429, 'rate_limited');
+  }
+  try {
+    const group = await api.createGroup({
+      name: body.name,
+      members: body.memberIds,
+    });
+    const groupId = normalizeMessageId(group?.groupId);
+    if (groupId) {
+      rememberGroupName(groupNames, groupId, body.name);
+    }
+    return res.json({
+      success: true,
+      group_id: groupId,
+      name: body.name,
+      ...memberChangeRecord(body.memberIds, group?.errorMembers),
+    });
+  } catch {
+    return fail(res, 500, 'send_failed');
+  }
+});
+
+app.post('/friend-requests', async (req, res) => {
+  const body = validateFriendRequestsBody(req.body);
+  if (!body.ok) {
+    return fail(res, 400, 'invalid_request');
+  }
+  if (!isConnected()) {
+    return fail(res, 503, 'not_connected');
+  }
+  const read = body.action === 'list_sent' || body.action === 'list_received';
+  const bucket = read ? readBucket : sendBucket;
+  if (!bucket.take()) {
+    return fail(res, 429, 'rate_limited');
+  }
+  try {
+    if (body.action === 'list_sent') {
+      const sent = await api.getSentFriendRequest();
+      return res.json({
+        success: true,
+        action: body.action,
+        sent: sentFriendRequestRecords(sent, { limit: body.limit }),
+      });
+    }
+    if (body.action === 'list_received') {
+      // `getFriendRecommendations` mixes suggestions with received requests;
+      // only recommType 2 is an actual incoming request.
+      const recommendations = await api.getFriendRecommendations();
+      return res.json({
+        success: true,
+        action: body.action,
+        received: receivedFriendRequestRecords(recommendations, {
+          limit: body.limit,
+        }),
+      });
+    }
+    if (body.action === 'accept') {
+      await api.acceptFriendRequest(body.userId);
+    } else if (body.action === 'reject') {
+      await api.rejectFriendRequest(body.userId);
+    } else if (body.action === 'undo') {
+      await api.undoFriendRequest(body.userId);
+    } else {
+      await api.sendFriendRequest(body.message, body.userId);
+    }
+    return res.json({
+      success: true,
+      action: body.action,
+      user_id: body.userId,
+    });
+  } catch (error) {
+    return fromInfoError(res, error);
+  }
+});
+
+app.post('/friend-alias', async (req, res) => {
+  const body = validateFriendAliasBody(req.body);
+  if (!body.ok) {
+    return fail(res, 400, 'invalid_request');
+  }
+  if (!isConnected()) {
+    return fail(res, 503, 'not_connected');
+  }
+  const read = body.action === 'list';
+  const bucket = read ? readBucket : sendBucket;
+  if (!bucket.take()) {
+    return fail(res, 429, 'rate_limited');
+  }
+  try {
+    if (body.action === 'list') {
+      const response = await api.getAliasList(body.count, body.page);
+      return res.json({
+        success: true,
+        action: body.action,
+        aliases: aliasRecords(response),
+      });
+    }
+    if (body.action === 'set') {
+      await api.changeFriendAlias(body.alias, body.friendId);
+    } else {
+      await api.removeFriendAlias(body.friendId);
+    }
+    return res.json({
+      success: true,
+      action: body.action,
+      friend_id: body.friendId,
+      alias: body.action === 'set' ? body.alias : '',
+    });
+  } catch (error) {
+    return fromInfoError(res, error);
+  }
+});
+
+app.post('/quick-reply', async (req, res) => {
+  const body = validateQuickReplyBody(req.body);
+  if (!body.ok) {
+    return fail(res, 400, 'invalid_request');
+  }
+  if (!isConnected()) {
+    return fail(res, 503, 'not_connected');
+  }
+  const read = body.action === 'list';
+  const bucket = read ? readBucket : sendBucket;
+  if (!bucket.take()) {
+    return fail(res, 429, 'rate_limited');
+  }
+  try {
+    if (body.action === 'list') {
+      const response = await api.getQuickMessageList();
+      return res.json({
+        success: true,
+        action: body.action,
+        quick_replies: quickReplyRecords(response?.items),
+      });
+    }
+    if (body.action === 'remove') {
+      await api.removeQuickMessage(body.itemId);
+      return res.json({
+        success: true,
+        action: body.action,
+        item_id: body.itemId,
+        removed: true,
+      });
+    }
+    const payload = { keyword: body.keyword, title: body.title };
+    const response =
+      body.action === 'add'
+        ? await api.addQuickMessage(payload)
+        : await api.updateQuickMessage(payload, body.itemId);
+    return res.json({
+      success: true,
+      action: body.action,
+      quick_reply: quickReplyRecords([response?.item])[0] || null,
+    });
+  } catch (error) {
+    return fromInfoError(res, error);
   }
 });
 

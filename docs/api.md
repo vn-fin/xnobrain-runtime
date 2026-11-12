@@ -896,6 +896,15 @@ the platform.
 | `zalo_poll_detail` | one group poll | none |
 | `zalo_create_poll`, `zalo_create_note` | approved group poll / note (zca-js notes hold a title only) | in chat, before every change |
 | `zalo_create_reminder`, `zalo_pin_conversation`, `zalo_mute`, `zalo_labels`, `zalo_mark_unread` | reminder, pin, mute, label, or unread mark on an approved group or allowed DM | in chat, before every change |
+| `zalo_group_members` | list members, or add/remove up to 20 members, in an approved group | in chat, before every add or remove |
+| `zalo_group_settings` | rename an approved group or change the given settings only | in chat, before every change |
+| `zalo_group_roles` | add or remove group deputies | in chat, before every change |
+| `zalo_group_pending` | list pending join requests, or approve/reject up to 20 | in chat, before every review |
+| `zalo_group_link` | read, enable, or disable a group invite link | in chat, before enabling or disabling |
+| `zalo_create_group` | create a group from a name and 1-20 existing users | in chat, before every create |
+| `zalo_friend_requests` | list sent/received requests, or accept, reject, send, or undo one | in chat, before every change |
+| `zalo_friend_alias` | list, set, or remove one friend alias | in chat, before every change |
+| `zalo_quick_reply` | list, add, update, or remove one quick message | in chat, before every change |
 | `zalo_send_image` | image from `<profile>/workspace` | in chat, before every send |
 | `zalo_send_file`, `zalo_send_video`, `zalo_send_voice` | file, MP4 video, or audio recording from `<profile>/workspace` | in chat, before every send |
 | `zalo_send_sticker` | sticker search then send | in chat, before every send |
@@ -962,6 +971,27 @@ most 1000 characters; a note title is at most 1000 characters, and zca-js 2.2.0
 notes carry no body. Every change needs in-chat confirmation and uses the
 bridge's send bucket. All seven tools are refused in a run started from a
 channel thread (`channel_thread_out_of_scope`).
+
+The personal group and account administration tools are always refused in a
+run started from a channel thread. `zalo_group_members` lists an approved
+group's members (id, display name, role) or adds/removes up to 20 numeric user
+ids; `zalo_group_settings` renames an approved group or changes only the given
+`block_name`, `sign_admin_msg`, `set_topic_only`, `enable_msg_history`,
+`join_appr`, `lock_create_post`, `lock_create_poll`, `lock_send_msg`, and
+`lock_view_member` settings; `zalo_group_roles` adds or removes deputies;
+`zalo_group_pending` lists pending join requests or approves/rejects up to 20;
+`zalo_group_link` reads, enables, or disables the invite link;
+`zalo_create_group` creates a group from a name and 1 to 20 existing users;
+`zalo_friend_requests` lists sent or received requests (received requests come
+from `getFriendRecommendations`, which mixes them with suggestions) and
+accepts, rejects, sends, or undoes one; `zalo_friend_alias` lists, sets, or
+removes one alias; and `zalo_quick_reply` lists, adds, updates, or removes one
+keyword/title pair. Group actions need an owner-approved group, every member
+write takes 1 to 20 ids, lists return at most 100 entries, reads use the bridge
+read bucket, writes use the send bucket, and only settings passed to
+`zalo_group_settings` change. Changing a group owner, disbanding or leaving a
+group, blocking users, deleting chats, account/avatar/profile changes, bank and
+catalog APIs, auto-reply, and `custom` are never exposed.
 
 ### Private gateway turns
 
