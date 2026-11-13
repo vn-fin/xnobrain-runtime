@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "catalog_version": "2026-11-13.1",
+  "catalog_version": "2026-11-13.2",
   "coverage_reference": {
     "repository": "nightly-labs/openbot",
     "commit": "21369e1eec420772a7db9f6bbfeae2ef9b3ab83a",
@@ -197,58 +197,6 @@
       "recipe_revision": 2
     },
     {
-      "id": "obsidian",
-      "name": "Obsidian",
-      "publisher": "Obsidian ecosystem",
-      "publisher_kind": "community",
-      "category": "productivity",
-      "summary": {
-        "en": "Access a local vault through the Obsidian desktop application and its Local REST API plugin.",
-        "vi": "Truy cập vault cục bộ qua ứng dụng Obsidian và plugin Local REST API.",
-        "zh": "通过 Obsidian 桌面应用及 Local REST API 插件访问本地 vault。",
-        "es": "Accede a una bóveda local mediante la aplicación de escritorio Obsidian y su complemento Local REST API.",
-        "fr": "Accédez à un coffre local via l’application de bureau Obsidian et son module Local REST API.",
-        "de": "Greifen Sie über die Obsidian-Desktop-App und das Local-REST-API-Plugin auf einen lokalen Tresor zu.",
-        "ja": "ObsidianデスクトップアプリとLocal REST APIプラグインを通じてローカル保管庫にアクセスします。"
-      },
-      "examples": {
-        "en": [
-          "Search my vault for notes about the Q3 launch.",
-          "Summarize my daily notes from last week.",
-          "Create a note with today's reading list."
-        ],
-        "vi": [
-          "Tìm trong vault các ghi chú về đợt ra mắt quý 3.",
-          "Tóm tắt ghi chú hằng ngày của tôi tuần trước.",
-          "Tạo một ghi chú với danh sách đọc hôm nay."
-        ],
-        "zh": [
-          "在我的知识库中搜索关于第三季度发布的笔记。",
-          "总结我上周的每日笔记。",
-          "创建一条记录今天阅读清单的笔记。"
-        ]
-      },
-      "homepage": "https://obsidian.md",
-      "documentation": "https://github.com/coddingtonbear/obsidian-local-rest-api",
-      "iconUrl": "https://obsidian.md/apple-touch-icon.png",
-      "installability": "unsupported",
-      "reason_code": "desktop_application_required",
-      "mcp": {
-        "transport": "stdio",
-        "package": {
-          "name": "obsidian-mcp-server",
-          "version": "3.7.2"
-        },
-        "auth": {
-          "kind": "api_key",
-          "field": "token",
-          "delivery": "env",
-          "environment_name": "OBSIDIAN_API_KEY"
-        }
-      },
-      "recipe_revision": 1
-    },
-    {
       "id": "atlassian",
       "name": "Atlassian",
       "publisher": "Atlassian",
@@ -439,140 +387,58 @@
     {
       "id": "figma",
       "name": "Figma",
-      "publisher": "Figma",
-      "publisher_kind": "official",
+      "publisher": "Framelink",
+      "publisher_kind": "unverified",
       "category": "design",
       "summary": {
-        "en": "Read design context from the local Figma desktop MCP server.",
-        "vi": "Đọc ngữ cảnh thiết kế từ MCP server cục bộ của ứng dụng Figma.",
-        "zh": "从本地 Figma 桌面 MCP 服务读取设计上下文。",
-        "es": "Lee el contexto de diseño desde el servidor MCP local de Figma para escritorio.",
-        "fr": "Lisez le contexte de conception depuis le serveur MCP local de Figma Desktop.",
-        "de": "Lesen Sie Designkontext über den lokalen Figma-Desktop-MCP-Server aus.",
-        "ja": "FigmaデスクトップのローカルMCPサーバーからデザイン情報を読み取ります。"
+        "en": "Read Figma files, frames and images through the Figma REST API with a personal access token.",
+        "vi": "Đọc tệp, frame và hình ảnh Figma qua Figma REST API bằng personal access token.",
+        "zh": "使用个人访问令牌，通过 Figma REST API 读取 Figma 文件、框架和图片。",
+        "es": "Lee archivos, marcos e imágenes de Figma mediante la API REST de Figma con un token de acceso personal.",
+        "fr": "Lisez les fichiers, cadres et images Figma via l’API REST de Figma avec un jeton d’accès personnel.",
+        "de": "Lesen Sie Figma-Dateien, Frames und Bilder über die Figma-REST-API mit einem persönlichen Zugriffstoken.",
+        "ja": "個人アクセストークンを使い、Figma REST API 経由で Figma のファイル、フレーム、画像を読み取ります。"
       },
       "examples": {
         "en": [
-          "Describe the layout and components in the selected frame.",
-          "Which design tokens does this screen use?",
-          "Turn the selected frame into a React component."
+          "Describe the layout and components in this Figma frame link.",
+          "Which colors and text styles does this design use?",
+          "Turn this Figma frame into a React component."
         ],
         "vi": [
-          "Mô tả bố cục và các component trong frame đang chọn.",
-          "Màn hình này dùng những design token nào?",
-          "Chuyển frame đang chọn thành một component React."
+          "Mô tả bố cục và các component trong link frame Figma này.",
+          "Thiết kế này dùng những màu và kiểu chữ nào?",
+          "Chuyển frame Figma này thành một component React."
         ],
         "zh": [
-          "描述所选框架的布局和组件。",
-          "这个界面使用了哪些设计令牌？",
-          "把所选框架转换成一个 React 组件。"
+          "描述这个 Figma 框架链接中的布局和组件。",
+          "这个设计使用了哪些颜色和文字样式？",
+          "把这个 Figma 框架转换成一个 React 组件。"
         ]
       },
       "homepage": "https://www.figma.com",
-      "documentation": "https://developers.figma.com/docs/figma-mcp-server/local-server-installation/",
+      "documentation": "https://github.com/GLips/Figma-Context-MCP",
       "iconUrl": "https://static.figma.com/app/icon/2/touch-180.png",
-      "installability": "unsupported",
-      "reason_code": "desktop_application_required",
-      "mcp": {
-        "transport": "http",
-        "endpoint_mode": "loopback",
-        "auth": {
-          "kind": "local"
-        }
-      },
-      "recipe_revision": 1
-    },
-    {
-      "id": "paper",
-      "name": "Paper",
-      "publisher": "Paper",
-      "publisher_kind": "official",
-      "category": "design",
-      "summary": {
-        "en": "Use the open design file through the Paper desktop application.",
-        "vi": "Làm việc với tệp thiết kế đang mở qua ứng dụng Paper trên máy tính.",
-        "zh": "通过 Paper 桌面应用处理当前打开的设计文件。",
-        "es": "Usa el archivo de diseño abierto en la aplicación Paper de escritorio.",
-        "fr": "Utilisez le fichier de conception ouvert dans l’application de bureau Paper.",
-        "de": "Verwenden Sie die geöffnete Designdatei in der Paper-Desktop-App.",
-        "ja": "Paperデスクトップアプリで開いているデザインファイルを使います。"
-      },
-      "examples": {
-        "en": [
-          "Summarize the open design file.",
-          "List the text styles used in this document.",
-          "Suggest a cleaner layout for the current page."
-        ],
-        "vi": [
-          "Tóm tắt file thiết kế đang mở.",
-          "Liệt kê các kiểu chữ dùng trong tài liệu này.",
-          "Gợi ý bố cục gọn gàng hơn cho trang hiện tại."
-        ],
-        "zh": [
-          "总结当前打开的设计文件。",
-          "列出这个文档中使用的文字样式。",
-          "为当前页面建议一个更简洁的布局。"
-        ]
-      },
-      "homepage": "https://paper.design",
-      "documentation": "https://paper.design/docs/mcp",
-      "iconUrl": "https://paper.design/apple-touch-icon.png",
-      "installability": "unsupported",
-      "reason_code": "desktop_application_required",
+      "installability": "installable",
+      "reason_code": "compatible",
       "mcp": {
         "transport": "stdio",
-        "endpoint_mode": "desktop_cli",
+        "package": {
+          "name": "figma-developer-mcp",
+          "version": "0.13.2",
+          "args": [
+            "--stdio",
+            "--no-telemetry"
+          ]
+        },
         "auth": {
-          "kind": "local"
+          "kind": "api_key",
+          "field": "token",
+          "delivery": "env",
+          "environment_name": "FIGMA_API_KEY"
         }
       },
-      "recipe_revision": 1
-    },
-    {
-      "id": "apple-apps",
-      "name": "Apple apps",
-      "publisher": "Community maintainers",
-      "publisher_kind": "community",
-      "category": "productivity",
-      "summary": {
-        "en": "Automate selected Apple applications on a local macOS desktop.",
-        "vi": "Tự động hóa một số ứng dụng Apple trên máy macOS cục bộ.",
-        "zh": "在本地 macOS 桌面上自动操作部分 Apple 应用。",
-        "es": "Automatiza aplicaciones Apple seleccionadas en un escritorio macOS local.",
-        "fr": "Automatisez certaines applications Apple sur un bureau macOS local.",
-        "de": "Automatisieren Sie ausgewählte Apple-Apps auf einem lokalen macOS-Desktop.",
-        "ja": "ローカルのmacOSデスクトップで選択したAppleアプリを自動化します。"
-      },
-      "examples": {
-        "en": [
-          "What is on my calendar tomorrow?",
-          "Create a reminder to call the bank at 9 a.m.",
-          "Find my notes mentioning the apartment lease."
-        ],
-        "vi": [
-          "Ngày mai lịch của tôi có gì?",
-          "Tạo lời nhắc gọi ngân hàng lúc 9 giờ sáng.",
-          "Tìm các ghi chú có nhắc tới hợp đồng thuê căn hộ."
-        ],
-        "zh": [
-          "我明天的日历上有什么安排？",
-          "创建一个早上 9 点给银行打电话的提醒。",
-          "查找提到公寓租约的笔记。"
-        ]
-      },
-      "homepage": "https://www.apple.com/macos/",
-      "documentation": "https://support.apple.com/guide/mac-help/control-access-to-your-mac-mchl211c911f/mac",
-      "iconUrl": "https://www.apple.com/apple-touch-icon.png",
-      "installability": "unsupported",
-      "reason_code": "desktop_application_required",
-      "mcp": {
-        "transport": "stdio",
-        "endpoint_mode": "desktop_automation",
-        "auth": {
-          "kind": "local"
-        }
-      },
-      "recipe_revision": 1
+      "recipe_revision": 2
     },
     {
       "id": "sentry",

@@ -392,6 +392,26 @@ class ExtensionAPITests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertNotIn(key, listing.text)
 
+    async def test_catalog_stdio_install_appends_recipe_flags(self):
+        key = "test-figma-token"
+        body = {"catalog_id": "figma", "recipe_revision": 2, "fields": {"token": key}}
+        with patch.object(extension_engine, "mcp_profile_isolation_supported", return_value=True):
+            response = await self.client.post(
+                f"{API_PREFIX}/agents-plugins/research/install-catalog",
+                headers=self.headers(),
+                json=body,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            config = yaml.safe_load((self.profile / "config.yaml").read_text(encoding="utf-8"))
+            self.assertEqual(
+                config["xnobrain_managed_mcp_servers"]["xnobrain-figma"],
+                {
+                    "command": "npx",
+                    "args": ["-y", "figma-developer-mcp@0.13.2", "--stdio", "--no-telemetry"],
+                    "env": {"FIGMA_API_KEY": key},
+                },
+            )
+
     async def test_catalog_oauth_install_uses_control_proxy_and_rejects_fields(self):
         connection_id = "8b1a8e93-748b-46b0-8d97-d4d2c7a6b221"
         entry = {

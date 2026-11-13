@@ -116,10 +116,14 @@ stored by Control and never copied to Runtime profile files; shareable exports
 and imports therefore contain no catalog key.
 
 Nineteen OAuth recipes are installable alongside seven non-OAuth remote recipes.
-Four desktop integrations are unsupported. The pinned Brave Search stdio recipe
-is installable: Runtime writes `npx -y @brave/brave-search-mcp-server@2.1.4`
-with `BRAVE_API_KEY` into the managed MCP config; the key never reaches Control
-and is dropped from portable exports.
+Two pinned stdio recipes are installable. Runtime writes
+`npx -y @brave/brave-search-mcp-server@2.1.4` with `BRAVE_API_KEY`, and
+`npx -y figma-developer-mcp@0.13.2 --stdio --no-telemetry` with a Figma personal
+access token in `FIGMA_API_KEY`, into the managed MCP config. A recipe's fixed
+`package.args` (flags only) follow the package. The key never reaches Control
+and is dropped from portable exports. Obsidian, Paper and Apple apps are not in
+the catalog: they need an application on the user's machine, which the
+server-side agent cannot reach.
 
 Catalog OAuth credentials live in Control. The UI creates a pending Control
 connection, installs its proxy URL in Runtime with an empty `fields` object,

@@ -16,14 +16,11 @@ CATALOG_IDS = (
     "canva",
     "linear",
     "notion",
-    "obsidian",
     "atlassian",
     "todoist",
     "trello",
     "cobrain",
     "figma",
-    "paper",
-    "apple-apps",
     "sentry",
     "vercel",
     "cloudflare",
@@ -74,14 +71,14 @@ INSTALLABLE_IDS = {
     "composio",
     "firecrawl",
     "brave-search",
+    "figma",
     *OAUTH_INSTALLABLE_IDS,
 }
 # Stdio entries are installable only with an exact pinned package and env-delivered key.
-STDIO_INSTALLABLE_IDS = {"brave-search"}
+STDIO_INSTALLABLE_IDS = {"brave-search", "figma"}
 SUMMARY_LOCALES = {"en", "vi", "es", "fr", "de", "ja", "zh"}
 # Example prompts follow the UI languages.
 EXAMPLE_LOCALES = {"en", "vi", "zh"}
-DESKTOP_IDS = {"obsidian", "figma", "paper", "apple-apps"}
 OAUTH_IDS = {
     "canva",
     "linear",
@@ -125,7 +122,9 @@ def validate_plugin_catalog(payload: Any) -> None:
 
     entries = payload.get("entries")
     if not isinstance(entries, list) or len(entries) < len(CATALOG_IDS):
-        raise ValueError("plugin catalog must contain at least the complete 31-entry coverage set")
+        raise ValueError(
+            f"plugin catalog must contain at least the {len(CATALOG_IDS)}-entry coverage set"
+        )
     ids = [entry.get("id") if isinstance(entry, dict) else None for entry in entries]
     if any(not isinstance(entry_id, str) for entry_id in ids):
         raise ValueError("plugin catalog entry ids are invalid")
@@ -208,9 +207,6 @@ def _validate_entry(entry: dict[str, Any]) -> None:
     reason = entry.get("reason_code")
     if status == "installable":
         _validate_installable_entry(entry_id, mcp, auth, reason)
-    elif entry_id in DESKTOP_IDS:
-        if status != "unsupported" or reason != "desktop_application_required":
-            raise ValueError(f"{entry_id}: desktop integrations must remain unsupported")
     elif entry_id in OAUTH_IDS - OAUTH_INSTALLABLE_IDS:
         if status != "unsupported" or reason != "oauth_not_supported" or auth["kind"] != "oauth":
             raise ValueError(f"{entry_id}: OAuth integrations must remain unsupported")
@@ -235,6 +231,7 @@ def _validate_installable_entry(
         package = mcp.get("package")
         package = package if isinstance(package, dict) else {}
         version = package.get("version")
+        args = package.get("args", [])
         if (
             mcp["transport"] != "stdio"
             or reason != "compatible"
@@ -243,6 +240,8 @@ def _validate_installable_entry(
             or not isinstance(package.get("name"), str)
             or not isinstance(version, str)
             or not re.fullmatch(r"\d+\.\d+\.\d+", version)
+            or not isinstance(args, list)
+            or any(not isinstance(arg, str) or not arg.startswith("--") for arg in args)
         ):
             raise ValueError(f"{entry_id}: stdio packages need a pinned version and an env API key")
         return

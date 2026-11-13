@@ -998,7 +998,7 @@ class ExtensionsService:
             )
         config = {
             "command": "npx",
-            "args": ["-y", f"{package['name']}@{package['version']}"],
+            "args": ["-y", f"{package['name']}@{package['version']}", *package.get("args", [])],
             "env": {auth["environment_name"]: key},
         }
         return config, "static", True

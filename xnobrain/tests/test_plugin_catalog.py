@@ -14,7 +14,7 @@ class PluginCatalogTests(unittest.TestCase):
     def test_checked_in_catalog_has_full_coverage_and_safe_installable_subset(self) -> None:
         catalog = load_plugin_catalog()
         entries = catalog["entries"]
-        self.assertEqual(len(entries), 31)
+        self.assertEqual(len(entries), 28)
         by_id = {entry["id"]: entry for entry in entries}
         self.assertEqual(
             {
@@ -50,6 +50,7 @@ class PluginCatalogTests(unittest.TestCase):
                 "firecrawl",
                 "cobrain",
                 "brave-search",
+                "figma",
             },
         )
         self.assertEqual(
@@ -89,6 +90,7 @@ class PluginCatalogTests(unittest.TestCase):
                     "firecrawl",
                     "composio",
                     "cobrain",
+                    "figma",
                 }
                 else 1,
             )
@@ -130,10 +132,11 @@ class PluginCatalogTests(unittest.TestCase):
     def test_load_returns_a_copy(self) -> None:
         first = load_plugin_catalog()
         first["entries"].clear()
-        self.assertEqual(len(load_plugin_catalog()["entries"]), 31)
+        self.assertEqual(len(load_plugin_catalog()["entries"]), 28)
 
     def test_rejects_missing_coverage_and_unsupported_install_paths(self) -> None:
         catalog = load_plugin_catalog()
+        brave = next(i for i, e in enumerate(catalog["entries"]) if e["id"] == "brave-search")
         cases = []
 
         missing = copy.deepcopy(catalog)
@@ -146,18 +149,22 @@ class PluginCatalogTests(unittest.TestCase):
         cases.append(oauth_install)
 
         unpinned_stdio_install = copy.deepcopy(catalog)
-        unpinned_stdio_install["entries"][27]["mcp"]["package"]["version"] = None
+        unpinned_stdio_install["entries"][brave]["mcp"]["package"]["version"] = None
         cases.append(unpinned_stdio_install)
 
         ranged_stdio_install = copy.deepcopy(catalog)
-        ranged_stdio_install["entries"][27]["mcp"]["package"]["version"] = "^2.1.4"
+        ranged_stdio_install["entries"][brave]["mcp"]["package"]["version"] = "^2.1.4"
         cases.append(ranged_stdio_install)
 
         header_stdio_install = copy.deepcopy(catalog)
-        header_stdio_install["entries"][27]["mcp"]["auth"]["delivery"] = "header"
-        header_stdio_install["entries"][27]["mcp"]["auth"]["header"] = "X-Key"
-        header_stdio_install["entries"][27]["mcp"]["auth"]["prefix"] = ""
+        header_stdio_install["entries"][brave]["mcp"]["auth"]["delivery"] = "header"
+        header_stdio_install["entries"][brave]["mcp"]["auth"]["header"] = "X-Key"
+        header_stdio_install["entries"][brave]["mcp"]["auth"]["prefix"] = ""
         cases.append(header_stdio_install)
+
+        positional_stdio_arg = copy.deepcopy(catalog)
+        positional_stdio_arg["entries"][brave]["mcp"]["package"]["args"] = ["/etc/passwd"]
+        cases.append(positional_stdio_arg)
 
         missing_recipe_revision = copy.deepcopy(catalog)
         missing_recipe_revision["entries"][0].pop("recipe_revision")
@@ -245,7 +252,7 @@ class PluginCatalogTests(unittest.TestCase):
     def test_unreviewed_stdio_package_publishers_cannot_be_official(self) -> None:
         catalog = load_plugin_catalog()
         by_id = {entry["id"]: entry for entry in catalog["entries"]}
-        for entry_id in {"brave-search"}:
+        for entry_id in {"brave-search", "figma"}:
             with self.subTest(entry=entry_id):
                 by_id[entry_id]["publisher_kind"] = "official"
                 with self.assertRaises(ValueError):
