@@ -98,7 +98,8 @@ RUN --mount=type=cache,target=/root/.npm \
         sleep 5; \
       done \
     && install -m 0755 /opt/hermes-build-home/bin/uv /usr/local/bin/uv \
-    && ln -sf uv /usr/local/bin/uvx \
+    && printf '#!/bin/sh\nexec /usr/local/bin/uv tool run "$@"\n' > /usr/local/bin/uvx \
+    && chmod 0755 /usr/local/bin/uvx \
     && test "$(git -C /usr/local/lib/hermes-agent rev-parse HEAD)" = "${HERMES_COMMIT}" \
     && uv pip install --python /usr/local/lib/hermes-agent/venv/bin/python \
       'edge-tts==7.2.7' \
