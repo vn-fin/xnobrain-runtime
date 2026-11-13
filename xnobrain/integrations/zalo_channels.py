@@ -365,6 +365,10 @@ def bridge_error_code(result: Any) -> str:
         "not_own_message": "channel_message_not_own",
         "too_old": "channel_message_too_old",
         "recipient_not_found": "channel_recipient_not_found",
+        "group_not_found": "channel_group_not_found",
+        "user_not_found": "channel_user_not_found",
+        "label_not_found": "channel_label_not_found",
+        "alias_not_found": "channel_alias_not_found",
     }.get(error)
     if named is not None:
         return named

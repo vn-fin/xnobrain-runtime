@@ -988,6 +988,10 @@ class ZaloBridgeClientTests(unittest.TestCase):
         cases = [
             (401, "unauthorized", "channel_bridge_unauthorized"),
             (404, "not_found", "channel_message_not_found"),
+            (404, "group_not_found", "channel_group_not_found"),
+            (404, "user_not_found", "channel_user_not_found"),
+            (404, "label_not_found", "channel_label_not_found"),
+            (404, "alias_not_found", "channel_alias_not_found"),
             (429, "rate_limited", "channel_rate_limited"),
             (503, "not_connected", "channel_not_connected"),
             (500, "send_failed", "channel_bridge_failed"),

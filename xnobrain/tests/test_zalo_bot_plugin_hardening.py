@@ -632,13 +632,21 @@ class ZaloBotHardeningTests(unittest.IsolatedAsyncioTestCase):
         module = self.adapter_module
         self.assertEqual(
             module._STANDALONE_API_ACTIONS,
-            frozenset({"get_me", "send_photo", "send_sticker", "send_voice"}),
+            frozenset(
+                {
+                    "get_me",
+                    "get_webhook_info",
+                    "send_photo",
+                    "send_sticker",
+                    "send_voice",
+                }
+            ),
         )
         pconfig = types.SimpleNamespace(extra={"bot_token": "123456:abcdefSECRET"})
 
         unknown = await module._standalone_api(pconfig, "send_text")
         self.assertEqual(unknown, {"error": "unsupported_action"})
-        webhook = await module._standalone_api(pconfig, "get_webhook_info")
+        webhook = await module._standalone_api(pconfig, "set_webhook")
         self.assertEqual(webhook, {"error": "unsupported_action"})
 
         class FailingClient:

@@ -29,6 +29,7 @@ TOOL_NAMES = {
     "zalo_bot_send_photo",
     "zalo_bot_send_sticker",
     "zalo_bot_send_voice",
+    "zalo_bot_warn_user",
     "zalo_bot_group_settings",
 }
 
@@ -774,28 +775,130 @@ class ZaloBotToolFixture(unittest.IsolatedAsyncioTestCase):
 
     async def test_status_reports_the_bot_channel_and_identity(self):
         self._bind()
-        with mock.patch.object(
-            zalo_bot_tools,
-            "_bot_identity",
-            return_value={"id": "bot-1", "display_name": "Bot"},
+        with (
+            mock.patch.object(
+                zalo_bot_tools,
+                "_bot_identity",
+                return_value={"id": "bot-1", "display_name": "Bot"},
+            ),
+            mock.patch.object(
+                zalo_bot_tools,
+                "_bot_webhook",
+                return_value={
+                    "mode": "webhook",
+                    "url_set": True,
+                    "url": "https://secret.example/hook?token=abc",
+                },
+            ),
         ):
             result = self._call("zalo_bot_status")
 
         self.assertTrue(result["success"])
         self.assertEqual(result["data"]["bot"], {"id": "bot-1", "name": "Bot"})
+        self.assertEqual(
+            result["data"]["webhook"], {"mode": "webhook", "url_set": True}
+        )
+        self.assertNotIn("url", result["data"]["webhook"])
         self.assertEqual(result["data"]["dm_policy"], "pairing")
         self.assertEqual(result["data"]["history_retention_days"], 30)
         self.assertIs(result["data"]["connected"], False)
 
     async def test_status_still_succeeds_when_get_me_fails(self):
         self._bind()
-        with mock.patch.object(
-            zalo_bot_tools, "_bot_identity", side_effect=RuntimeError("api down")
+        with (
+            mock.patch.object(
+                zalo_bot_tools, "_bot_identity", side_effect=RuntimeError("api down")
+            ),
+            mock.patch.object(
+                zalo_bot_tools, "_bot_webhook", side_effect=RuntimeError("api down")
+            ),
         ):
             result = self._call("zalo_bot_status")
 
         self.assertTrue(result["success"])
         self.assertIsNone(result["data"]["bot"])
+        self.assertIsNone(result["data"]["webhook"])
+
+    # ── Warn user ─────────────────────────────────────────────────────
+
+    async def test_warn_user_schema_requires_in_chat_confirmation(self):
+        definitions = dict(
+            (name, description)
+            for name, description, _ in zalo_bot_tools._TOOL_DEFINITIONS
+        )
+        self.assertIn("explicit confirmation in chat", definitions["zalo_bot_warn_user"])
+
+    async def test_warn_user_persists_and_enforces_scope_and_chat_checks(self):
+        self._write_groups(
+            {
+                "group_1": {"status": "approved"},
+                "group_pending": {"status": "pending"},
+            }
+        )
+        self._write_history("dm_1", [self._record("hi")])
+        self._bind()
+        warned = self._call(
+            "zalo_bot_warn_user",
+            {"chat_id": "group_1", "user_id": "user_9", "reason": "off-topic"},
+        )
+        self.assertTrue(warned["success"])
+        self.assertEqual(warned["data"]["action"], "warned")
+        self.assertEqual(warned["data"]["count"], 1)
+
+        listed = self._call(
+            "zalo_bot_warn_user",
+            {"chat_id": "group_1", "user_id": "user_9", "action": "list"},
+        )
+        self.assertTrue(listed["success"])
+        self.assertEqual(listed["data"]["count"], 1)
+        self.assertEqual(
+            listed["data"]["warnings"][0]["trust"], "untrusted_external"
+        )
+
+        cleared = self._call(
+            "zalo_bot_warn_user",
+            {"chat_id": "group_1", "user_id": "user_9", "action": "clear"},
+        )
+        self.assertTrue(cleared["success"])
+        self.assertEqual(cleared["data"]["action"], "cleared")
+
+        unapproved = self._call(
+            "zalo_bot_warn_user",
+            {"chat_id": "group_pending", "user_id": "user_9"},
+        )
+        self.assertEqual(unapproved["error"]["code"], "channel_group_not_approved")
+
+        unknown = self._call(
+            "zalo_bot_warn_user",
+            {"chat_id": "unknown_chat", "user_id": "user_9"},
+        )
+        self.assertEqual(unknown["error"]["code"], "channel_chat_not_found")
+
+        # Channel-originated run is scoped to its own thread.
+        self.service.repository.write_thread(
+            self.profile,
+            "zalo_bot",
+            "group_1",
+            agent_id="agent-1",
+            conversation_id="conv-chan",
+            title="Thread",
+            sender_id="sender-1",
+            timestamp=time.time(),
+        )
+        self._bind(conversation_id="conv-chan")
+        out_of_scope = self._call(
+            "zalo_bot_warn_user",
+            {"chat_id": "dm_1", "user_id": "user_9"},
+            conversation_id="conv-chan",
+        )
+        self.assertEqual(out_of_scope["error"]["code"], "channel_thread_out_of_scope")
+
+        in_scope = self._call(
+            "zalo_bot_warn_user",
+            {"chat_id": "group_1", "user_id": "user_9"},
+            conversation_id="conv-chan",
+        )
+        self.assertTrue(in_scope["success"])
 
     async def test_tool_calls_require_a_binding(self):
         result = self._call("zalo_bot_status", conversation_id="missing")
@@ -907,6 +1010,29 @@ class ZaloBotToolRepositoryTests(unittest.TestCase):
             getattr(raised.exception, "code", ""), "channel_path_unsafe"
         )
 
+    def test_warn_bot_user_persists_with_0600_mode_and_clears(self):
+        first = self.repository.warn_bot_user(
+            self.profile, "group_1", "user_1", reason="spam"
+        )
+        self.assertEqual(first["action"], "warned")
+        self.assertEqual(first["count"], 1)
+
+        path = self.profile / "zalo_bot" / "warnings" / "group_1.json"
+        self.assertTrue(path.is_file())
+        self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+
+        self.repository.warn_bot_user(self.profile, "group_1", "user_1", reason="2")
+        third = self.repository.warn_bot_user(
+            self.profile, "group_1", "user_1", reason="3"
+        )
+        self.assertEqual(third["action"], "max_warnings_reached")
+        self.assertEqual(len(self.repository.bot_user_warnings(self.profile, "group_1", "user_1")), 3)
+
+        self.repository.clear_bot_user_warnings(self.profile, "group_1", "user_1")
+        self.assertEqual(
+            self.repository.bot_user_warnings(self.profile, "group_1", "user_1"), []
+        )
+
 
 class _PlatformKey:
     def __init__(self, value):
@@ -1002,6 +1128,45 @@ class SendBotMediaTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(zalo_channels.ChannelDeliveryError) as raised:
             await zalo_channels.send_bot_media("../escape", "photo", "https://x")
         self.assertEqual(raised.exception.code, "channel_recipient_invalid")
+
+
+class AdapterWarnSystemTests(unittest.TestCase):
+    def test_adapter_warn_system_persists_across_instances_with_0600(self):
+        import importlib.util
+
+        adapter_path = (
+            Path(__file__).resolve().parents[2]
+            / "runtime"
+            / "hermes-plugins"
+            / "platforms"
+            / "zalo_bot"
+            / "adapter.py"
+        )
+        spec = importlib.util.spec_from_file_location(
+            "test_zalo_bot_adapter_warn", adapter_path
+        )
+        module = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(module)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            warnings_dir = Path(tmp) / "zalo_bot" / "warnings"
+            first = module._WarnSystem(lambda: warnings_dir)
+            result = first.warn("group_1", "user_1", "spam")
+            self.assertEqual(result["action"], "warned")
+
+            file_path = warnings_dir / "group_1.json"
+            self.assertTrue(file_path.is_file())
+            self.assertEqual(file_path.stat().st_mode & 0o777, 0o600)
+
+            second = module._WarnSystem(lambda: warnings_dir)
+            loaded = second.get_warnings("group_1", "user_1")
+            self.assertEqual(len(loaded), 1)
+            self.assertEqual(loaded[0]["reason"], "spam")
+
+            second.clear_warnings("group_1", "user_1")
+            third = module._WarnSystem(lambda: warnings_dir)
+            self.assertEqual(third.get_warnings("group_1", "user_1"), [])
 
 
 if __name__ == "__main__":

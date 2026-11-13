@@ -16,6 +16,9 @@ Connection: an official Zalo Bot token, entered only through the connect card
   read what the bot stored.
 - `zalo_bot_group_settings` changes follow, silent, or welcome settings for one
   approved group.
+- `zalo_bot_warn_user` records, lists, or clears moderation warnings for a user
+  in an approved group or known direct-message chat (confirm warn/clear in chat
+  first).
 
 ## Limits
 

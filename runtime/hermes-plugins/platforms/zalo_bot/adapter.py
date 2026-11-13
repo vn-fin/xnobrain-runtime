@@ -92,6 +92,7 @@ CRM_DIRNAME = "zalo-bot-crm"
 # per chat: <profile home>/zalo_bot/history/<chat_id>.jsonl.
 BOT_HISTORY_DIRNAME = "zalo_bot"
 BOT_HISTORY_SUBDIR = "history"
+BOT_WARNINGS_SUBDIR = "warnings"
 BOT_CHANNELS_DIRNAME = "zalo"
 BOT_GROUPS_FILE = "groups.json"
 # Runtime rewrites the group approval file from time to time; claim nothing
@@ -337,6 +338,10 @@ class _ZaloClient:
         """Verify bot token and get bot info."""
         return await self._post("getMe")
 
+    async def get_webhook_info(self) -> dict:
+        """Read the bot's configured webhook status."""
+        return await self._post("getWebhookInfo")
+
     async def get_updates(self, timeout: int = POLLING_TIMEOUT) -> list:
         """Long-poll for new updates.
 
@@ -424,34 +429,127 @@ class _AntiSpam:
 
 
 class _WarnSystem:
-    """Zero-token warn tracking."""
+    """Zero-token warn tracking persisted per chat in the profile bot store."""
 
-    def __init__(self) -> None:
+    def __init__(self, directory_provider=None) -> None:
+        self._directory_provider = directory_provider
+        self._dir: Optional[Path] = None
         self._store: Dict[str, List[Dict[str, Any]]] = {}
 
-    def warn(self, group_id: str, user_id: str, reason: str = "") -> Dict[str, Any]:
-        key = f"{group_id}:{user_id}"
-        if key not in self._store:
-            self._store[key] = []
-        now = time.time()
-        self._store[key] = [
-            w for w in self._store[key]
-            if now - w["timestamp"] < WARN_EXPIRY_SECONDS
+    def _directory(self, *, create: bool) -> Optional[Path]:
+        if self._directory_provider is None:
+            return None
+        if self._dir is None:
+            try:
+                directory = self._directory_provider()
+            except Exception:
+                directory = None
+            if directory is None:
+                return None
+            self._dir = Path(directory)
+        if self._dir.parent.is_symlink() or self._dir.is_symlink():
+            return None
+        if create:
+            try:
+                self._dir.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+                os.chmod(self._dir.parent, 0o700)
+                self._dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+                os.chmod(self._dir, 0o700)
+            except OSError as error:
+                logger.debug(
+                    "Zalo: warnings directory unavailable: %s",
+                    type(error).__name__,
+                )
+                return None
+        return self._dir
+
+    def _filepath(self, group_id: str, *, create: bool = False) -> Optional[Path]:
+        directory = self._directory(create=create)
+        if directory is None:
+            return None
+        path = directory / f"{_safe_path_component(group_id)}.json"
+        if path.is_symlink():
+            return None
+        return path
+
+    def _load_group(self, group_id: str) -> Dict[str, List[Dict[str, Any]]]:
+        filepath = self._filepath(group_id)
+        if filepath is None or not filepath.exists():
+            return {}
+        try:
+            with open(filepath, "r", encoding="utf-8") as handle:
+                value = json.load(handle)
+        except (json.JSONDecodeError, OSError):
+            return {}
+        if not isinstance(value, dict):
+            return {}
+        cleaned: Dict[str, List[Dict[str, Any]]] = {}
+        for uid, entries in value.items():
+            if not isinstance(uid, str) or not isinstance(entries, list):
+                continue
+            cleaned[uid] = [item for item in entries if isinstance(item, dict)]
+        return cleaned
+
+    def _save_group(self, group_id: str, data: Dict[str, List[Dict[str, Any]]]) -> None:
+        filepath = self._filepath(group_id, create=True)
+        if filepath is None:
+            return
+        _write_private_json(filepath, data)
+
+    def _prune(self, entries: List[Dict[str, Any]], now: float) -> List[Dict[str, Any]]:
+        return [
+            w
+            for w in entries
+            if isinstance(w.get("timestamp"), (int, float))
+            and now - float(w["timestamp"]) < WARN_EXPIRY_SECONDS
         ]
-        entry = {"timestamp": now, "reason": reason[:200],
-                 "count": len(self._store[key]) + 1}
-        self._store[key].append(entry)
+
+    def warn(self, group_id: str, user_id: str, reason: str = "") -> Dict[str, Any]:
+        now = time.time()
+        if self._directory_provider is not None:
+            group_data = self._load_group(group_id)
+            active = self._prune(group_data.get(user_id, []), now)
+            entry = {
+                "timestamp": now,
+                "reason": str(reason or "")[:200],
+                "count": len(active) + 1,
+            }
+            active.append(entry)
+            group_data[user_id] = active
+            self._save_group(group_id, group_data)
+        else:
+            key = f"{group_id}:{user_id}"
+            active = self._prune(self._store.get(key, []), now)
+            entry = {
+                "timestamp": now,
+                "reason": str(reason or "")[:200],
+                "count": len(active) + 1,
+            }
+            active.append(entry)
+            self._store[key] = active
         if entry["count"] >= WARN_MAX_WARNINGS:
-            return {"ok": True, "action": "max_warnings_reached",
-                    "warning": entry,
-                    "message": f"⚠️ {user_id} đã đạt {WARN_MAX_WARNINGS} cảnh báo."}
+            return {
+                "ok": True,
+                "action": "max_warnings_reached",
+                "warning": entry,
+                "message": f"⚠️ {user_id} đã đạt {WARN_MAX_WARNINGS} cảnh báo.",
+            }
         return {"ok": True, "action": "warned", "warning": entry}
 
     def get_warnings(self, group_id: str, user_id: str) -> List[Dict[str, Any]]:
-        return self._store.get(f"{group_id}:{user_id}", [])
+        now = time.time()
+        if self._directory_provider is not None:
+            group_data = self._load_group(group_id)
+            return self._prune(group_data.get(user_id, []), now)
+        return self._prune(self._store.get(f"{group_id}:{user_id}", []), now)
 
     def clear_warnings(self, group_id: str, user_id: str) -> Dict[str, Any]:
-        self._store.pop(f"{group_id}:{user_id}", None)
+        if self._directory_provider is not None:
+            group_data = self._load_group(group_id)
+            group_data.pop(user_id, None)
+            self._save_group(group_id, group_data)
+        else:
+            self._store.pop(f"{group_id}:{user_id}", None)
         return {"ok": True, "action": "cleared"}
 
 
@@ -1000,9 +1098,10 @@ class ZaloAdapter(BasePlatformAdapter):
         # Moderation instances. Zalo's Bot API exposes no group management, so
         # there is no group manager and no server-side settings source.
         self._anti_spam = _AntiSpam()
-        self._warn_system = _WarnSystem()
+        self._warn_system = _WarnSystem(self._warnings_directory)
         # Both stores resolve their directory lazily from the profile home
         # (or their environment override) and are rebuilt on connect().
+        self._warn_system = _WarnSystem(self._warnings_directory)
         self._group_settings = _GroupSettings(self._settings_directory)
         self._crm_contacts = _CRMContacts(self._crm_directory)
 
@@ -1040,6 +1139,15 @@ class ZaloAdapter(BasePlatformAdapter):
 
     def _crm_directory(self) -> Optional[Path]:
         return self._plugin_state_directory(CRM_DIR_ENV, CRM_DIRNAME)
+
+    def _warnings_directory(self) -> Optional[Path]:
+        home = self._resolve_state_home()
+        if home is None:
+            try:
+                home = Path(get_hermes_home())
+            except Exception:
+                return None
+        return home / BOT_HISTORY_DIRNAME / BOT_WARNINGS_SUBDIR
 
 
     # ── Conversation store ────────────────────────────────────────────────
@@ -1248,17 +1356,6 @@ class ZaloAdapter(BasePlatformAdapter):
             return
         self._write_state("connected")
 
-    def _redact_token(self, token: str) -> str:
-        """Placeholder kept for callers wanting a display form of the token.
-
-        Note: the plugin's actual redaction path replaces the raw token with
-        ``***`` in error text (see ``_ZaloClient._post``); this helper is not
-        part of any log output.
-        """
-        if len(token) <= 12:
-            return token[:4] + "..." + token[-4:] if len(token) > 8 else "***"
-        return token[:4] + "..." + token[-4:]
-
     def _redact(self, value: Any) -> Any:
         """Redact the bot token from API data before logging it."""
         return _redact_secret_data(value, self.bot_token)
@@ -1293,6 +1390,7 @@ class ZaloAdapter(BasePlatformAdapter):
         self._profile_home = None
         self._bot_history = None
         # Rebuild the lazy directory users after the profile-home reset.
+        self._warn_system = _WarnSystem(self._warnings_directory)
         self._group_settings = _GroupSettings(self._settings_directory)
         self._crm_contacts = _CRMContacts(self._crm_directory)
         self._write_state("connecting")
@@ -2408,7 +2506,7 @@ async def _standalone_send(
 
 
 _STANDALONE_API_ACTIONS = frozenset(
-    {"get_me", "send_photo", "send_sticker", "send_voice"}
+    {"get_me", "get_webhook_info", "send_photo", "send_sticker", "send_voice"}
 )
 
 
@@ -2435,6 +2533,20 @@ async def _standalone_api(pconfig, action: str, **kwargs) -> Dict[str, Any]:
                 return {
                     "success": True,
                     "result": _redact_secret_data(result.get("result"), token),
+                }
+            return {"error": "auth_failed"}
+        if action == "get_webhook_info":
+            result = await client.get_webhook_info()
+            if result.get("ok"):
+                raw = result.get("result")
+                info = raw if isinstance(raw, dict) else {}
+                url = str(info.get("url") or "").strip()
+                return {
+                    "success": True,
+                    "result": {
+                        "url_set": bool(url),
+                        "mode": "webhook" if url else "polling",
+                    },
                 }
             return {"error": "auth_failed"}
         if action == "send_photo":

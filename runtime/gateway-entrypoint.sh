@@ -29,5 +29,14 @@ fi
 export PYTHONPATH="$app_dir${PYTHONPATH:+:$PYTHONPATH}"
 cd "$app_dir"
 
+bridge_dir="$app_dir/runtime/hermes-plugins/platforms/zalo/bridge"
+if [ -f "$bridge_dir/package-lock.json" ] \
+  && [ ! -d "$bridge_dir/node_modules/zca-js" ] \
+  && command -v npm >/dev/null 2>&1; then
+  if ! (cd "$bridge_dir" && npm ci --omit=dev); then
+    echo "Warning: Zalo bridge npm ci --omit=dev failed; continuing" >&2
+  fi
+fi
+
 exec "${HERMES_RUNTIME_PYTHON:-/usr/local/lib/hermes-agent/venv/bin/python}" \
   -c 'from xnobrain.integrations.gateway_cli import main; main()'

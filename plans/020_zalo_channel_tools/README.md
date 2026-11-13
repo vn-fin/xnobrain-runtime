@@ -1,6 +1,11 @@
 # 020 — Zalo channel tools (personal account and Zalo Bot)
 
-Status: plan; P-A and P-B done (2026-11-12), Track B not started.
+Status: P-A and P-B done (2026-11-12); Track B done (B1/B3 done, B2 done 2026-11-14).
+
+Remaining:
+- Inbound media download (needs plan 019 attachment forwarding).
+- Live verification against QR-connected personal Zalo and Zalo Bot accounts.
+- `getGroupChatHistory` paging (zca-js 2.2.0 accepts `(groupId, count)` only).
 
 Builds on `plans/015_zalo_personal_channel/` (bridge, adapter, gateway hosting)
 and `plans/019_gateway_channel_turns/` (channel turns run in the main Runtime

@@ -208,6 +208,7 @@ class SocialChannelsSkillTests(unittest.TestCase):
 
         self.assertEqual(frontmatter["name"], SKILL_ID)
         self.assertNotIn("version", frontmatter)
+        self.assertIn("channel settings in the app", " ".join(text.split()))
         for line in text.splitlines():
             if "agent send" in line:
                 self.assertIn("never", line.casefold())

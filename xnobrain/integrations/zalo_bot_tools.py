@@ -68,8 +68,8 @@ _TOOL_DEFINITIONS: tuple[tuple[str, str, dict], ...] = (
     (
         "zalo_bot_status",
         "Report the Zalo Bot channel status, direct-message policy, history "
-        "retention, and the bot identity from getMe when the Bot API is "
-        "reachable.",
+        "retention, bot identity from getMe, and webhook state from "
+        "getWebhookInfo when the Bot API is reachable.",
         {"type": "object", "properties": {}, "additionalProperties": False},
     ),
     (
@@ -184,6 +184,38 @@ _TOOL_DEFINITIONS: tuple[tuple[str, str, dict], ...] = (
                 },
             },
             "required": ["chat_id", "thread_type", "voice_url"],
+            "additionalProperties": False,
+        },
+    ),
+    (
+        "zalo_bot_warn_user",
+        "Record, list, or clear a moderation warning for a user in an approved "
+        "Zalo Bot group or known chat. Before calling warn or clear, show the "
+        "user the chat, target user, and action/reason and wait for their "
+        "explicit confirmation in chat.",
+        {
+            "type": "object",
+            "properties": {
+                "chat_id": _CHAT_ID_PROPERTY,
+                "user_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9_-]{1,128}$",
+                    "description": "Exact Zalo Bot user id.",
+                },
+                "action": {
+                    "type": "string",
+                    "enum": ["warn", "list", "clear"],
+                    "default": "warn",
+                },
+                "reason": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": "Optional warning reason (up to 200 characters).",
+                },
+            },
+            "required": ["chat_id", "user_id"],
             "additionalProperties": False,
         },
     ),
@@ -458,8 +490,8 @@ def _append_out(
         pass
 
 
-async def _fetch_bot_identity() -> dict | None:
-    """Call ``getMe`` through the plugin's allowlisted standalone helper."""
+async def _call_standalone_api(action: str) -> dict | None:
+    """Call an allowlisted read-only action through the plugin standalone helper."""
     try:
         from tools.send_message_tool import prepare_send_message_platforms
 
@@ -483,7 +515,7 @@ async def _fetch_bot_identity() -> dict | None:
                 break
         if pconfig is None or not getattr(pconfig, "enabled", False):
             return None
-        result = await helper(pconfig, "get_me")
+        result = await helper(pconfig, action)
     except Exception:
         return None
     if not isinstance(result, dict) or not result.get("success"):
@@ -492,12 +524,20 @@ async def _fetch_bot_identity() -> dict | None:
     return value if isinstance(value, dict) else None
 
 
-def _bot_identity(binding: tuple) -> dict | None:
+def _bot_api(binding: tuple, action: str) -> dict | None:
     loop = binding[6]
     if loop is None:
         return None
-    future = asyncio.run_coroutine_threadsafe(_fetch_bot_identity(), loop)
+    future = asyncio.run_coroutine_threadsafe(_call_standalone_api(action), loop)
     return future.result(timeout=10)
+
+
+def _bot_identity(binding: tuple) -> dict | None:
+    return _bot_api(binding, "get_me")
+
+
+def _bot_webhook(binding: tuple) -> dict | None:
+    return _bot_api(binding, "get_webhook_info")
 
 
 # ── Tools ─────────────────────────────────────────────────────────────────
@@ -528,6 +568,19 @@ def _tool_status(binding: tuple, args: Mapping[str, Any]) -> str:
                 identity.get("display_name") or identity.get("account_name") or ""
             ),
         }
+    webhook_info = None
+    try:
+        webhook_info = _bot_webhook(binding)
+    except Exception:
+        webhook_info = None
+    webhook = None
+    if isinstance(webhook_info, Mapping):
+        url_set = bool(
+            webhook_info.get("url_set")
+            or str(webhook_info.get("url") or "").strip()
+        )
+        mode = str(webhook_info.get("mode") or ("webhook" if url_set else "polling"))
+        webhook = {"mode": mode, "url_set": url_set}
     return _ok(
         {
             "connected": bot_state.get("status") == "connected",
@@ -536,6 +589,7 @@ def _tool_status(binding: tuple, args: Mapping[str, Any]) -> str:
                 bot_state.get("history_retention_days") or 0
             ),
             "bot": bot,
+            "webhook": webhook,
         }
     )
 
@@ -737,6 +791,78 @@ def _tool_send_media(
     return _ok({"chat_id": chat_id, "message_id": message_id})
 
 
+def _tool_warn_user(binding: tuple, args: Mapping[str, Any]) -> str:
+    chat_id = _chat_id(args.get("chat_id"))
+    user_id = _chat_id(args.get("user_id"))
+    if chat_id is None or user_id is None:
+        return error("channel_recipient_invalid")
+    action = str(args.get("action") or "warn").strip().lower()
+    if action not in {"warn", "list", "clear"}:
+        return error("channel_invalid_request")
+    reason = args.get("reason", "")
+    if reason is None:
+        reason = ""
+    if not isinstance(reason, str) or len(reason) > 200:
+        return error("channel_invalid_request")
+
+    _resolution, code = _readable(binding, chat_id)
+    if code is not None:
+        return error(code)
+
+    service, profile_dir = binding[0], binding[1]
+    try:
+        if action == "list":
+            warnings = service.repository.bot_user_warnings(
+                profile_dir, chat_id, user_id
+            )
+            return _ok(
+                {
+                    "chat_id": chat_id,
+                    "user_id": user_id,
+                    "warnings": [
+                        {
+                            "trust": "untrusted_external",
+                            "timestamp": item.get("timestamp"),
+                            "reason": item.get("reason", ""),
+                            "count": item.get("count", 0),
+                        }
+                        for item in warnings
+                    ],
+                    "count": len(warnings),
+                    "max_warnings": 3,
+                }
+            )
+        if action == "clear":
+            result = service.repository.clear_bot_user_warnings(
+                profile_dir, chat_id, user_id
+            )
+            return _ok(
+                {
+                    "chat_id": chat_id,
+                    "user_id": user_id,
+                    "action": result.get("action", "cleared"),
+                    "count": 0,
+                    "max_warnings": int(result.get("max_warnings") or 3),
+                }
+            )
+        result = service.repository.warn_bot_user(
+            profile_dir, chat_id, user_id, reason=reason
+        )
+    except StoreError as exception:
+        return error(str(getattr(exception, "code", "channel_state_unavailable")))
+    except Exception:
+        return error("channel_state_unavailable")
+    return _ok(
+        {
+            "chat_id": chat_id,
+            "user_id": user_id,
+            "action": result.get("action", "warned"),
+            "count": int(result.get("count") or 0),
+            "max_warnings": int(result.get("max_warnings") or 3),
+        }
+    )
+
+
 def _tool_group_settings(binding: tuple, args: Mapping[str, Any]) -> str:
     chat_id = _chat_id(args.get("chat_id"))
     if chat_id is None:
@@ -796,6 +922,7 @@ _HANDLERS: dict[str, Any] = {
     "zalo_bot_send_voice": lambda binding, args: _tool_send_media(
         binding, args, "voice"
     ),
+    "zalo_bot_warn_user": _tool_warn_user,
     "zalo_bot_group_settings": _tool_group_settings,
 }
 

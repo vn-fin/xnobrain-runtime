@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -2420,4 +2423,13 @@ test('aliasRecords and quickReplyRecords shape their responses', () => {
     },
   ]);
   assert.equal(MAX_QUICK_REPLIES, 200);
+});
+
+test('bridge uses distinct 404 codes for groups, users, and labels', () => {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const source = fs.readFileSync(path.join(here, 'bridge.js'), 'utf8');
+  for (const code of ['group_not_found', 'user_not_found', 'label_not_found']) {
+    assert.ok(source.includes(`'${code}'`), `missing bridge 404 code ${code}`);
+  }
+  assert.ok(source.includes("return fail(res, 404, 'not_found')"));
 });

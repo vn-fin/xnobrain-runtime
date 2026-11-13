@@ -27,8 +27,11 @@ GATEWAY_STATE_FILE = "gateway_state.json"
 BOT_STATE_FILE = "zalo_bot_state.json"
 BOT_DIR = "zalo_bot"
 BOT_HISTORY_DIR = "history"
+BOT_WARNINGS_DIR = "warnings"
 BOT_CRM_DIR = "zalo-bot-crm"
 BOT_SETTINGS_DIR = "zalo-bot-settings"
+BOT_WARN_MAX = 3
+BOT_WARN_EXPIRY_SECONDS = 604800
 RESTART_STATE_FILE = "gateway-restart.json"
 OWNER_FILE = "owner.json"
 OWNER_METADATA_DIR = ".xnobrain"
@@ -755,6 +758,157 @@ class ChannelsRepository:
             mode=0o600,
         )
         return settings
+
+    def _bot_warnings_path(
+        self, profile: Any, chat_id: Any, *, create: bool = False
+    ) -> Path:
+        identifier = str(chat_id or "")
+        if not _BOT_CHAT_ID.fullmatch(identifier):
+            raise StoreError(
+                "agent bot chat id is invalid",
+                status=400,
+                code="channel_recipient_invalid",
+            )
+        root = self._profile_root(profile)
+        bot_dir = root / BOT_DIR
+        directory = bot_dir / BOT_WARNINGS_DIR
+        if bot_dir.is_symlink() or directory.is_symlink():
+            raise StoreError(
+                "agent bot warnings are unsafe",
+                status=400,
+                code="channel_path_unsafe",
+            )
+        if create:
+            bot_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+            os.chmod(bot_dir, 0o700)
+            directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+            os.chmod(directory, 0o700)
+        if directory.exists():
+            resolved = directory.resolve()
+            if resolved.parent.parent != root:
+                raise StoreError(
+                    "agent bot warnings escape the profile",
+                    status=400,
+                    code="channel_path_unsafe",
+                )
+            path = resolved / f"{identifier}.json"
+        else:
+            path = directory / f"{identifier}.json"
+        if path.is_symlink():
+            raise StoreError(
+                "agent bot warnings are unsafe",
+                status=400,
+                code="channel_path_unsafe",
+            )
+        return path
+
+    def _read_bot_warnings_file(self, path: Path) -> dict[str, list[dict[str, Any]]]:
+        if not path.is_file():
+            return {}
+        try:
+            raw = json.loads(
+                path.read_bytes()[-MAX_BOT_CRM_BYTES:].decode(
+                    "utf-8", errors="replace"
+                )
+            )
+        except (OSError, ValueError, TypeError):
+            return {}
+        if not isinstance(raw, dict):
+            return {}
+        cleaned: dict[str, list[dict[str, Any]]] = {}
+        for uid, entries in raw.items():
+            if not isinstance(uid, str) or not isinstance(entries, list):
+                continue
+            cleaned[uid] = [item for item in entries if isinstance(item, dict)]
+        return cleaned
+
+    @staticmethod
+    def _prune_bot_warnings(
+        entries: list[dict[str, Any]], now: float
+    ) -> list[dict[str, Any]]:
+        active: list[dict[str, Any]] = []
+        for item in entries:
+            ts = item.get("timestamp")
+            if isinstance(ts, (int, float)) and not isinstance(ts, bool):
+                if now - float(ts) < BOT_WARN_EXPIRY_SECONDS:
+                    active.append(
+                        {
+                            "timestamp": float(ts),
+                            "reason": str(item.get("reason") or "")[:200],
+                            "count": int(item.get("count") or len(active) + 1),
+                        }
+                    )
+        return active
+
+    def bot_user_warnings(
+        self, profile: Any, chat_id: Any, user_id: Any
+    ) -> list[dict[str, Any]]:
+        uid = str(user_id or "")
+        if not _BOT_CHAT_ID.fullmatch(uid):
+            raise StoreError(
+                "agent bot user id is invalid",
+                status=400,
+                code="channel_recipient_invalid",
+            )
+        path = self._bot_warnings_path(profile, chat_id, create=False)
+        data = self._read_bot_warnings_file(path)
+        return self._prune_bot_warnings(data.get(uid, []), time.time())
+
+    def warn_bot_user(
+        self, profile: Any, chat_id: Any, user_id: Any, reason: str = ""
+    ) -> dict[str, Any]:
+        uid = str(user_id or "")
+        if not _BOT_CHAT_ID.fullmatch(uid):
+            raise StoreError(
+                "agent bot user id is invalid",
+                status=400,
+                code="channel_recipient_invalid",
+            )
+        now = time.time()
+        path = self._bot_warnings_path(profile, chat_id, create=True)
+        data = self._read_bot_warnings_file(path)
+        active = self._prune_bot_warnings(data.get(uid, []), now)
+        entry = {
+            "timestamp": now,
+            "reason": str(reason or "")[:200],
+            "count": len(active) + 1,
+        }
+        active.append(entry)
+        data[uid] = active
+        self.base.atomic_write(
+            path,
+            (json.dumps(data, ensure_ascii=False, indent=2) + "\n").encode("utf-8"),
+            mode=0o600,
+        )
+        action = (
+            "max_warnings_reached" if entry["count"] >= BOT_WARN_MAX else "warned"
+        )
+        return {
+            "action": action,
+            "count": entry["count"],
+            "max_warnings": BOT_WARN_MAX,
+            "warning": entry,
+        }
+
+    def clear_bot_user_warnings(
+        self, profile: Any, chat_id: Any, user_id: Any
+    ) -> dict[str, Any]:
+        uid = str(user_id or "")
+        if not _BOT_CHAT_ID.fullmatch(uid):
+            raise StoreError(
+                "agent bot user id is invalid",
+                status=400,
+                code="channel_recipient_invalid",
+            )
+        path = self._bot_warnings_path(profile, chat_id, create=True)
+        data = self._read_bot_warnings_file(path)
+        data.pop(uid, None)
+        self.base.atomic_write(
+            path,
+            (json.dumps(data, ensure_ascii=False, indent=2) + "\n").encode("utf-8"),
+            mode=0o600,
+        )
+        return {"action": "cleared", "count": 0, "max_warnings": BOT_WARN_MAX}
 
     def _restart_state_path(self) -> Path:
         return self.base.data_dir / "channels" / RESTART_STATE_FILE

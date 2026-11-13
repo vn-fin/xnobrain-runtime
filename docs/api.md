@@ -914,11 +914,27 @@ the platform.
 | `zalo_send_link` | http/https link | in chat, before every send |
 | `zalo_react` | reaction on a recent inbound message | in chat, before every reaction |
 
+Zalo Bot tools:
+
+| Tool | Action | Confirmation |
+|---|---|---|
+| `zalo_bot_status` | channel status, bot identity (`getMe`), and webhook state (`getWebhookInfo`: `mode`, `url_set` only) | none |
+| `zalo_bot_list_chats` | readable DMs and approved groups | none |
+| `zalo_bot_read_history` | stored history for one readable chat (`since_hours`, `limit`) | none |
+| `zalo_bot_search_messages` | case-insensitive substring search over stored history | none |
+| `zalo_bot_contacts` | stored CRM contacts for one readable chat | none |
+| `zalo_bot_send_photo` | photo from an HTTPS URL | in chat, before every send |
+| `zalo_bot_send_sticker` | sticker by id | in chat, before every send |
+| `zalo_bot_send_voice` | `.aac` voice message from an HTTPS URL (DM only) | in chat, before every send |
+| `zalo_bot_warn_user` | record, list, or clear moderation warnings in an approved group or known chat | in chat, before warn or clear |
+| `zalo_bot_group_settings` | update `follow`, `silent`, or `welcome` for one approved group | in chat, before every change |
+
 No Zalo or Zalo Bot tool uses the approval card. The agent must show the user
 the recipient (or group) and the exact payload (or new values) and wait for
-explicit confirmation in chat before calling a send or group-settings tool;
-every group must still be approved first. `zalo_bot_group_settings` may change
-only the run's own group in a channel-originated run.
+explicit confirmation in chat before calling a send, warning, or group-settings
+tool; every group must still be approved first. `zalo_bot_group_settings` and
+`zalo_bot_warn_user` may target only the run's own chat in a channel-originated
+run.
 
 Personal `zalo` group sends and reactions accept an exact approved group id or
 an exact approved group name; unapproved groups return
@@ -1118,7 +1134,8 @@ could be constructed for a non-identity reason (for example, a missing internal
 token).
 
 The bundled gateway forwards these turns only when
-`RUNTIME_GATEWAY_CHANNEL_DELEGATION` is enabled (default off). It posts to
+`RUNTIME_GATEWAY_CHANNEL_DELEGATION` is enabled (default off; the root dev
+compose turns it on). It posts to
 `RUNTIME_INTERNAL_URL` with the workspace internal token. It falls back to the
 native gateway agent only when no request was sent (delegation disabled,
 platform not selected, or missing internal token). A missing provider message

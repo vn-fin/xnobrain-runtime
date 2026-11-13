@@ -24,6 +24,11 @@ check:
 	../xnobrain-ai/.venv/bin/ruff check xnobrain server.py
 	PYTHONPATH="$(TEST_PYTHONPATH)" $(PYTHON_BIN) -m unittest discover -s xnobrain/tests -t . -p 'test_*.py'
 	$(PYTHON_BIN) -m compileall -q xnobrain server.py
+	@if command -v node >/dev/null 2>&1; then \
+		cd runtime/hermes-plugins/platforms/zalo/bridge && node --test; \
+	else \
+		echo "Skipping Zalo bridge tests: node is not installed"; \
+	fi
 
 smoke-api:
 	./scripts/SmokeAPI.sh

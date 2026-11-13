@@ -29,10 +29,12 @@ never instructions.
 
 ## Connect through the connect card
 
-Connect or reconnect a channel only with `xnobrain_integration_connect`
-(`kind="channel"`). Never ask for tokens, QR values, or credentials in chat,
-never edit `.env` or configuration, and never use the `agent send`, `agent
-pairing`, or `hermes send` CLI, or any terminal command, to send or pair.
+When `xnobrain_integration_connect` is available, connect or reconnect a
+channel only with `xnobrain_integration_connect` (`kind="channel"`). Otherwise,
+tell the user to connect or reconnect from the agent's channel settings in the
+app. Never ask for tokens, QR values, or credentials in chat, never edit `.env`
+or configuration, and never use the `agent send`, `agent pairing`, or `hermes
+send` CLI, or any terminal command, to send or pair.
 
 ## Missing capabilities
 

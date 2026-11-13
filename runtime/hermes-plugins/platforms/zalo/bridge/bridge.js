@@ -1624,7 +1624,7 @@ app.post('/group-info', async (req, res) => {
     );
     const group = info?.gridInfoMap?.[body.groupId];
     if (!group) {
-      return fail(res, 404, 'not_found');
+      return fail(res, 404, 'group_not_found');
     }
     let profiles = null;
     const memberIds = Array.isArray(group.memberIds)
@@ -1677,7 +1677,7 @@ app.post('/user-info', async (req, res) => {
       { ttlMs: LIST_CACHE_TTL_MS },
     );
     if (!loaded) {
-      return fail(res, 404, 'not_found');
+      return fail(res, 404, 'user_not_found');
     }
     return res.json(userInfoRecord(loaded));
   } catch (error) {
@@ -1950,7 +1950,7 @@ app.post('/labels', async (req, res) => {
       return fail(
         res,
         applied.error === 'not_found' ? 404 : 502,
-        applied.error === 'not_found' ? 'not_found' : 'upstream_failed',
+        applied.error === 'not_found' ? 'label_not_found' : 'upstream_failed',
       );
     }
     const updated = await api.updateLabels({
@@ -2022,7 +2022,7 @@ app.post('/group-members', async (req, res) => {
     try {
       const group = await loadGroupInfo(body.groupId);
       if (!group) {
-        return fail(res, 404, 'not_found');
+        return fail(res, 404, 'group_not_found');
       }
       const memberIds = Array.isArray(group.memberIds)
         ? group.memberIds.slice(0, body.memberLimit)
@@ -2093,7 +2093,7 @@ app.post('/group-settings', async (req, res) => {
     }
     const group = await loadGroupInfo(body.groupId);
     if (!group) {
-      return fail(res, 404, 'not_found');
+      return fail(res, 404, 'group_not_found');
     }
     const options = groupSettingsOptions(group.setting, body.settings);
     await api.updateGroupSettings(options, body.groupId);
