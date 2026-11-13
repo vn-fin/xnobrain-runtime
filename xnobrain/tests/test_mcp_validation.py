@@ -95,6 +95,43 @@ class MCPValidationTests(unittest.TestCase):
             self.adapter.config["mcp_servers"]["plugin__docs"]["xnobrain_plugin_shadow"]
         )
 
+    def test_masked_env_is_kept_on_stdio_edit(self) -> None:
+        self.adapter.update_mcp(
+            "agent",
+            {"local": {"command": "npx", "env": {"API_KEY": "secret", "MODE": "a"}}},
+        )
+        masked = self.adapter.get_mcp("agent")["servers"]["local"]
+        self.assertEqual(masked["env"], {"API_KEY": "***", "MODE": "***"})
+        masked["args"] = ["-y"]
+        masked["env"]["MODE"] = "b"
+        self.adapter.update_mcp("agent", {"local": masked})
+        saved = self.adapter.config["mcp_servers"]["local"]
+        self.assertEqual(saved["env"], {"API_KEY": "secret", "MODE": "b"})
+        self.assertEqual(self.adapter.get_mcp("agent")["servers"]["local"]["env"]["API_KEY"], "***")
+
+    def test_masked_value_without_saved_counterpart_is_rejected(self) -> None:
+        self.adapter.update_mcp("agent", {"local": {"command": "npx", "env": {"A": "x"}}})
+        before = dict(self.adapter.config)
+        cases = (
+            {"local": {"command": "npx", "env": {"NEW_KEY": "***"}}},
+            {"renamed": {"command": "npx", "env": {"A": "***"}}},
+            {"remote": {"url": "https://example.com/mcp", "headers": {"Authorization": "***"}}},
+            {"local": {"url": "https://example.com/mcp", "headers": {"A": "***"}}},
+        )
+        for servers in cases:
+            with self.subTest(servers=servers), self.assertRaises(AgentAPIError) as raised:
+                self.adapter.update_mcp("agent", servers)
+            self.assertEqual(raised.exception.code, "invalid_mcp_config")
+            self.assertEqual(self.adapter.config, before)
+
+    def test_remote_literal_headers_are_unchanged(self) -> None:
+        remote = {"url": "https://example.com/mcp", "headers": {"X-Key": "literal"}}
+        self.adapter.update_mcp("agent", {"remote": remote})
+        self.assertEqual(self.adapter.config["mcp_servers"]["remote"], remote)
+        self.assertEqual(
+            self.adapter.get_mcp("agent")["servers"]["remote"]["headers"], {"X-Key": "***"}
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

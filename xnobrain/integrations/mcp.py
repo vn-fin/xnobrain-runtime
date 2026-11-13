@@ -155,6 +155,35 @@ class MCPIntegrationMixin:
 
         config = self._read_config(profile_dir)
         existing = config.get("mcp_servers") or {}
+        # GET masks literal env/header values as "***"; a stdio server echoing it back
+        # keeps the saved value. Anything else masked has nothing to restore.
+        stale: list[str] = []
+        for server_name, server in cleaned.items():
+            saved = existing.get(server_name) if isinstance(existing, Mapping) else None
+            for field in ("env", "headers"):
+                values = server.get(field)
+                if not isinstance(values, dict):
+                    continue
+                for key, value in values.items():
+                    if value != "***":
+                        continue
+                    kept = saved.get(field) if isinstance(saved, Mapping) else None
+                    if (
+                        "command" in server
+                        and isinstance(saved, Mapping)
+                        and "command" in saved
+                        and isinstance(kept, Mapping)
+                        and isinstance(kept.get(key), str)
+                    ):
+                        values[key] = kept[key]
+                    else:
+                        stale.append(f"{server_name}.{field}.{key}")
+        if stale:
+            raise AgentAPIError(
+                "Hidden value (***) has no saved counterpart; enter the value again: "
+                + ", ".join(stale),
+                code="invalid_mcp_config",
+            )
         # Plugin shadows are hidden from get_mcp, so keep them and only refuse overwrites.
         shadows = (
             {
