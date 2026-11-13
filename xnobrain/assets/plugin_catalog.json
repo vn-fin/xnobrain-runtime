@@ -1326,13 +1326,13 @@
       "homepage": "https://brave.com/search/",
       "documentation": "https://brave.com/search/api/",
       "iconUrl": "https://brave.com/static-assets/images/cropped-brave_appicon_release-180x180.png",
-      "installability": "needs_review",
-      "reason_code": "package_version_unpinned",
+      "installability": "installable",
+      "reason_code": "compatible",
       "mcp": {
         "transport": "stdio",
         "package": {
           "name": "@brave/brave-search-mcp-server",
-          "version": null
+          "version": "2.1.4"
         },
         "auth": {
           "kind": "api_key",

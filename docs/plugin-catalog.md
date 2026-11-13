@@ -33,8 +33,9 @@ back to the name's first letter when the image fails to load. Logos remain
 the trademarks of their owners.
 
 Catalog availability is advisory metadata. Twenty-six remote HTTP integrations
-are marked `installable`; the unpinned Brave Search stdio package remains
-`needs_review` until its version and package provenance can be pinned and
-reviewed. Integrations requiring a desktop application are listed for coverage
+and the Brave Search stdio package (pinned `@brave/brave-search-mcp-server@2.1.4`,
+launched with `npx`, API key passed as `BRAVE_API_KEY`) are marked `installable`.
+The stdio key is stored only in the profile's managed MCP config and never goes
+to Control. Integrations requiring a desktop application are listed for coverage
 but are unsupported by the current installer. Runtime validates every install
 request and its server endpoint.

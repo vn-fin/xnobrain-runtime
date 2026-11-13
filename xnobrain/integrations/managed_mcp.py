@@ -680,7 +680,14 @@ def sync_profile_mcp(
             key = _task_key(scope, generation, logical_name)
             sources[key] = _source_digest(raw_config)
             try:
-                resolved = _accepted_config(profile, generation, logical_name, raw_config)
+                resolved = _accepted_config(
+                    profile,
+                    generation,
+                    logical_name,
+                    raw_config,
+                    # Only an installed catalog recipe writes a command here.
+                    stdio=isinstance(raw_config, dict) and _is_stdio(raw_config),
+                )
             except Exception:
                 is_control_proxy = (
                     isinstance(raw_config, dict) and "xnobrain_connection_id" in raw_config
@@ -694,7 +701,7 @@ def sync_profile_mcp(
             is_control_proxy = (
                 isinstance(raw_config, dict) and "xnobrain_connection_id" in raw_config
             )
-            if is_control_proxy:
+            if is_control_proxy or _is_stdio(raw_config):
                 optional.add(key)
         optional_sources = (
             (CUSTOM_PREFIX, custom_servers, True),

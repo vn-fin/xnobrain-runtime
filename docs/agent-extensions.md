@@ -37,7 +37,8 @@ the separate `xnobrain_managed_mcp_servers` config key and run through
 - Server IDs are an HMAC of profile path, profile generation and logical name,
   so same-named servers in two profiles get separate sessions and a recreated
   profile cannot reuse an old session.
-- Catalog API keys and OAuth tokens live in Control. Runtime stores only a Control connection ID
+- Catalog API keys and OAuth tokens live in Control (the one exception is the stdio
+  Brave Search key, kept in the profile's managed config as the server's `env`). Runtime stores only a Control connection ID
   and connects through Control's private MCP proxy with an in-memory grant bound
   to the active conversation run on each request; management calls use a
   10-minute fallback grant. The key never enters the profile. Header placeholders
@@ -115,8 +116,10 @@ stored by Control and never copied to Runtime profile files; shareable exports
 and imports therefore contain no catalog key.
 
 Nineteen OAuth recipes are installable alongside seven non-OAuth remote recipes.
-Four desktop integrations are unsupported, and the unpinned Brave Search stdio
-recipe remains `needs_review`.
+Four desktop integrations are unsupported. The pinned Brave Search stdio recipe
+is installable: Runtime writes `npx -y @brave/brave-search-mcp-server@2.1.4`
+with `BRAVE_API_KEY` into the managed MCP config; the key never reaches Control
+and is dropped from portable exports.
 
 Catalog OAuth credentials live in Control. The UI creates a pending Control
 connection, installs its proxy URL in Runtime with an empty `fields` object,

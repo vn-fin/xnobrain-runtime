@@ -285,7 +285,7 @@ def _catalog_installable(entry: dict, catalog: dict) -> bool:
     if isinstance(engine, dict) and engine.get("mcp_profile_isolation") is False:
         return False
     mcp = entry.get("mcp")
-    return isinstance(mcp, dict) and mcp.get("transport") == "http"
+    return isinstance(mcp, dict) and mcp.get("transport") in {"http", "stdio"}
 
 
 def _catalog_candidates(entries: list, raw_id: str) -> list[str]:

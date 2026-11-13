@@ -150,6 +150,14 @@ class IntegrationConnectToolTests(unittest.TestCase):
         self.assertIn("connect card", result["instruction"])
         self.assertNotIn("headers", request)
 
+    def test_stdio_catalog_entry_is_installable(self):
+        entry = _catalog_entry("brave-search", auth="api_key")
+        entry["mcp"]["transport"] = "stdio"
+        self.service.catalog_data["entries"].append(entry)
+        result = self._call({"kind": "catalog_mcp", "catalog_id": "brave-search"})
+        self.assertTrue(result["success"])
+        self.assertEqual(result["connect_request"]["auth_kind"], "api_key")
+
     def test_plugin_success_uses_inventory_data(self):
         result = self._call(
             {

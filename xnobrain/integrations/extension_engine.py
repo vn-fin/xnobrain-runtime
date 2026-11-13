@@ -1194,9 +1194,10 @@ def mcp_probe(profile: Path, server_name: str) -> dict[str, Any]:
         server = (read_config(profile).get(MANAGED_MCP_KEY) or {}).get(server_name)
     except Exception:
         return {"connected": False, "status": "unavailable", "tools_count": 0}
-    if isinstance(server, dict) and server.get("xnobrain_connection_id"):
+    if isinstance(server, dict) and (server.get("xnobrain_connection_id") or server.get("command")):
         # Control-proxied servers use a private http:// URL that is rebuilt
         # from the in-memory grant; public HTTPS validation is meaningless here.
+        # Stdio servers have no URL to probe at all.
         # The live managed task in this process is the authoritative probe.
         from .managed_mcp import profile_mcp_status
 

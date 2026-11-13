@@ -49,6 +49,7 @@ class PluginCatalogTests(unittest.TestCase):
                 "resend",
                 "firecrawl",
                 "cobrain",
+                "brave-search",
             },
         )
         self.assertEqual(
@@ -57,7 +58,7 @@ class PluginCatalogTests(unittest.TestCase):
                 for entry_id, entry in by_id.items()
                 if entry["installability"] == "needs_review"
             },
-            {"brave-search"},
+            set(),
         )
         for entry in entries:
             self.assertEqual(set(entry["summary"]), SUMMARY_LOCALES)
@@ -145,8 +146,18 @@ class PluginCatalogTests(unittest.TestCase):
         cases.append(oauth_install)
 
         unpinned_stdio_install = copy.deepcopy(catalog)
-        unpinned_stdio_install["entries"][27]["installability"] = "installable"
+        unpinned_stdio_install["entries"][27]["mcp"]["package"]["version"] = None
         cases.append(unpinned_stdio_install)
+
+        ranged_stdio_install = copy.deepcopy(catalog)
+        ranged_stdio_install["entries"][27]["mcp"]["package"]["version"] = "^2.1.4"
+        cases.append(ranged_stdio_install)
+
+        header_stdio_install = copy.deepcopy(catalog)
+        header_stdio_install["entries"][27]["mcp"]["auth"]["delivery"] = "header"
+        header_stdio_install["entries"][27]["mcp"]["auth"]["header"] = "X-Key"
+        header_stdio_install["entries"][27]["mcp"]["auth"]["prefix"] = ""
+        cases.append(header_stdio_install)
 
         missing_recipe_revision = copy.deepcopy(catalog)
         missing_recipe_revision["entries"][0].pop("recipe_revision")

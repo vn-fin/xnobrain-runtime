@@ -902,9 +902,9 @@ class ExtensionsService:
                 status=503,
                 code="plugins_unavailable",
             )
-        if entry.get("mcp", {}).get("transport") != "http":
+        if entry.get("mcp", {}).get("transport") not in {"http", "stdio"}:
             raise ServiceError(
-                "Only remote HTTP integrations are supported",
+                "Only remote HTTP or pinned stdio integrations are supported",
                 status=422,
                 code="unsupported_transport",
             )
@@ -936,6 +936,8 @@ class ExtensionsService:
         auth = mcp.get("auth", {})
         expected = set()
         url = mcp.get("url", "")
+        if mcp.get("transport") == "stdio":
+            return self._stdio_server_config(mcp, fields, connection_id)
         if auth.get("kind") in {"api_key", "oauth"}:
             if fields or not connection_id:
                 raise ServiceError(
@@ -982,6 +984,24 @@ class ExtensionsService:
             str(mcp.get("endpoint_mode", "static")),
             False,
         )
+
+    @staticmethod
+    def _stdio_server_config(mcp: dict[str, Any], fields: dict[str, str], connection_id: Any):
+        auth = mcp["auth"]
+        package = mcp["package"]
+        key = fields.get(auth["field"])
+        if connection_id or set(fields) != {auth["field"]} or not isinstance(key, str) or not key:
+            raise ServiceError(
+                "Catalog fields do not match this recipe",
+                status=422,
+                code="invalid_catalog_fields",
+            )
+        config = {
+            "command": "npx",
+            "args": ["-y", f"{package['name']}@{package['version']}"],
+            "env": {auth["environment_name"]: key},
+        }
+        return config, "static", True
 
     @staticmethod
     def _validate_catalog_endpoint(url: str, policy: str) -> None:

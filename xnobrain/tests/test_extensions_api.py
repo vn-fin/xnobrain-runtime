@@ -13,6 +13,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import httpx
+import yaml
 from fastapi import FastAPI
 
 from xnobrain.handlers import APIHandlers
@@ -352,6 +353,44 @@ class ExtensionAPITests(unittest.IsolatedAsyncioTestCase):
                 if item.is_file()
             )
             self.assertNotIn(secret, profile_contents)
+
+    async def test_catalog_stdio_install_stores_key_and_never_returns_it(self):
+        key = "test-brave-key"
+        path = f"{API_PREFIX}/agents-plugins/research/install-catalog"
+        body = {
+            "catalog_id": "brave-search",
+            "recipe_revision": 1,
+            "fields": {"token": key},
+        }
+        with patch.object(extension_engine, "mcp_profile_isolation_supported", return_value=True):
+            for invalid in (
+                {**body, "fields": {}},
+                {**body, "fields": {"token": ""}},
+                {**body, "fields": {"token": key, "extra": "x"}},
+                {**body, "connection_id": "8b1a8e93-748b-46b0-8d97-d4d2c7a6b221"},
+            ):
+                rejected = await self.client.post(path, headers=self.headers(), json=invalid)
+                self.assertEqual(rejected.status_code, 422)
+                self.assertEqual(rejected.json()["error"]["code"], "invalid_catalog_fields")
+                self.assertNotIn(key, rejected.text)
+            response = await self.client.post(path, headers=self.headers(), json=body)
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertNotIn(key, response.text)
+            self.assertTrue(response.json()["data"]["auth_configured"])
+            config = yaml.safe_load((self.profile / "config.yaml").read_text(encoding="utf-8"))
+            server = config["xnobrain_managed_mcp_servers"]["xnobrain-brave-search"]
+            self.assertEqual(
+                server,
+                {
+                    "command": "npx",
+                    "args": ["-y", "@brave/brave-search-mcp-server@2.1.4"],
+                    "env": {"BRAVE_API_KEY": key},
+                },
+            )
+            listing = await self.client.get(
+                f"{API_PREFIX}/agents-plugins/research", headers=self.headers()
+            )
+            self.assertNotIn(key, listing.text)
 
     async def test_catalog_oauth_install_uses_control_proxy_and_rejects_fields(self):
         connection_id = "8b1a8e93-748b-46b0-8d97-d4d2c7a6b221"

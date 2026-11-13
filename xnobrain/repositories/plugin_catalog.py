@@ -73,9 +73,11 @@ INSTALLABLE_IDS = {
     "posthog",
     "composio",
     "firecrawl",
+    "brave-search",
     *OAUTH_INSTALLABLE_IDS,
 }
-NEEDS_REVIEW_IDS = {"brave-search"}
+# Stdio entries are installable only with an exact pinned package and env-delivered key.
+STDIO_INSTALLABLE_IDS = {"brave-search"}
 SUMMARY_LOCALES = {"en", "vi", "es", "fr", "de", "ja", "zh"}
 # Example prompts follow the UI languages.
 EXAMPLE_LOCALES = {"en", "vi", "zh"}
@@ -195,34 +197,17 @@ def _validate_entry(entry: dict[str, Any]) -> None:
     if auth["kind"] == "api_key":
         _validate_api_key_auth(entry_id, auth)
 
-    if entry_id in NEEDS_REVIEW_IDS and entry["publisher_kind"] == "official":
+    if entry_id in STDIO_INSTALLABLE_IDS and entry["publisher_kind"] == "official":
         raise ValueError(f"{entry_id}: unreviewed package publisher cannot be marked official")
 
     status = entry.get("installability")
-    expected_status = (
-        "installable"
-        if entry_id in INSTALLABLE_IDS
-        else "needs_review"
-        if entry_id in NEEDS_REVIEW_IDS
-        else "unsupported"
-    )
+    expected_status = "installable" if entry_id in INSTALLABLE_IDS else "unsupported"
     if status != expected_status:
         raise ValueError(f"{entry_id}: installability must be {expected_status}")
 
     reason = entry.get("reason_code")
     if status == "installable":
         _validate_installable_entry(entry_id, mcp, auth, reason)
-    elif entry_id in NEEDS_REVIEW_IDS:
-        package = mcp.get("package")
-        if (
-            reason != "package_version_unpinned"
-            or mcp["transport"] != "stdio"
-            or auth["kind"] != "api_key"
-            or not isinstance(package, dict)
-            or not isinstance(package.get("name"), str)
-            or package.get("version") is not None
-        ):
-            raise ValueError(f"{entry_id}: unpinned stdio packages must remain needs_review")
     elif entry_id in DESKTOP_IDS:
         if status != "unsupported" or reason != "desktop_application_required":
             raise ValueError(f"{entry_id}: desktop integrations must remain unsupported")
@@ -246,6 +231,21 @@ def _validate_installable_entry(
     auth: dict[str, Any],
     reason: Any,
 ) -> None:
+    if entry_id in STDIO_INSTALLABLE_IDS:
+        package = mcp.get("package")
+        package = package if isinstance(package, dict) else {}
+        version = package.get("version")
+        if (
+            mcp["transport"] != "stdio"
+            or reason != "compatible"
+            or auth["kind"] != "api_key"
+            or auth.get("delivery") != "env"
+            or not isinstance(package.get("name"), str)
+            or not isinstance(version, str)
+            or not re.fullmatch(r"\d+\.\d+\.\d+", version)
+        ):
+            raise ValueError(f"{entry_id}: stdio packages need a pinned version and an env API key")
+        return
     if mcp["transport"] != "http" or auth["kind"] not in {"none", "api_key", "oauth"}:
         raise ValueError(
             f"{entry_id}: only remote HTTP without auth or with an API key is installable"

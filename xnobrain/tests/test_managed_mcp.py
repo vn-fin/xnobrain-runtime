@@ -680,6 +680,22 @@ class ManagedMCPTests(unittest.TestCase):
                 other = "two" if marker == "one" else "one"
                 self.assertNotIn(f"stderr-{other}", log.read_text())
 
+    def test_catalog_stdio_server_is_accepted_but_plugin_stdio_is_not(self):
+        profile, generation = self.profiles[0], self.generations[0]
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(mcp_tool, "_trust_gate_check", return_value=None),
+        ):
+            server = self._stdio_server(directory, "catalog")
+            result = managed_mcp.sync_profile_mcp(
+                profile, generation, {"xnobrain-brave-search": server}
+            )
+            self.assertEqual(result, {"connected": ["xnobrain-brave-search"]})
+            self.assertEqual(self._who(profile), ["catalog"])
+            managed_mcp.disconnect_profile_mcp(profile, generation)
+            result = managed_mcp.sync_profile_mcp(profile, generation, {}, None, {"x": server})
+            self.assertEqual(result, {"connected": []})
+
     def test_plugin_stdio_and_mixed_servers_stay_rejected(self):
         profile = self.profiles[0]
         stdio = {"command": "npx"}
