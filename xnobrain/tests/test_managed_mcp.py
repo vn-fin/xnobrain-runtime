@@ -3,12 +3,15 @@
 import asyncio
 import json
 import os
+import sys
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+
+from tools import mcp_tool
 
 from xnobrain.integrations import managed_mcp
 from xnobrain.integrations.extension_engine import profile_context
@@ -362,7 +365,7 @@ class ManagedMCPTests(unittest.TestCase):
             return parsed.hostname, "203.0.113.10"
 
         async def fake_start(task, config):
-            host = urlsplit(config["url"]).hostname
+            host = urlsplit(config.get("url", "")).hostname  # stdio has none
             starts.append((task.logical_name, host))
             if host in down_hosts:
                 raise ConnectionError("fixture server is down")
@@ -442,7 +445,7 @@ class ManagedMCPTests(unittest.TestCase):
         sessions, starts = {}, []
         profile = self.profiles[0]
         custom = {
-            "stdio": {"command": "npx", "args": ["some-server"]},
+            "mixed": {"command": "npx", "url": "https://mixed.example.test/mcp"},
             "plain": {"url": "http://plain.example.test/mcp"},
             "private": {"url": "https://admin.internal/mcp"},
             "oauth": {"url": "https://oauth.example.test/mcp", "auth": "oauth"},
@@ -456,7 +459,7 @@ class ManagedMCPTests(unittest.TestCase):
             self.assertEqual(
                 managed_mcp.profile_custom_mcp_status(profile, self.generations[0]),
                 {
-                    "stdio": "rejected",
+                    "mixed": "rejected",
                     "plain": "rejected",
                     "private": "rejected",
                     "oauth": "rejected",
@@ -522,6 +525,7 @@ class ManagedMCPTests(unittest.TestCase):
             "down": self._server("down.example.test"),
             "private": {"url": "https://admin.internal/mcp"},
             "stdio": {"command": "npx"},
+            "mixed": {"command": "npx", "url": "https://mixed.example.test/mcp"},
             "off": {**self._server("off.example.test"), "enabled": False},
         }
         self.assertEqual(
@@ -530,7 +534,8 @@ class ManagedMCPTests(unittest.TestCase):
                 "ok": "pending",
                 "down": "pending",
                 "private": "pending",
-                "stdio": "rejected",
+                "stdio": "pending",
+                "mixed": "rejected",
                 "off": "disabled",
             },
         )
@@ -542,7 +547,8 @@ class ManagedMCPTests(unittest.TestCase):
                 "ok": "connected",
                 "down": "unavailable",
                 "private": "rejected",
-                "stdio": "rejected",
+                "stdio": "connected",
+                "mixed": "rejected",
                 "off": "disabled",
             },
         )
@@ -554,6 +560,70 @@ class ManagedMCPTests(unittest.TestCase):
             managed_mcp.native_mcp_status(self.profiles[1], {"ok": custom["ok"]}),
             {"ok": "pending"},
         )
+
+    def _stdio_server(self, directory, marker):
+        script = Path(directory) / "echo_server.py"
+        script.write_text(
+            "import os\n"
+            "from mcp.server.fastmcp import FastMCP\n"
+            "app = FastMCP('echo')\n"
+            "@app.tool()\n"
+            "def who() -> str:\n"
+            "    return os.environ['STDIO_MARKER']\n"
+            "app.run('stdio')\n"
+        )
+        return {
+            "command": sys.executable,
+            "args": [str(script)],
+            "env": {"STDIO_MARKER": marker, "PATH": os.environ.get("PATH", "")},
+        }
+
+    def _who(self, profile):
+        """Call the stdio fixture's ``who`` tool through the profile's registry scope."""
+        from tools.registry import registry
+
+        agent = SimpleNamespace(tools=[], valid_tool_names=set(), enabled_toolsets=[])
+        scope = managed_mcp._profile_scope(profile)
+        names = [n for n in managed_mcp.install_tools(agent, profile) if n.endswith("__who")]
+        return [
+            json.loads(registry.get_entry(n, scope=scope).handler({}, context=None))["result"]
+            for n in names
+        ]
+
+    def test_stdio_custom_servers_run_profile_scoped_and_stop_on_removal(self):
+        profile_a, profile_b = self.profiles
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(mcp_tool, "_trust_gate_check", return_value=None),
+        ):
+            for profile, generation, marker in (
+                (profile_a, self.generations[0], "from-a"),
+                (profile_b, self.generations[1], "from-b"),
+            ):
+                server = self._stdio_server(directory, marker)
+                result = managed_mcp.sync_profile_mcp(profile, generation, {}, {"echo": server})
+                self.assertEqual(result, {"connected": ["custom:echo"]})
+                status = managed_mcp.profile_mcp_status(profile, generation)["custom:echo"]
+                self.assertEqual(status["status"], "connected")
+                self.assertEqual(self._who(profile), [marker])
+            managed_mcp.sync_profile_mcp(profile_a, self.generations[0], {}, {})
+            self.assertEqual(self._who(profile_a), [])
+            self.assertEqual(self._who(profile_b), ["from-b"])
+
+    def test_plugin_stdio_and_mixed_servers_stay_rejected(self):
+        profile = self.profiles[0]
+        stdio = {"command": "npx"}
+        with self.assertRaises(ValueError):
+            managed_mcp._resolved_config(profile, stdio, interpolate=False)
+        with self.assertRaises(ValueError):
+            managed_mcp._resolved_config(profile, stdio)
+        for mixed in (
+            {**stdio, "url": "https://a.example.test/mcp"},
+            {**stdio, "xnobrain_connection_id": "7f0f6f8e-6f43-4c63-a0a5-8bb9c1d6f8a1"},
+        ):
+            with self.assertRaises(ValueError):
+                managed_mcp._resolved_config(profile, mixed, stdio=True)
+        self.assertTrue(managed_mcp._unsupported_in_chat({**stdio, "url": "https://a.test/mcp"}))
 
     def test_http_client_factory_accepts_the_sdk_keyword_arguments(self):
         import inspect

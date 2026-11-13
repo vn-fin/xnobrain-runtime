@@ -957,8 +957,8 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(skill.status_code, 201, skill.text)
         self.assertEqual(memory.status_code, 200, memory.text)
         self.assertEqual(mcp.status_code, 200, mcp.text)
-        # A stdio server is never loaded into native chat turns.
-        self.assertEqual(mcp.json()["data"]["chat_status"], {"docs": "rejected"})
+        # A stdio server is allowed in native chat; it is pending until a turn loads it.
+        self.assertEqual(mcp.json()["data"]["chat_status"], {"docs": "pending"})
 
         self.assertTrue((profile / "skills" / "custom" / "notes" / "SKILL.md").is_file())
         installed_notes = next(item for item in skill.json()["data"] if item["skill_id"] == "notes")

@@ -238,16 +238,31 @@ def _status_from_control_error(error: BaseException) -> str:
     return "unavailable"
 
 
+def _is_stdio(config: dict[str, Any]) -> bool:
+    command = config.get("command")
+    return isinstance(command, str) and bool(command.strip())
+
+
 def _resolved_config(
     profile: Path,
     config: dict[str, Any],
     *,
     interpolate: bool = True,
+    stdio: bool = False,
 ) -> dict[str, Any]:
     from tools import mcp_tool
 
     from .extension_engine import _profile_secret_context
 
+    if stdio and isinstance(config, dict) and _is_stdio(config):
+        # The profile's own server runs as the Runtime user, unsandboxed; only
+        # a mixed or OAuth entry is refused. Same ${VAR} scope as HTTP servers.
+        if "url" in config or "xnobrain_connection_id" in config:
+            raise ValueError("A stdio MCP server cannot also define a URL or connection")
+        if str(config.get("auth") or "").lower() == "oauth":
+            raise ValueError("Managed MCP integrations support remote header authentication only")
+        with profile_context(profile), _profile_secret_context(profile):
+            return _bounded_timeout(mcp_tool._interpolate_env_vars(config))
     if not isinstance(config, dict) or not isinstance(config.get("url"), str):
         raise ValueError("Managed MCP integrations require an HTTPS endpoint")
     oauth = str(config.get("auth") or "").lower() == "oauth"
@@ -288,6 +303,10 @@ def _resolved_config(
         # to another routed workspace.
         with profile_context(profile), _profile_secret_context(profile):
             resolved = mcp_tool._interpolate_env_vars(config)
+    return _bounded_timeout(resolved)
+
+
+def _bounded_timeout(resolved: Any) -> dict[str, Any]:
     if not isinstance(resolved, dict):
         raise ValueError("Managed MCP configuration is invalid")
     # Connecting holds the process-wide manager lock, so a server's own timeout
@@ -632,7 +651,12 @@ def sync_profile_mcp(
                 sources[key] = _source_digest(raw_config)
                 try:
                     resolved = _accepted_config(
-                        profile, generation, logical_name, raw_config, interpolate=interpolate
+                        profile,
+                        generation,
+                        logical_name,
+                        raw_config,
+                        interpolate=interpolate,
+                        stdio=prefix == CUSTOM_PREFIX,
                     )
                 except Exception:
                     is_control_proxy = (
@@ -736,11 +760,12 @@ def _accepted_config(
     raw_config: Any,
     *,
     interpolate: bool = True,
+    stdio: bool = False,
 ) -> dict[str, Any]:
     from tools import mcp_tool
 
     server_id = _server_id(profile, generation, logical_name)
-    resolved = _resolved_config(profile, raw_config, interpolate=interpolate)
+    resolved = _resolved_config(profile, raw_config, interpolate=interpolate, stdio=stdio)
     filtered = mcp_tool._filter_suspicious_mcp_servers({server_id: resolved})
     if server_id not in filtered:
         raise ValueError("Managed MCP server configuration was rejected")
@@ -768,6 +793,9 @@ def _unsupported_in_chat(config: dict[str, Any]) -> bool:
     rejection needs DNS and is reported after a native turn instead.
     """
     oauth = str(config.get("auth") or "").lower() == "oauth"
+    if _is_stdio(config):
+        # Only profile-defined servers reach here, and those may run stdio.
+        return "url" in config or "xnobrain_connection_id" in config or oauth
     if "command" in config or oauth:
         return True
     url = config.get("url")

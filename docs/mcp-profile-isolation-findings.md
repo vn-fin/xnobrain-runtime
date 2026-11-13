@@ -62,7 +62,9 @@ its own entries on refresh or unload.
 
 Native conversation runs never call `discover_mcp_tools()`. A profile's own
 `mcp_servers` go through the same adapter under `custom:<name>`, and fail
-open per server with a retry cooldown. The global behavior described above
+open per server with a retry cooldown. A custom entry with a `command` runs as a
+stdio process through the same adapter, as the Runtime user with no sandbox.
+The global behavior described above
 now applies only to the separate `hermes` CLI processes. Each of those
 serves a single profile, so it cannot mix profiles.
 

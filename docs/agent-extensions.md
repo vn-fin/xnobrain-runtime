@@ -42,8 +42,7 @@ the separate `xnobrain_managed_mcp_servers` config key and run through
   to the active conversation run on each request; management calls use a
   10-minute fallback grant. The key never enters the profile. Header placeholders
   for other managed servers resolve only from the profile's own secret scope.
-  Direct public HTTPS transport uses the pinned Hermes SSRF-safe client;
-  stdio remains unsupported.
+  Direct public HTTPS transport uses the pinned Hermes SSRF-safe client.
 - Before each native conversation run, `refresh_profile_mcp` reconciles the
   profile's sessions, then `managed_mcp.install_tools` adds the connected
   tools to that agent. Native runs never call Hermes `discover_mcp_tools()`.
@@ -55,9 +54,15 @@ server and a catalog server with the same name both stay connected. Entries
 recorded as legacy catalog servers in the profile state are skipped. A
 profile with custom servers and no generation gets one on first use.
 
-Custom servers follow the catalog transport rules: public HTTPS only, no
-query string, no stdio `command`, no OAuth, and placeholders resolved only
-from the profile's secrets. They fail open per server, unlike catalog servers:
+Custom HTTP servers follow the catalog transport rules: public HTTPS only, no
+query string, no OAuth, and placeholders resolved only from the profile's
+secrets. A custom server with a `command` runs as a local stdio process
+instead, with the same `${VAR}` resolution. Stdio servers run as the Runtime
+user with no sandbox and no command allowlist, because each workspace is the
+user's own server. Their keys are literal values in the server's `env`, which
+the API masks as `***`. An entry that has both `command` and `url`, or
+`command` and a Control connection, is rejected, as is OAuth.
+Custom servers fail open per server, unlike catalog servers:
 
 - An invalid entry is skipped as `rejected`.
 - An unreachable entry is skipped as `unavailable`.
@@ -74,14 +79,14 @@ profile-defined server to one of these states:
 - `pending`: no native turn has loaded this config yet.
 - `disabled`: the entry has `enabled: false`.
 
-Stdio, `http://`, query-string and OAuth entries report `rejected` right away,
+Mixed `command`+`url`, `http://`, query-string and OAuth entries report `rejected` right away,
 without waiting for a turn. Private addresses need DNS, so they report
 `rejected` only after a native turn has loaded them. Statuses live in memory,
 so a Runtime restart resets them to `pending`. The MCP settings page shows the
 state next to each saved server. Logs name
 only the server, never its URL, headers or secrets. The model sees the tools
-as `mcp__xnb_<id>__<tool>` with the server's descriptions. Stdio, OAuth and
-private-network servers still work in the one-shot CLI path described below.
+as `mcp__xnb_<id>__<tool>` with the server's descriptions. OAuth and
+private-network servers still work only in the one-shot CLI path described below.
 
 `mcp_profile_isolation_supported()` returns true when the engine exposes the
 scoped registry API and task hooks this adapter needs, and fails closed
@@ -93,8 +98,8 @@ and agent tool injection.
 Limits: catalog MCP tools are available only in native conversation runs.
 The one-shot `chat` endpoint (team runs and delegated executions) and Kanban
 workers run the Hermes CLI as a separate per-profile subprocess. That
-subprocess runs native discovery over `mcp_servers` only, including stdio and
-OAuth entries. Catalog tools are absent there, not leaked. Catalog API keys are
+subprocess runs native discovery over `mcp_servers` only, including stdio and OAuth entries.
+Catalog tools are absent there, not leaked. Catalog API keys are
 stored by Control and never copied to Runtime profile files; shareable exports
 and imports therefore contain no catalog key.
 
