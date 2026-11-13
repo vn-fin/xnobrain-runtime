@@ -55,6 +55,13 @@ server and a catalog server with the same name both stay connected. Entries
 recorded as legacy catalog servers in the profile state are skipped. A
 profile with custom servers and no generation gets one on first use.
 
+Desktop entries (`figma`, `paper`, `obsidian`, `apple-apps`) use transport
+`node` with local auth: they run on the user's machine through the paired
+`desktop-node/xnobrain_node.py` CLI. Install treats them like a remote API-key
+server: `connection_id` is required, no fields are accepted, and the managed
+server is the Control proxy URL. Only these ids may use `node`; a package must
+be pinned to an exact `x.y.z`. See `plans/017_desktop_node_mcp/README.md`.
+
 Custom HTTP servers follow the catalog transport rules: public HTTPS only, no
 query string, no OAuth, and placeholders resolved only from the profile's
 secrets. A custom server with a `command` runs as a local stdio process

@@ -50,6 +50,10 @@ class PluginCatalogTests(unittest.TestCase):
                 "firecrawl",
                 "cobrain",
                 "brave-search",
+                "obsidian",
+                "figma",
+                "paper",
+                "apple-apps",
             },
         )
         self.assertEqual(
@@ -89,6 +93,10 @@ class PluginCatalogTests(unittest.TestCase):
                     "firecrawl",
                     "composio",
                     "cobrain",
+                    "obsidian",
+                    "figma",
+                    "paper",
+                    "apple-apps",
                 }
                 else 1,
             )
@@ -171,6 +179,27 @@ class PluginCatalogTests(unittest.TestCase):
             with self.subTest(catalog=invalid):
                 with self.assertRaises(ValueError):
                     validate_plugin_catalog(invalid)
+
+    def test_desktop_entries_use_the_node_transport(self) -> None:
+        catalog = load_plugin_catalog()
+        by_id = {entry["id"]: entry for entry in catalog["entries"]}
+        for entry_id in ("figma", "paper", "obsidian", "apple-apps"):
+            mcp = by_id[entry_id]["mcp"]
+            self.assertEqual(mcp["transport"], "node")
+            self.assertEqual(mcp["auth"]["kind"], "local")
+            self.assertEqual(by_id[entry_id]["reason_code"], "desktop_node_required")
+
+        non_desktop = copy.deepcopy(catalog)
+        next(e for e in non_desktop["entries"] if e["id"] == "context7")["mcp"]["transport"] = (
+            "node"
+        )
+        unpinned = copy.deepcopy(catalog)
+        next(e for e in unpinned["entries"] if e["id"] == "obsidian")["mcp"]["package"][
+            "version"
+        ] = "^3.7.2"
+        for invalid in (non_desktop, unpinned):
+            with self.assertRaises(ValueError):
+                validate_plugin_catalog(invalid)
 
     def test_additional_entries_are_allowed_only_in_fail_closed_state(self) -> None:
         catalog = load_plugin_catalog()

@@ -354,6 +354,36 @@ class ExtensionAPITests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertNotIn(secret, profile_contents)
 
+    async def test_catalog_node_install_uses_proxy_and_requires_connection(self):
+        connection_id = "8b1a8e93-748b-46b0-8d97-d4d2c7a6b221"
+        path = f"{API_PREFIX}/agents-plugins/research/install-catalog"
+        body = {
+            "catalog_id": "figma",
+            "recipe_revision": 2,
+            "connection_id": connection_id,
+            "fields": {},
+        }
+        with patch.object(extension_engine, "mcp_profile_isolation_supported", return_value=True):
+            for invalid in (
+                {**body, "fields": {"token": "x"}},
+                {**body, "connection_id": None},
+            ):
+                rejected = await self.client.post(path, headers=self.headers(), json=invalid)
+                self.assertEqual(rejected.status_code, 422)
+                self.assertEqual(rejected.json()["error"]["code"], "invalid_catalog_fields")
+            response = await self.client.post(
+                path,
+                headers={**self.headers(), "x-xnobrain-mcp-grant": "a" * 64},
+                json=body,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            config = (self.profile / "config.yaml").read_text(encoding="utf-8")
+            self.assertIn(
+                "http://control.internal/xnobrain/api/control/internal/v1/mcp/" + connection_id,
+                config,
+            )
+            self.assertNotIn("command:", config)
+
     async def test_catalog_stdio_install_stores_key_and_never_returns_it(self):
         key = "test-brave-key"
         path = f"{API_PREFIX}/agents-plugins/research/install-catalog"
