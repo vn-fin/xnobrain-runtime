@@ -63,6 +63,7 @@ OAUTH_INSTALLABLE_IDS = {
     "trello",
     "airtable",
     "resend",
+    "cobrain",
 }
 INSTALLABLE_IDS = {
     "aave",

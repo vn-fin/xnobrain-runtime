@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "catalog_version": "2026-11-04.1",
+  "catalog_version": "2026-11-13.1",
   "coverage_reference": {
     "repository": "nightly-labs/openbot",
     "commit": "21369e1eec420772a7db9f6bbfeae2ef9b3ab83a",
@@ -424,15 +424,17 @@
       "homepage": "https://cobrain.space",
       "documentation": "https://cobrain.space",
       "iconUrl": "https://cobrain.space/icon.svg",
-      "installability": "unsupported",
-      "reason_code": "oauth_not_supported",
+      "installability": "installable",
+      "reason_code": "compatible",
       "mcp": {
         "transport": "http",
+        "endpoint_mode": "static",
+        "url": "https://cobrain.space/mcp",
         "auth": {
           "kind": "oauth"
         }
       },
-      "recipe_revision": 1
+      "recipe_revision": 2
     },
     {
       "id": "figma",

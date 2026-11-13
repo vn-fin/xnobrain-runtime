@@ -48,6 +48,7 @@ class PluginCatalogTests(unittest.TestCase):
                 "airtable",
                 "resend",
                 "firecrawl",
+                "cobrain",
             },
         )
         self.assertEqual(
@@ -86,6 +87,7 @@ class PluginCatalogTests(unittest.TestCase):
                     "resend",
                     "firecrawl",
                     "composio",
+                    "cobrain",
                 }
                 else 1,
             )
@@ -196,6 +198,7 @@ class PluginCatalogTests(unittest.TestCase):
             "trello",
             "airtable",
             "resend",
+            "cobrain",
         }
         by_id = {entry["id"]: entry for entry in catalog["entries"]}
         for entry_id in ids:
@@ -204,7 +207,7 @@ class PluginCatalogTests(unittest.TestCase):
             self.assertEqual(entry["recipe_revision"], 2)
             self.assertEqual(entry["mcp"]["auth"]["kind"], "oauth")
             self.assertTrue(entry["mcp"]["url"].startswith("https://"))
-        self.assertEqual(by_id["cobrain"]["installability"], "unsupported")
+        self.assertEqual(by_id["cobrain"]["installability"], "installable")
 
     def test_composio_uses_the_static_connect_endpoint(self) -> None:
         catalog = load_plugin_catalog()
