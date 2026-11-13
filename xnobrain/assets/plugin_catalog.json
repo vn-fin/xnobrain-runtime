@@ -231,20 +231,22 @@
       "homepage": "https://obsidian.md",
       "documentation": "https://github.com/coddingtonbear/obsidian-local-rest-api",
       "iconUrl": "https://obsidian.md/apple-touch-icon.png",
-      "installability": "installable",
-      "reason_code": "desktop_node_required",
+      "installability": "unsupported",
+      "reason_code": "desktop_application_required",
       "mcp": {
-        "transport": "node",
-        "endpoint_mode": "desktop_cli",
+        "transport": "stdio",
         "package": {
           "name": "obsidian-mcp-server",
           "version": "3.7.2"
         },
         "auth": {
-          "kind": "local"
+          "kind": "api_key",
+          "field": "token",
+          "delivery": "env",
+          "environment_name": "OBSIDIAN_API_KEY"
         }
       },
-      "recipe_revision": 2
+      "recipe_revision": 1
     },
     {
       "id": "atlassian",
@@ -469,16 +471,16 @@
       "homepage": "https://www.figma.com",
       "documentation": "https://developers.figma.com/docs/figma-mcp-server/local-server-installation/",
       "iconUrl": "https://static.figma.com/app/icon/2/touch-180.png",
-      "installability": "installable",
-      "reason_code": "desktop_node_required",
+      "installability": "unsupported",
+      "reason_code": "desktop_application_required",
       "mcp": {
-        "transport": "node",
+        "transport": "http",
         "endpoint_mode": "loopback",
         "auth": {
           "kind": "local"
         }
       },
-      "recipe_revision": 2
+      "recipe_revision": 1
     },
     {
       "id": "paper",
@@ -515,16 +517,16 @@
       "homepage": "https://paper.design",
       "documentation": "https://paper.design/docs/mcp",
       "iconUrl": "https://paper.design/apple-touch-icon.png",
-      "installability": "installable",
-      "reason_code": "desktop_node_required",
+      "installability": "unsupported",
+      "reason_code": "desktop_application_required",
       "mcp": {
-        "transport": "node",
+        "transport": "stdio",
         "endpoint_mode": "desktop_cli",
         "auth": {
           "kind": "local"
         }
       },
-      "recipe_revision": 2
+      "recipe_revision": 1
     },
     {
       "id": "apple-apps",
@@ -561,20 +563,16 @@
       "homepage": "https://www.apple.com/macos/",
       "documentation": "https://support.apple.com/guide/mac-help/control-access-to-your-mac-mchl211c911f/mac",
       "iconUrl": "https://www.apple.com/apple-touch-icon.png",
-      "installability": "installable",
-      "reason_code": "desktop_node_required",
+      "installability": "unsupported",
+      "reason_code": "desktop_application_required",
       "mcp": {
-        "transport": "node",
+        "transport": "stdio",
         "endpoint_mode": "desktop_automation",
-        "package": {
-          "name": "apple-mcp",
-          "version": "1.0.0"
-        },
         "auth": {
           "kind": "local"
         }
       },
-      "recipe_revision": 2
+      "recipe_revision": 1
     },
     {
       "id": "sentry",

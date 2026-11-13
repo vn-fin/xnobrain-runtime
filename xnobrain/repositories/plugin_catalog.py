@@ -74,10 +74,6 @@ INSTALLABLE_IDS = {
     "composio",
     "firecrawl",
     "brave-search",
-    "obsidian",
-    "figma",
-    "paper",
-    "apple-apps",
     *OAUTH_INSTALLABLE_IDS,
 }
 # Stdio entries are installable only with an exact pinned package and env-delivered key.
@@ -85,7 +81,6 @@ STDIO_INSTALLABLE_IDS = {"brave-search"}
 SUMMARY_LOCALES = {"en", "vi", "es", "fr", "de", "ja", "zh"}
 # Example prompts follow the UI languages.
 EXAMPLE_LOCALES = {"en", "vi", "zh"}
-# Desktop entries run on the user's own machine through a paired node.
 DESKTOP_IDS = {"obsidian", "figma", "paper", "apple-apps"}
 OAUTH_IDS = {
     "canva",
@@ -194,13 +189,11 @@ def _validate_entry(entry: dict[str, Any]) -> None:
     _validate_public_https_url(entry.get("iconUrl"), entry_id, "icon")
 
     mcp = entry.get("mcp")
-    if not isinstance(mcp, dict) or mcp.get("transport") not in {"http", "stdio", "node"}:
+    if not isinstance(mcp, dict) or mcp.get("transport") not in {"http", "stdio"}:
         raise ValueError(f"{entry_id}: MCP transport is invalid")
     auth = mcp.get("auth")
     if not isinstance(auth, dict) or auth.get("kind") not in {"none", "api_key", "oauth", "local"}:
         raise ValueError(f"{entry_id}: authentication declaration is invalid")
-    if (mcp["transport"] == "node") != (entry_id in DESKTOP_IDS):
-        raise ValueError(f"{entry_id}: only desktop integrations may use the node transport")
     if auth["kind"] == "api_key":
         _validate_api_key_auth(entry_id, auth)
 
@@ -215,6 +208,9 @@ def _validate_entry(entry: dict[str, Any]) -> None:
     reason = entry.get("reason_code")
     if status == "installable":
         _validate_installable_entry(entry_id, mcp, auth, reason)
+    elif entry_id in DESKTOP_IDS:
+        if status != "unsupported" or reason != "desktop_application_required":
+            raise ValueError(f"{entry_id}: desktop integrations must remain unsupported")
     elif entry_id in OAUTH_IDS - OAUTH_INSTALLABLE_IDS:
         if status != "unsupported" or reason != "oauth_not_supported" or auth["kind"] != "oauth":
             raise ValueError(f"{entry_id}: OAuth integrations must remain unsupported")
@@ -235,17 +231,6 @@ def _validate_installable_entry(
     auth: dict[str, Any],
     reason: Any,
 ) -> None:
-    if entry_id in DESKTOP_IDS:
-        package = mcp.get("package")
-        version = package.get("version") if isinstance(package, dict) else None
-        if (
-            mcp["transport"] != "node"
-            or reason != "desktop_node_required"
-            or auth["kind"] != "local"
-            or (package is not None and not re.fullmatch(r"\d+\.\d+\.\d+", str(version)))
-        ):
-            raise ValueError(f"{entry_id}: desktop entries need the node transport and local auth")
-        return
     if entry_id in STDIO_INSTALLABLE_IDS:
         package = mcp.get("package")
         package = package if isinstance(package, dict) else {}

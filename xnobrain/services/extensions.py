@@ -902,9 +902,9 @@ class ExtensionsService:
                 status=503,
                 code="plugins_unavailable",
             )
-        if entry.get("mcp", {}).get("transport") not in {"http", "stdio", "node"}:
+        if entry.get("mcp", {}).get("transport") not in {"http", "stdio"}:
             raise ServiceError(
-                "Only remote HTTP, pinned stdio or desktop node integrations are supported",
+                "Only remote HTTP or pinned stdio integrations are supported",
                 status=422,
                 code="unsupported_transport",
             )
@@ -938,8 +938,7 @@ class ExtensionsService:
         url = mcp.get("url", "")
         if mcp.get("transport") == "stdio":
             return self._stdio_server_config(mcp, fields, connection_id)
-        # Node servers are remote-proxy servers: Control relays to the user's desktop node.
-        if mcp.get("transport") == "node" or auth.get("kind") in {"api_key", "oauth"}:
+        if auth.get("kind") in {"api_key", "oauth"}:
             if fields or not connection_id:
                 raise ServiceError(
                     "Catalog fields do not match this recipe",
