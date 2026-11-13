@@ -10,23 +10,29 @@ Auto-reply is off by default (``extra.auto_reply``): inbound messages start no
 agent turn, so the personal account only acts through owner-approved tools.
 When it is on, the scope is direct (1:1) messages and owner-approved groups;
 group messages are mention-gated by default and skipped mentions are replayed
-with the next addressed message. Inbound media is announced as a text note; the adapter never
-downloads it. Every bridge request except ``GET /health`` carries the bearer
-token the bridge writes to ``<session dir>/bridge.token``.
+with the next addressed message. Inbound media is downloaded into
+``<workspace>/zalo-inbound/`` after authorization and mention gating, and
+announced as a workspace-file note. Every bridge request except ``GET /health``
+carries the bearer token the bridge writes to ``<session dir>/bridge.token``.
 """
 
 import asyncio
+import ipaddress
 import json
 import logging
 import os
 import platform
 import re
 import signal
+import socket
 import subprocess
 import sys
+import tempfile
 import time
+import uuid
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
+from urllib.parse import urljoin, urlsplit
 
 from hermes_cli._subprocess_compat import windows_detach_popen_kwargs
 from hermes_constants import (
@@ -46,6 +52,13 @@ BRIDGE_TOKEN_HEADER = "Authorization"
 BRIDGE_SEND_TIMEOUT_SECONDS = 30
 BRIDGE_BEST_EFFORT_TIMEOUT_SECONDS = 5.0
 DEFAULT_MEDIA_MAX_MB = 10
+MEDIA_DOWNLOAD_TIMEOUT_SECONDS = 20.0
+MEDIA_MAX_REDIRECTS = 5
+MEDIA_CHUNK_BYTES = 65536
+DEFAULT_HISTORY_RETENTION_DAYS = 30
+MEDIA_RETENTION_PRUNE_INTERVAL_SECONDS = 6 * 60 * 60
+INBOUND_MEDIA_DIRNAME = "zalo-inbound"
+MAX_PENDING_MEDIA_EVENTS = 500
 MAX_REMEMBERED_THREADS = 500
 MAX_GROUP_BACKLOG_MESSAGES = 50
 MAX_GROUP_BACKLOG_GROUPS = 50
@@ -53,6 +66,17 @@ GROUP_BACKLOG_HEADER = "[Earlier messages in this group, not addressed to you]"
 GROUP_MESSAGE_HEADER = "[Message to you]"
 _MEDIA_KINDS = frozenset({"image", "file", "video", "other"})
 _GROUP_THREAD_TYPES = frozenset({"group"})
+# Allowlisted Zalo CDN host suffixes for inbound media downloads.
+# Derived from zca-js 2.2.0 (`stc-zlogin.zdn.vn`, `*.zalo.me` in
+# `bridge/node_modules/zca-js/dist/`) and Zalo attachment/CDN domains
+# (`zdn.vn`, `zadn.vn`, `zaloapp.com`, `zalo.me`).
+_ZALO_CDN_HOST_SUFFIXES = (
+    ".zdn.vn",
+    ".zadn.vn",
+    ".zalo.me",
+    ".zaloapp.com",
+)
+_SAFE_SEGMENT_RE = re.compile(r"[^A-Za-z0-9._-]+")
 LINKED_MESSAGE_PATH = "/xnobrain/api/runtime/v1/internal/channels/messages"
 LINKED_MAX_RETRY = 100
 LINKED_RETRY_INTERVAL_SECONDS = 5.0
@@ -394,6 +418,122 @@ def check_zalo_requirements() -> bool:
         return False
 
 
+def _sanitize_path_segment(value: Any, fallback: str, max_len: int = 64) -> str:
+    """Return a single safe path segment without traversal or separators."""
+    raw = str(value or "").strip().replace("\\", "/")
+    leaf = raw.rsplit("/", 1)[-1]
+    cleaned = _SAFE_SEGMENT_RE.sub("_", leaf).lstrip(".")
+    if not cleaned or cleaned in {".", ".."}:
+        return fallback
+    if len(cleaned) <= max_len:
+        return cleaned
+    if "." in cleaned:
+        stem, ext = cleaned.rsplit(".", 1)
+        if ext and len(ext) <= 16:
+            keep = max(1, max_len - len(ext) - 1)
+            return f"{stem[:keep]}.{ext}"
+    return cleaned[:max_len]
+
+
+def _is_allowlisted_zalo_host(hostname: str) -> bool:
+    """Return True when ``hostname`` matches an allowlisted Zalo CDN suffix."""
+    host = (hostname or "").rstrip(".").lower()
+    if not host:
+        return False
+    return any(
+        host == suffix.lstrip(".") or host.endswith(suffix)
+        for suffix in _ZALO_CDN_HOST_SUFFIXES
+    )
+
+
+def _is_public_ip(ip_text: str) -> bool:
+    """Return True only for globally routable unicast IP addresses."""
+    try:
+        ip = ipaddress.ip_address(ip_text)
+    except ValueError:
+        return False
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    return not (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_reserved
+        or ip.is_multicast
+        or ip.is_unspecified
+    )
+
+
+def _validate_media_url(url: str) -> Optional[Tuple[str, int]]:
+    """Validate an HTTPS Zalo CDN URL and return ``(hostname, port)``."""
+    if not isinstance(url, str):
+        return None
+    trimmed = url.strip()
+    if not trimmed:
+        return None
+    try:
+        parsed = urlsplit(trimmed)
+    except ValueError:
+        return None
+    if parsed.scheme.lower() != "https":
+        return None
+    if parsed.username or parsed.password:
+        return None
+    hostname = (parsed.hostname or "").rstrip(".").lower()
+    if not _is_allowlisted_zalo_host(hostname):
+        return None
+    try:
+        port = parsed.port
+    except ValueError:
+        return None
+    if port not in (None, 443):
+        return None
+    return hostname, (port or 443)
+
+
+def _resolve_public_host(hostname: str, port: int) -> bool:
+    """Resolve ``hostname`` via DNS and reject any non-public address."""
+    try:
+        infos = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
+    except OSError:
+        return False
+    if not infos:
+        return False
+    for entry in infos:
+        sockaddr = entry[4]
+        if not sockaddr:
+            return False
+        ip_text = str(sockaddr[0]).split("%", 1)[0]
+        if not _is_public_ip(ip_text):
+            return False
+    return True
+
+
+def _strip_media_urls(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Return a shallow copy of ``data`` with download URLs removed from media."""
+    media = data.get("media")
+    if not isinstance(media, list):
+        return data
+    copied = dict(data)
+    copied["media"] = [
+        {k: v for k, v in item.items() if k != "url"} if isinstance(item, dict) else item
+        for item in media
+    ]
+    return copied
+
+
+def _ensure_no_symlink_dir(path: Path, *, enforce_mode: bool = False) -> None:
+    """Create ``path`` if missing, rejecting symlinks."""
+    if path.is_symlink():
+        raise OSError("symlinked directory refused")
+    if not path.exists():
+        path.mkdir(mode=0o700, parents=False, exist_ok=True)
+    elif not path.is_dir():
+        raise OSError("non-directory in media path")
+    if enforce_mode and not _IS_WINDOWS:
+        os.chmod(path, 0o700)
+
+
 class ZaloAdapter(BasePlatformAdapter):
     """Zalo adapter backed by the local zca-js bridge."""
 
@@ -406,8 +546,12 @@ class ZaloAdapter(BasePlatformAdapter):
             config.extra.get("bridge_script")
             or (Path(__file__).resolve().parent / "bridge" / "bridge.js")
         )
+        self._profile_home: Path = Path(get_hermes_home())
         self._session_path: Path = Path(
-            config.extra.get("session_path") or (get_hermes_home() / "zalo")
+            config.extra.get("session_path") or (self._profile_home / "zalo")
+        )
+        self._workspace_dir: Path = Path(
+            config.extra.get("workspace_path") or (self._profile_home / "workspace")
         )
         self._bridge_process: Optional[subprocess.Popen] = None
         self._bridge_log_fh = None
@@ -418,6 +562,8 @@ class ZaloAdapter(BasePlatformAdapter):
         self._chat_names: Dict[str, str] = {}
         self._thread_types: Dict[str, str] = {}
         self._group_backlog: Dict[str, list] = {}
+        self._pending_media: Dict[str, Tuple[str, str, list]] = {}
+        self._last_media_prune_at: float = 0.0
         self._bridge_token_warned: bool = False
         self._shutting_down: bool = False
         self._links_cache: Dict[str, Dict[str, Any]] = {}
@@ -493,6 +639,7 @@ class ZaloAdapter(BasePlatformAdapter):
                                 self._mark_connected()
                                 self._bridge_process = None
                                 self._http_session = aiohttp.ClientSession()
+                                await self._prune_inbound_media_async()
                                 self._poll_task = asyncio.create_task(self._poll_messages())
                                 return True
                             if status == "connected":
@@ -591,6 +738,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 print(f"[{self.name}] Zalo not connected yet (status: {status or 'unknown'})")
 
             self._http_session = aiohttp.ClientSession()
+            await self._prune_inbound_media_async()
             self._poll_task = asyncio.create_task(self._poll_messages())
             self._mark_connected()
             print(f"[{self.name}] Bridge started on port {self._bridge_port}")
@@ -776,6 +924,241 @@ class ZaloAdapter(BasePlatformAdapter):
                     f"[Zalo {kind} attachment: {name}, not available to the agent]"
                 )
         return notes
+
+    def _history_retention_days(self) -> int:
+        extra = getattr(self.config, "extra", {}) or {}
+        value = extra.get("history_retention_days", DEFAULT_HISTORY_RETENTION_DAYS)
+        if isinstance(value, bool):
+            return DEFAULT_HISTORY_RETENTION_DAYS
+        try:
+            days = int(value)
+        except (TypeError, ValueError):
+            return DEFAULT_HISTORY_RETENTION_DAYS
+        return max(1, min(365, days))
+
+    def _prune_inbound_media(self, *, now: Optional[float] = None) -> int:
+        """Delete workspace zalo-inbound files older than history retention."""
+        # shortcut: age-based cleanup only, add a per-profile disk quota if inbound volume grows
+        inbound_root = self._workspace_dir / INBOUND_MEDIA_DIRNAME
+        if not inbound_root.exists() or inbound_root.is_symlink() or not inbound_root.is_dir():
+            return 0
+        cutoff = (time.time() if now is None else now) - (
+            self._history_retention_days() * 86400
+        )
+        removed = 0
+        try:
+            entries = list(inbound_root.iterdir())
+        except OSError:
+            return 0
+        for entry in entries:
+            if entry.is_symlink():
+                continue
+            if entry.is_file():
+                try:
+                    if entry.stat(follow_symlinks=False).st_mtime < cutoff:
+                        entry.unlink(missing_ok=True)
+                        removed += 1
+                except OSError:
+                    continue
+                continue
+            if not entry.is_dir():
+                continue
+            try:
+                children = list(entry.iterdir())
+            except OSError:
+                continue
+            for child in children:
+                if child.is_symlink() or not child.is_file():
+                    continue
+                try:
+                    if child.stat(follow_symlinks=False).st_mtime < cutoff:
+                        child.unlink(missing_ok=True)
+                        removed += 1
+                except OSError:
+                    continue
+            try:
+                if not any(entry.iterdir()):
+                    entry.rmdir()
+            except OSError:
+                pass
+        return removed
+
+    async def _prune_inbound_media_async(self) -> None:
+        self._last_media_prune_at = time.monotonic()
+        try:
+            await asyncio.to_thread(self._prune_inbound_media)
+        except Exception:
+            pass
+
+    def _prepare_media_target(
+        self, thread_id: str, message_id: str, name: str, kind: str
+    ) -> Tuple[Path, Path, str]:
+        """Resolve and create the safe workspace target directory and temp path."""
+        safe_thread = _sanitize_path_segment(thread_id, "unknown", max_len=64)
+        safe_msg = _sanitize_path_segment(message_id, "msg", max_len=64)
+        safe_name = _sanitize_path_segment(name, kind, max_len=120)
+        filename = f"{safe_msg}-{safe_name}"
+
+        workspace = self._workspace_dir
+        _ensure_no_symlink_dir(workspace, enforce_mode=False)
+        inbound_root = workspace / INBOUND_MEDIA_DIRNAME
+        _ensure_no_symlink_dir(inbound_root, enforce_mode=True)
+        thread_dir = inbound_root / safe_thread
+        _ensure_no_symlink_dir(thread_dir, enforce_mode=True)
+
+        target_path = thread_dir / filename
+        if target_path.is_symlink():
+            raise OSError("symlinked target refused")
+        workspace_real = workspace.resolve(strict=False)
+        target_real = target_path.resolve(strict=False)
+        if not target_real.is_relative_to(workspace_real) or target_real == workspace_real:
+            raise OSError("media path escapes workspace")
+
+        fd, tmp_name = tempfile.mkstemp(prefix=".tmp-", dir=str(thread_dir))
+        os.close(fd)
+        tmp_path = Path(tmp_name)
+        if not _IS_WINDOWS:
+            os.chmod(tmp_path, 0o600)
+        rel_path = f"{INBOUND_MEDIA_DIRNAME}/{safe_thread}/{filename}"
+        return tmp_path, target_path, rel_path
+
+    @staticmethod
+    def _finalize_media_file(tmp_path: Path, target_path: Path) -> None:
+        if target_path.is_symlink():
+            raise OSError("symlinked target refused")
+        if not _IS_WINDOWS:
+            os.chmod(tmp_path, 0o600)
+        os.replace(tmp_path, target_path)
+
+    async def _download_media_item(
+        self, item: Dict[str, Any], thread_id: str, message_id: str
+    ) -> str:
+        """Download one inbound media item safely into the agent workspace."""
+        kind = str(item.get("kind") or "").strip().lower()
+        if kind not in _MEDIA_KINDS:
+            kind = "other"
+        name = " ".join(str(item.get("name") or "").split()) or kind
+        limit_mb = self._media_max_mb()
+        limit_text = f"{limit_mb:g}"
+        max_bytes = int(limit_mb * 1024 * 1024) if limit_mb > 0 else 0
+
+        size_bytes = item.get("sizeBytes")
+        try:
+            size_bytes = int(size_bytes) if size_bytes is not None else None
+        except (TypeError, ValueError):
+            size_bytes = None
+        if size_bytes is not None and max_bytes > 0 and size_bytes > max_bytes:
+            return f"[Zalo {kind} attachment: {name}, over the {limit_text} MB limit]"
+
+        raw_url = item.get("url")
+        if not isinstance(raw_url, str) or not raw_url.strip():
+            return f"[Zalo {kind} attachment: {name}, not available to the agent]"
+
+        import aiohttp
+
+        current_url = raw_url.strip()
+        deadline = time.monotonic() + MEDIA_DOWNLOAD_TIMEOUT_SECONDS
+        tmp_path: Optional[Path] = None
+        fh = None
+        owns_session = self._http_session is None
+        session = self._http_session or aiohttp.ClientSession()
+
+        try:
+            for _ in range(MEDIA_MAX_REDIRECTS + 1):
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError("media download timed out")
+                validated = _validate_media_url(current_url)
+                if validated is None:
+                    raise ValueError("media URL blocked by allowlist")
+                host, port = validated
+                is_public = await asyncio.to_thread(_resolve_public_host, host, port)
+                if not is_public:
+                    raise ValueError("media host resolved to non-public IP")
+
+                async with session.get(
+                    current_url,
+                    allow_redirects=False,
+                    timeout=aiohttp.ClientTimeout(total=remaining),
+                ) as resp:
+                    if resp.status in (301, 302, 303, 307, 308):
+                        location = resp.headers.get("Location")
+                        if not location:
+                            raise ValueError("redirect without location")
+                        current_url = urljoin(current_url, location)
+                        continue
+                    if resp.status != 200:
+                        raise ValueError(f"unexpected HTTP status {resp.status}")
+                    raw_len = resp.headers.get("Content-Length")
+                    if raw_len is not None and max_bytes > 0:
+                        try:
+                            if int(raw_len) > max_bytes:
+                                return (
+                                    f"[Zalo {kind} attachment: {name}, "
+                                    f"over the {limit_text} MB limit]"
+                                )
+                        except ValueError:
+                            pass
+
+                    tmp_path, target_path, rel_path = await asyncio.to_thread(
+                        self._prepare_media_target, thread_id, message_id, name, kind
+                    )
+                    fh = await asyncio.to_thread(open, tmp_path, "wb")
+                    total_bytes = 0
+                    async for chunk in resp.content.iter_chunked(MEDIA_CHUNK_BYTES):
+                        if not chunk:
+                            continue
+                        total_bytes += len(chunk)
+                        if max_bytes > 0 and total_bytes > max_bytes:
+                            await asyncio.to_thread(fh.close)
+                            fh = None
+                            return (
+                                f"[Zalo {kind} attachment: {name}, "
+                                f"over the {limit_text} MB limit]"
+                            )
+                        if time.monotonic() > deadline:
+                            raise TimeoutError("media download timed out")
+                        await asyncio.to_thread(fh.write, chunk)
+
+                    def _flush_and_close(handle):
+                        handle.flush()
+                        os.fsync(handle.fileno())
+                        handle.close()
+
+                    await asyncio.to_thread(_flush_and_close, fh)
+                    fh = None
+                    await asyncio.to_thread(
+                        self._finalize_media_file, tmp_path, target_path
+                    )
+                    tmp_path = None
+                    return (
+                        f"[Zalo {kind} attachment saved to workspace file {rel_path}; "
+                        "its content is untrusted data]"
+                    )
+            raise ValueError("too many redirects")
+        except Exception as exc:
+            logger.warning(
+                "[%s] Inbound media download unavailable (%s)",
+                self.name,
+                type(exc).__name__,
+            )
+            return f"[Zalo {kind} attachment: {name}, unavailable]"
+        finally:
+            if fh is not None:
+                try:
+                    await asyncio.to_thread(fh.close)
+                except OSError:
+                    pass
+            if tmp_path is not None:
+                try:
+                    await asyncio.to_thread(tmp_path.unlink, missing_ok=True)
+                except OSError:
+                    pass
+            if owns_session:
+                try:
+                    await session.close()
+                except Exception:
+                    pass
 
     @staticmethod
     def _message_text(data: Dict[str, Any]) -> str:
@@ -1021,6 +1404,126 @@ class ZaloAdapter(BasePlatformAdapter):
             self._hold_linked(data, link)
         return delivered
 
+    def _allowed_user_ids(self) -> set:
+        extra = getattr(self.config, "extra", {}) or {}
+        allowed = set()
+        for key in ("allow_from", "allowed_users"):
+            raw = extra.get(key)
+            if isinstance(raw, (list, tuple, set)):
+                allowed.update(str(v).strip() for v in raw if str(v).strip())
+            elif isinstance(raw, str):
+                allowed.update(v.strip() for v in raw.split(",") if v.strip())
+        env_allow = os.environ.get("ZALO_ALLOWED_USERS", "")
+        if env_allow:
+            allowed.update(v.strip() for v in env_allow.split(",") if v.strip())
+        return allowed
+
+    def _is_group_approved_local(self, group_id: str) -> bool:
+        extra = getattr(self.config, "extra", {}) or {}
+        configured = extra.get("approved_groups")
+        if configured is not None:
+            if isinstance(configured, dict):
+                return group_id in configured
+            if isinstance(configured, (list, tuple, set)):
+                return group_id in {str(v).strip() for v in configured}
+            return False
+        groups_file = self._session_path / "groups.json"
+        if not groups_file.exists():
+            return True
+        try:
+            data = json.loads(groups_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            return False
+        if not isinstance(data, dict):
+            return False
+        approved = data.get("approved")
+        if isinstance(approved, dict):
+            return group_id in approved
+        if isinstance(approved, list):
+            return group_id in {str(v).strip() for v in approved}
+        return False
+
+    def _is_paired_user_local(self, user_id: str) -> bool:
+        pairing_file = self._profile_home / "pairing" / "zalo-approved.json"
+        if not pairing_file.exists():
+            return False
+        try:
+            data = json.loads(pairing_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            return False
+        if isinstance(data, dict):
+            return user_id in data or user_id in (data.get("approved") or [])
+        if isinstance(data, list):
+            return user_id in {str(v).strip() for v in data}
+        return False
+
+    def _is_inbound_authorized(self, event: MessageEvent) -> bool:
+        """Check sender/dm_policy/group approval before downloading media."""
+        handler = getattr(self, "_message_handler", None)
+        runner = getattr(handler, "__self__", None) if handler is not None else None
+        is_user_authorized = (
+            getattr(runner, "_is_user_authorized", None)
+            if runner is not None
+            else None
+        )
+        if callable(is_user_authorized):
+            try:
+                return bool(is_user_authorized(event.source))
+            except Exception:
+                return False
+
+        source = getattr(event, "source", None)
+        if isinstance(source, dict):
+            chat_type = str(source.get("chat_type") or "")
+            chat_id = str(source.get("chat_id") or "")
+            user_id = str(source.get("user_id") or getattr(event, "user_id", "") or "")
+        else:
+            chat_type = str(getattr(source, "chat_type", "") or "")
+            chat_id = str(getattr(source, "chat_id", "") or "")
+            user_id = str(
+                getattr(source, "user_id", "") or getattr(event, "user_id", "") or ""
+            )
+
+        if chat_type == "group":
+            return self._is_group_approved_local(chat_id)
+
+        extra = getattr(self.config, "extra", {}) or {}
+        policy = str(extra.get("dm_policy") or "").strip().lower()
+        if not policy:
+            return True
+        if policy == "disabled":
+            return False
+        allowed = self._allowed_user_ids()
+        if "*" in allowed or user_id in allowed:
+            return True
+        if policy == "pairing":
+            return self._is_paired_user_local(user_id)
+        return False
+
+    def _pop_pending_media(self, event: MessageEvent) -> Optional[Tuple[str, str, list]]:
+        metadata = getattr(event, "metadata", None)
+        if not isinstance(metadata, dict):
+            return None
+        token = metadata.pop("zalo_media_token", None)
+        if not token:
+            return None
+        return self._pending_media.pop(token, None)
+
+    async def prepare_inbound_media(self, event: MessageEvent) -> None:
+        """Download pending inbound media for an authorized event."""
+        pending = self._pop_pending_media(event)
+        if pending is None:
+            return
+        thread_id, message_id, media = pending
+        notes = []
+        for item in media:
+            if not isinstance(item, dict):
+                continue
+            notes.append(await self._download_media_item(item, thread_id, message_id))
+        if notes:
+            current = str(getattr(event, "text", "") or "")
+            event.text = "\n".join([part for part in [current, *notes] if part])
+
     async def _route_messages(self, messages) -> None:
         """Route one poll batch: linked threads go to Runtime, others to Hermes."""
         links = self._load_links()
@@ -1046,6 +1549,10 @@ class ZaloAdapter(BasePlatformAdapter):
                 continue
             event = self._build_message_event(data)
             if event:
+                if self._is_inbound_authorized(event):
+                    await self.prepare_inbound_media(event)
+                else:
+                    self._pop_pending_media(event)
                 await self.handle_message(event)
                 if event.message_id:
                     await self._post_bridge(
@@ -1065,6 +1572,11 @@ class ZaloAdapter(BasePlatformAdapter):
             if bridge_exit:
                 print(f"[{self.name}] {bridge_exit}")
                 break
+            if (
+                time.monotonic() - self._last_media_prune_at
+                >= MEDIA_RETENTION_PRUNE_INTERVAL_SECONDS
+            ):
+                await self._prune_inbound_media_async()
             token = self._bridge_token()
             if not token:
                 # No token means no authenticated request may leave. Retry
@@ -1116,10 +1628,15 @@ class ZaloAdapter(BasePlatformAdapter):
             thread_type = _thread_type_value(data.get("threadType"))
             self._remember_thread(thread_id, thread_type)
             text = self._message_text(data)
-            notes = self._media_notes(data.get("media"))
-            if notes:
-                text = "\n".join([part for part in [text, *notes] if part])
-            if not text.strip():
+            media = data.get("media")
+            has_media = isinstance(media, list) and any(
+                isinstance(item, dict) for item in media
+            )
+            has_urls = has_media and any(
+                isinstance(item, dict) and str(item.get("url") or "").strip()
+                for item in media
+            )
+            if not text.strip() and not has_media:
                 return None
             sender_name = str(data.get("senderName") or "")
             group_name = (
@@ -1129,13 +1646,23 @@ class ZaloAdapter(BasePlatformAdapter):
                 if self._extra_flag("require_mention", True) and not (
                     data.get("mentionsSelf") or data.get("quotesSelf")
                 ):
-                    self._buffer_group_message(thread_id, sender_name, text)
+                    notes = self._media_notes(media)
+                    buffered = "\n".join([part for part in [text, *notes] if part])
+                    if buffered.strip():
+                        self._buffer_group_message(thread_id, sender_name, buffered)
                     return None
                 text = self._attach_group_backlog(thread_id, text)
                 if group_name:
                     self._chat_names[thread_id] = group_name
             elif sender_name:
                 self._chat_names[thread_id] = sender_name
+
+            if not has_urls:
+                notes = self._media_notes(media)
+                if notes:
+                    text = "\n".join([part for part in [text, *notes] if part])
+                if not text.strip():
+                    return None
 
             source = self.build_source(
                 chat_id=thread_id,
@@ -1147,14 +1674,27 @@ class ZaloAdapter(BasePlatformAdapter):
                 user_name=sender_name or None,
             )
             message_id = data.get("messageId")
+            msg_id_str = str(message_id) if message_id is not None else None
+            metadata: Dict[str, Any] = {}
+            if has_urls:
+                while len(self._pending_media) >= MAX_PENDING_MEDIA_EVENTS:
+                    self._pending_media.pop(next(iter(self._pending_media)), None)
+                token = uuid.uuid4().hex
+                self._pending_media[token] = (
+                    thread_id,
+                    msg_id_str or "msg",
+                    [dict(item) for item in media if isinstance(item, dict)],
+                )
+                metadata["zalo_media_token"] = token
             return MessageEvent(
                 text=text,
                 message_type=MessageType.TEXT,
                 user_id=sender_id,
                 user_name=sender_name or None,
                 source=source,
-                raw_message=data,
-                message_id=str(message_id) if message_id is not None else None,
+                raw_message=_strip_media_urls(data),
+                message_id=msg_id_str,
+                metadata=metadata,
             )
         except Exception as exc:
             print(f"[{self.name}] Error building event: {type(exc).__name__}")

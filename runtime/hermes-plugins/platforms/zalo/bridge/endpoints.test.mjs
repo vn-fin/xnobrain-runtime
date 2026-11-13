@@ -570,15 +570,31 @@ test('messageText extracts string and object content', () => {
   assert.equal(messageText(42), '');
 });
 
-test('mediaFromContent describes attachments without exposing URLs', () => {
+test('mediaFromContent extracts https URLs and omits non-https or absent URLs', () => {
   assert.deepEqual(
     mediaFromContent({
       type: 'chat.photo',
       title: 'photo.jpg',
-      href: 'https://cdn.example/photo.jpg',
+      href: 'https://f1-zpc.zdn.vn/photo.jpg',
       params: '{"fileSize":"1234"}',
     }),
-    [{ kind: 'image', name: 'photo.jpg', sizeBytes: 1234 }],
+    [{ kind: 'image', name: 'photo.jpg', sizeBytes: 1234, url: 'https://f1-zpc.zdn.vn/photo.jpg' }],
+  );
+  assert.deepEqual(
+    mediaFromContent({
+      type: 'chat.photo',
+      title: 'insecure.jpg',
+      href: 'http://f1-zpc.zdn.vn/insecure.jpg',
+    }),
+    [{ kind: 'image', name: 'insecure.jpg', sizeBytes: null }],
+  );
+  assert.deepEqual(
+    mediaFromContent({
+      type: 'chat.link',
+      title: 'Example',
+      href: 'https://example.com/article',
+    }),
+    [{ kind: 'other', name: 'Example', sizeBytes: null }],
   );
   assert.deepEqual(mediaFromContent({ type: 'chat.video.msg', title: 'clip.mp4' }), [
     { kind: 'video', name: 'clip.mp4', sizeBytes: null },

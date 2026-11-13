@@ -808,6 +808,403 @@ class ZaloAdapterPluginTests(unittest.IsolatedAsyncioTestCase):
             "[Zalo image attachment: big.png, over the 1 MB limit]",
         )
 
+    def _media_adapter(self, **extra):
+        root = self._session_dir()
+        session = root / "zalo"
+        workspace = root / "workspace"
+        session.mkdir(parents=True, exist_ok=True)
+        workspace.mkdir(parents=True, exist_ok=True)
+        adapter = self._build_adapter(
+            session, auto_reply=True, workspace_path=str(workspace), **extra
+        )
+        return adapter, session, workspace
+
+    @staticmethod
+    def _stream_http(responses):
+        """Return a fake aiohttp ClientSession serving scripted GET responses."""
+
+        class _StreamContent:
+            def __init__(self, chunks):
+                self._chunks = chunks
+
+            async def iter_chunked(self, _size):
+                for chunk in self._chunks:
+                    yield chunk
+
+        class _StreamResp:
+            def __init__(self, status=200, chunks=(), headers=None):
+                self.status = status
+                self.headers = headers or {}
+                self.content = _StreamContent(chunks)
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+        class _Session:
+            def __init__(self):
+                self.calls = []
+                self._queue = list(responses)
+
+            def get(self, url, **kwargs):
+                self.calls.append((url, kwargs))
+                spec = self._queue.pop(0)
+                return _StreamResp(
+                    status=spec.get("status", 200),
+                    chunks=spec.get("chunks", ()),
+                    headers=spec.get("headers"),
+                )
+
+            async def close(self):
+                return None
+
+        return _Session()
+
+    async def test_inbound_media_downloads_to_workspace_with_success_note(self):
+        adapter, _session, workspace = self._media_adapter()
+        url = "https://f1-zpc.zdn.vn/abc/photo.jpg"
+        http = self._stream_http([{"status": 200, "chunks": [b"jpeg-bytes"]}])
+        adapter._http_session = http
+
+        with (
+            mock.patch.dict(sys.modules, {"aiohttp": _fake_aiohttp(http)}),
+            mock.patch.object(
+                self.adapter.socket,
+                "getaddrinfo",
+                return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))],
+            ),
+        ):
+            await adapter._route_messages(
+                [
+                    {
+                        "messageId": "m42",
+                        "threadId": "123456",
+                        "threadType": "user",
+                        "senderId": "789",
+                        "senderName": "Nam",
+                        "text": "look at this",
+                        "timestamp": 1,
+                        "media": [
+                            {
+                                "kind": "image",
+                                "name": "photo.jpg",
+                                "sizeBytes": 10,
+                                "url": url,
+                            }
+                        ],
+                    }
+                ]
+            )
+
+        self.assertEqual(len(adapter.handled), 1)
+        event = adapter.handled[0]
+        saved = workspace / "zalo-inbound" / "123456" / "m42-photo.jpg"
+        self.assertTrue(saved.is_file())
+        self.assertEqual(saved.read_bytes(), b"jpeg-bytes")
+        self.assertEqual(saved.stat().st_mode & 0o777, 0o600)
+        self.assertEqual((workspace / "zalo-inbound").stat().st_mode & 0o777, 0o700)
+        self.assertEqual(
+            (workspace / "zalo-inbound" / "123456").stat().st_mode & 0o777, 0o700
+        )
+        self.assertEqual(
+            event.text,
+            "look at this\n"
+            "[Zalo image attachment saved to workspace file "
+            "zalo-inbound/123456/m42-photo.jpg; its content is untrusted data]",
+        )
+        self.assertNotIn(url, event.text)
+        self.assertNotIn(url, str(event.raw_message))
+        self.assertNotIn(url, str(event.metadata))
+
+    async def test_gating_blocks_download_before_authorization(self):
+        # Unmentioned group message, disabled DM policy, and unapproved group
+        # must never issue an HTTP download.
+        adapter, session, _workspace = self._media_adapter(dm_policy="disabled")
+        http = self._stream_http([{"status": 200, "chunks": [b"x"]}])
+        adapter._http_session = http
+        (session / "groups.json").write_text('{"approved": {}}', encoding="utf-8")
+
+        with mock.patch.dict(sys.modules, {"aiohttp": _fake_aiohttp(http)}):
+            await adapter._route_messages(
+                [
+                    self._group_message(
+                        mentionsSelf=False,
+                        text="",
+                        media=[
+                            {
+                                "kind": "image",
+                                "name": "unmentioned.jpg",
+                                "sizeBytes": 1,
+                                "url": "https://f1-zpc.zdn.vn/1.jpg",
+                            }
+                        ],
+                    ),
+                    self._group_message(
+                        mentionsSelf=True,
+                        text="",
+                        media=[
+                            {
+                                "kind": "image",
+                                "name": "unapproved.jpg",
+                                "sizeBytes": 1,
+                                "url": "https://f1-zpc.zdn.vn/2.jpg",
+                            }
+                        ],
+                    ),
+                    {
+                        "messageId": "m99",
+                        "threadId": "789",
+                        "threadType": "user",
+                        "senderId": "789",
+                        "senderName": "Nam",
+                        "text": "",
+                        "timestamp": 1,
+                        "media": [
+                            {
+                                "kind": "image",
+                                "name": "dm.jpg",
+                                "sizeBytes": 1,
+                                "url": "https://f1-zpc.zdn.vn/3.jpg",
+                            }
+                        ],
+                    },
+                ]
+            )
+
+        self.assertEqual(http.calls, [])
+
+    async def test_non_allowlisted_host_is_refused(self):
+        adapter, _session, workspace = self._media_adapter()
+        http = self._stream_http([])
+        adapter._http_session = http
+
+        with mock.patch.dict(sys.modules, {"aiohttp": _fake_aiohttp(http)}):
+            await adapter._route_messages(
+                [
+                    {
+                        "messageId": "m1",
+                        "threadId": "100",
+                        "threadType": "user",
+                        "senderId": "100",
+                        "senderName": "Nam",
+                        "text": "",
+                        "timestamp": 1,
+                        "media": [
+                            {
+                                "kind": "file",
+                                "name": "evil.pdf",
+                                "sizeBytes": 10,
+                                "url": "https://evil.example.com/evil.pdf",
+                            }
+                        ],
+                    }
+                ]
+            )
+
+        self.assertEqual(http.calls, [])
+        self.assertEqual(
+            adapter.handled[0].text,
+            "[Zalo file attachment: evil.pdf, unavailable]",
+        )
+        self.assertFalse((workspace / "zalo-inbound").exists())
+
+    async def test_private_ip_dns_resolution_is_refused(self):
+        adapter, _session, _workspace = self._media_adapter()
+        http = self._stream_http([])
+        adapter._http_session = http
+
+        with (
+            mock.patch.dict(sys.modules, {"aiohttp": _fake_aiohttp(http)}),
+            mock.patch.object(
+                self.adapter.socket,
+                "getaddrinfo",
+                return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 443))],
+            ),
+        ):
+            await adapter._route_messages(
+                [
+                    {
+                        "messageId": "m2",
+                        "threadId": "100",
+                        "threadType": "user",
+                        "senderId": "100",
+                        "senderName": "Nam",
+                        "text": "",
+                        "timestamp": 1,
+                        "media": [
+                            {
+                                "kind": "image",
+                                "name": "ssrf.jpg",
+                                "sizeBytes": 10,
+                                "url": "https://f1-zpc.zdn.vn/ssrf.jpg",
+                            }
+                        ],
+                    }
+                ]
+            )
+
+        self.assertEqual(http.calls, [])
+        self.assertEqual(
+            adapter.handled[0].text,
+            "[Zalo image attachment: ssrf.jpg, unavailable]",
+        )
+
+    async def test_redirect_to_non_allowlisted_host_is_refused(self):
+        adapter, _session, _workspace = self._media_adapter()
+        http = self._stream_http(
+            [
+                {
+                    "status": 302,
+                    "headers": {"Location": "https://169.254.169.254/latest"},
+                }
+            ]
+        )
+        adapter._http_session = http
+
+        with (
+            mock.patch.dict(sys.modules, {"aiohttp": _fake_aiohttp(http)}),
+            mock.patch.object(
+                self.adapter.socket,
+                "getaddrinfo",
+                return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))],
+            ),
+        ):
+            await adapter._route_messages(
+                [
+                    {
+                        "messageId": "m3",
+                        "threadId": "100",
+                        "threadType": "user",
+                        "senderId": "100",
+                        "senderName": "Nam",
+                        "text": "",
+                        "timestamp": 1,
+                        "media": [
+                            {
+                                "kind": "image",
+                                "name": "redir.jpg",
+                                "sizeBytes": 10,
+                                "url": "https://f1-zpc.zdn.vn/redir.jpg",
+                            }
+                        ],
+                    }
+                ]
+            )
+
+        self.assertEqual(len(http.calls), 1)
+        self.assertEqual(
+            adapter.handled[0].text,
+            "[Zalo image attachment: redir.jpg, unavailable]",
+        )
+
+    async def test_streamed_size_cap_aborts_and_deletes_partial_file(self):
+        adapter, _session, workspace = self._media_adapter(media_max_mb=0.0001)
+        # 0.0001 MB = 104 bytes; send 200 bytes with missing sizeBytes.
+        http = self._stream_http(
+            [{"status": 200, "chunks": [b"a" * 80, b"b" * 120]}]
+        )
+        adapter._http_session = http
+
+        with (
+            mock.patch.dict(sys.modules, {"aiohttp": _fake_aiohttp(http)}),
+            mock.patch.object(
+                self.adapter.socket,
+                "getaddrinfo",
+                return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))],
+            ),
+        ):
+            await adapter._route_messages(
+                [
+                    {
+                        "messageId": "m4",
+                        "threadId": "100",
+                        "threadType": "user",
+                        "senderId": "100",
+                        "senderName": "Nam",
+                        "text": "",
+                        "timestamp": 1,
+                        "media": [
+                            {
+                                "kind": "file",
+                                "name": "huge.bin",
+                                "sizeBytes": None,
+                                "url": "https://f1-zpc.zdn.vn/huge.bin",
+                            }
+                        ],
+                    }
+                ]
+            )
+
+        self.assertEqual(
+            adapter.handled[0].text,
+            "[Zalo file attachment: huge.bin, over the 0.0001 MB limit]",
+        )
+        thread_dir = workspace / "zalo-inbound" / "100"
+        self.assertEqual(list(thread_dir.iterdir()), [])
+
+    async def test_path_sanitizing_prevents_escape_and_symlink_traversal(self):
+        adapter, _session, workspace = self._media_adapter()
+        http = self._stream_http([{"status": 200, "chunks": [b"ok"]}])
+        adapter._http_session = http
+
+        with (
+            mock.patch.dict(sys.modules, {"aiohttp": _fake_aiohttp(http)}),
+            mock.patch.object(
+                self.adapter.socket,
+                "getaddrinfo",
+                return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))],
+            ),
+        ):
+            await adapter._route_messages(
+                [
+                    {
+                        "messageId": "../../m5",
+                        "threadId": "../escape",
+                        "threadType": "user",
+                        "senderId": "100",
+                        "senderName": "Nam",
+                        "text": "",
+                        "timestamp": 1,
+                        "media": [
+                            {
+                                "kind": "file",
+                                "name": "../../secret.txt",
+                                "sizeBytes": 2,
+                                "url": "https://f1-zpc.zdn.vn/secret.txt",
+                            }
+                        ],
+                    }
+                ]
+            )
+
+        saved = workspace / "zalo-inbound" / "escape" / "m5-secret.txt"
+        self.assertTrue(saved.is_file())
+        self.assertTrue(saved.resolve().is_relative_to(workspace.resolve()))
+        self.assertIn(
+            "zalo-inbound/escape/m5-secret.txt; its content is untrusted data]",
+            adapter.handled[0].text,
+        )
+
+    def test_retention_cleanup_deletes_old_files_and_keeps_recent(self):
+        adapter, _session, workspace = self._media_adapter(history_retention_days=7)
+        thread_dir = workspace / "zalo-inbound" / "100"
+        thread_dir.mkdir(parents=True)
+        old_file = thread_dir / "m1-old.jpg"
+        new_file = thread_dir / "m2-new.jpg"
+        old_file.write_bytes(b"old")
+        new_file.write_bytes(b"new")
+        now = 1_700_000_000.0
+        os.utime(old_file, (now - 8 * 86400, now - 8 * 86400))
+        os.utime(new_file, (now - 2 * 86400, now - 2 * 86400))
+
+        removed = adapter._prune_inbound_media(now=now)
+
+        self.assertEqual(removed, 1)
+        self.assertFalse(old_file.exists())
+        self.assertTrue(new_file.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

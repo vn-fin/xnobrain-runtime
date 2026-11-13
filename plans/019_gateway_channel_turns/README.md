@@ -72,7 +72,10 @@ second agent loop is introduced.
   `dm_policy: allowlist` or `pairing`; allow-all is rejected by the endpoint.
   A missing or conflicting binding fails closed.
 - Text only: attachments, media URLs, stickers, and typing-rich replies are not
-  forwarded. The reply is the final stored text.
+  forwarded in the turn API; the reply is the final stored text. For personal
+  `zalo`, the adapter downloads authorized inbound media into the agent
+  workspace (`zalo-inbound/<thread>/<message>-<name>`) and passes the
+  workspace-relative path in the turn text note.
 - Non-web parity gaps remain: the gateway does not receive per-tool events,
   tool names, approval events, per-run usage attribution, streamed UI
   metadata, or attachments. It reports `api_calls: 1` and an empty `tools`

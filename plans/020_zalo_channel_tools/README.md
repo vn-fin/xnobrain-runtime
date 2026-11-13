@@ -3,7 +3,6 @@
 Status: P-A and P-B done (2026-11-12); Track B done (B1/B3 done, B2 done 2026-11-14).
 
 Remaining:
-- Inbound media download (needs plan 019 attachment forwarding).
 - Live verification against QR-connected personal Zalo and Zalo Bot accounts.
 - `getGroupChatHistory` paging (zca-js 2.2.0 accepts `(groupId, count)` only).
 
@@ -120,10 +119,11 @@ Channel behavior:
    gating (`requireMention` default true, quoting the bot counts) and the
    group approval + daily limit (extend D5). Skipped group messages are kept
    (max 50) and attached to the next processed message, like OpenClaw.
-2. **Inbound media**: images/files/videos downloaded after sender and mention
-   checks, size capped by `extra.media_max_mb` (default 10); failed download →
-   "attachment unavailable" note. Requires 019 to forward attachments; until
-   then, media is text-noted only.
+2. **Inbound media** (done 2026-11-14): images/files/videos downloaded after
+   sender, `dm_policy`, group approval, and mention gating into
+   `<workspace>/zalo-inbound/<thread>/<message>-<name>`, size capped by
+   `extra.media_max_mb` (default 10), pruned after `history_retention_days`,
+   announced as a workspace-relative text note (plan 019 stays text-only).
 3. **Typing and seen**: `sendTypingEvent` before a reply, `sendSeenEvent` /
    `sendDeliveredEvent` after processing (best effort).
 4. **Outbound chunking**: replies over 2000 chars split into chunks.

@@ -1843,10 +1843,30 @@ function sizeBytesFromParams(params) {
   return null;
 }
 
+function safeHttpsUrl(value) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'https:' || !parsed.hostname) {
+      return null;
+    }
+    return trimmed;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Describe the attachment of a message without exposing its URL.
+ * Describe the attachment of a message, including an HTTPS download URL when
+ * present on attachment content (`content.href`).
  *
- * @returns {Array<{kind: string, name: string, sizeBytes: number | null}>}
+ * @returns {Array<{kind: string, name: string, sizeBytes: number | null, url?: string}>}
  */
 export function mediaFromContent(content) {
   if (!content || typeof content !== 'object' || Array.isArray(content)) {
@@ -1863,7 +1883,14 @@ export function mediaFromContent(content) {
       : typeof content.description === 'string'
         ? content.description
         : '';
-  return [{ kind, name, sizeBytes: sizeBytesFromParams(content.params) }];
+  const item = { kind, name, sizeBytes: sizeBytesFromParams(content.params) };
+  if (type !== 'chat.link') {
+    const url = safeHttpsUrl(content.href);
+    if (url) {
+      item.url = url;
+    }
+  }
+  return [item];
 }
 
 /**
@@ -1932,11 +1959,16 @@ function normalizeMediaItem(item) {
     ? item.kind
     : 'other';
   const rawSize = Number(item.sizeBytes);
-  return {
+  const normalized = {
     kind,
     name: String(item.name || ''),
     sizeBytes: Number.isFinite(rawSize) && rawSize >= 0 ? rawSize : null,
   };
+  const url = safeHttpsUrl(item.url);
+  if (url) {
+    normalized.url = url;
+  }
+  return normalized;
 }
 
 /**

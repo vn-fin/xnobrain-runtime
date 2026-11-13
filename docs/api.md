@@ -945,6 +945,10 @@ friends or groups, and a send may target only the run's own thread
 (`channel_thread_out_of_scope`); web runs may send to any allowed recipient.
 Images must be JPEG, PNG, GIF, or WebP, stay inside the agent workspace, and
 respect the profile's `platforms.zalo.extra.media_max_mb` cap (default `10`).
+Inbound personal `zalo` attachments from authorized senders are downloaded after
+gating into `<workspace>/zalo-inbound/<thread>/<message>-<name>` (mode `0600`,
+same `media_max_mb` cap, pruned after `history_retention_days`) and announced in
+the turn text as workspace-relative untrusted files.
 Files, MP4 videos, and audio recordings use the same workspace and size rules;
 a recording is delivered as an audio file attachment because zca-js 2.2.0
 `sendVoice` requires a hosted URL. `send_channel_message` on `zalo` also takes
