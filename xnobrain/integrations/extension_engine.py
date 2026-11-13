@@ -1215,13 +1215,13 @@ def mcp_probe(profile: Path, server_name: str) -> dict[str, Any]:
         return {"connected": False, "status": "unavailable", "tools_count": 0}
 
 
-def mcp_disconnect(profile: Path, server_name: str) -> None:
+def mcp_disconnect(profile: Path, server_name: str | None = None) -> None:
     from .managed_mcp import disconnect_profile_mcp
 
     generation = str(load_state(profile).get("profile_generation") or "")
     if not _GENERATION.fullmatch(generation):
         return
-    disconnect_profile_mcp(profile, generation, [server_name])
+    disconnect_profile_mcp(profile, generation, None if server_name is None else [server_name])
 
 
 async def _probe_mcp(profile: Path, server_name: str) -> dict[str, Any]:

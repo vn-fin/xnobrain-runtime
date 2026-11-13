@@ -1,5 +1,7 @@
 """Agent operations methods for the Hermes runtime adapter."""
 
+import logging
+
 from .hermes_support import (
     _SAFE_ID_RE,
     BIG_BROTHER_AGENT_ID,
@@ -482,6 +484,12 @@ class AgentOperationsMixin:
                 status=409,
             )
         profile_dir = self._require_profile(name)
+        try:
+            from .extension_engine import mcp_disconnect
+
+            mcp_disconnect(profile_dir)
+        except Exception:
+            logging.getLogger(__name__).warning("MCP sessions were not stopped for a deleted agent")
         if profile_dir == self._legacy_profile_dir(name):
             shutil.rmtree(self._legacy_agent_dir(name))
         else:

@@ -62,6 +62,17 @@ user with no sandbox and no command allowlist, because each workspace is the
 user's own server. Their keys are literal values in the server's `env`, which
 the API masks as `***`. An entry that has both `command` and `url`, or
 `command` and a Control connection, is rejected, as is OAuth.
+
+A stdio server stops after 600 seconds without a tool call unless its entry
+sets `idle_timeout_seconds` (or `lifecycle.idle_timeout_seconds`); the next
+tool call starts it again, and it stays registered while stopped. Remote HTTP
+and catalog servers have no idle stop. Each stdio server writes its stderr to
+its own profile's `logs/mcp-stderr.log` (Hermes opens one process-wide log, so
+the Runtime routes it per profile while a task runs, without editing Hermes).
+Deleting an agent stops its MCP sessions, including stdio processes, before
+the profile directory is removed; a failure there is logged without detail and
+does not block the deletion.
+
 Custom servers fail open per server, unlike catalog servers:
 
 - An invalid entry is skipped as `rejected`.

@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -570,6 +571,8 @@ class ManagedMCPTests(unittest.TestCase):
             "@app.tool()\n"
             "def who() -> str:\n"
             "    return os.environ['STDIO_MARKER']\n"
+            "import sys\n"
+            "print('stderr-' + os.environ['STDIO_MARKER'], file=sys.stderr, flush=True)\n"
             "app.run('stdio')\n"
         )
         return {
@@ -609,6 +612,73 @@ class ManagedMCPTests(unittest.TestCase):
             managed_mcp.sync_profile_mcp(profile_a, self.generations[0], {}, {})
             self.assertEqual(self._who(profile_a), [])
             self.assertEqual(self._who(profile_b), ["from-b"])
+
+    def test_stdio_idle_timeout_defaults_and_explicit_values_are_kept(self):
+        profile = self.profiles[0]
+        stdio = {"command": "npx"}
+        resolve = lambda config: managed_mcp._resolved_config(profile, config, stdio=True)
+        self.assertEqual(resolve(stdio)["idle_timeout_seconds"], 600)
+        self.assertEqual(resolve({**stdio, "idle_timeout_seconds": 5})["idle_timeout_seconds"], 5)
+        nested = resolve({**stdio, "lifecycle": {"idle_timeout_seconds": 7}})
+        self.assertNotIn("idle_timeout_seconds", nested)
+
+    def test_idle_stopped_stdio_server_is_restarted_on_the_next_sync_and_call(self):
+        profile, generation = self.profiles[0], self.generations[0]
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(mcp_tool, "_trust_gate_check", return_value=None),
+        ):
+            server = {**self._stdio_server(directory, "idle"), "idle_timeout_seconds": 1}
+            managed_mcp.sync_profile_mcp(profile, generation, {}, {"echo": server})
+            task = next(iter(managed_mcp._MANAGED_TASKS.values()))
+            deadline = time.monotonic() + 15
+            while task.session is not None and time.monotonic() < deadline:
+                time.sleep(0.1)
+            self.assertIsNone(task.session)
+            managed_mcp.sync_profile_mcp(profile, generation, {}, {"echo": server})
+            self.assertEqual(self._who(profile), ["idle"])
+            self.assertIsNotNone(task.session)
+
+    def test_profile_disconnect_stops_only_that_profiles_stdio_server(self):
+        from xnobrain.integrations.extension_engine import mcp_disconnect
+
+        profile_a, profile_b = self.profiles
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(mcp_tool, "_trust_gate_check", return_value=None),
+        ):
+            for profile, generation, marker in (
+                (profile_a, self.generations[0], "from-a"),
+                (profile_b, self.generations[1], "from-b"),
+            ):
+                server = self._stdio_server(directory, marker)
+                managed_mcp.sync_profile_mcp(profile, generation, {}, {"echo": server})
+            mcp_disconnect(profile_a)
+            self.assertEqual(managed_mcp.profile_mcp_status(profile_a, self.generations[0]), {})
+            self.assertEqual(self._who(profile_b), ["from-b"])
+
+    def test_stdio_stderr_goes_to_each_profiles_own_log(self):
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(mcp_tool, "_trust_gate_check", return_value=None),
+        ):
+            for profile, generation, marker in (
+                (self.profiles[0], self.generations[0], "one"),
+                (self.profiles[1], self.generations[1], "two"),
+            ):
+                server = self._stdio_server(directory, marker)
+                managed_mcp.sync_profile_mcp(profile, generation, {}, {"echo": server})
+                self._who(profile)
+            for profile, marker in ((self.profiles[0], "one"), (self.profiles[1], "two")):
+                deadline = time.monotonic() + 10
+                log = profile / "logs" / "mcp-stderr.log"
+                while time.monotonic() < deadline and not (
+                    log.exists() and f"stderr-{marker}" in log.read_text()
+                ):
+                    time.sleep(0.1)
+                self.assertIn(f"stderr-{marker}", log.read_text())
+                other = "two" if marker == "one" else "one"
+                self.assertNotIn(f"stderr-{other}", log.read_text())
 
     def test_plugin_stdio_and_mixed_servers_stay_rejected(self):
         profile = self.profiles[0]

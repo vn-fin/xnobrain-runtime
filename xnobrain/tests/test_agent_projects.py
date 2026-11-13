@@ -222,6 +222,18 @@ class AgentProjectsTests(unittest.TestCase):
         self.assertEqual(self.platform._cache.invalidate.call_count, 2)
         self.assertEqual(self.service.read(self.owner)["memberships"], {})
 
+    def test_profile_delete_stops_mcp_sessions_and_survives_failure(self):
+        self.create()
+        self.platform._is_big_brother = lambda _: False
+        self.platform.kanban = SimpleNamespace(delete_assignee_tasks=Mock(return_value=0))
+        self.platform.agents = SimpleNamespace(sync_profiles_registry=Mock())
+        self.platform._cache = Mock()
+        target = "xnobrain.integrations.extension_engine.mcp_disconnect"
+        with patch(target, side_effect=RuntimeError("boom")) as disconnect:
+            self.assertTrue(AgentsServiceMixin.delete_agent(self.platform, "research")["deleted"])
+        disconnect.assert_called_once()
+        self.assertEqual(disconnect.call_args.args[0].name, "research")
+
     def test_database_enforces_parent_scope_unique_agent_and_system_protection(self):
         project = self.create()["projects"][0]["id"]
         with self.service.repository.database() as db:

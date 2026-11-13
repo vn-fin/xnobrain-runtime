@@ -493,6 +493,14 @@ class AgentsServiceMixin:
                             status=409,
                             code="custom_page_archive_required",
                         )
+            try:
+                from ..integrations.extension_engine import mcp_disconnect
+
+                mcp_disconnect(profile)
+            except Exception:
+                logging.getLogger(__name__).warning(
+                    "MCP sessions were not stopped for a deleted agent"
+                )
             deleted_tasks = self.kanban.delete_assignee_tasks(agent_id)
             self.repository.hard_delete_profile(agent_id)
             projects = getattr(self, "agent_projects", None)

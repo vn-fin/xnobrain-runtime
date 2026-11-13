@@ -11,6 +11,7 @@ processes still use native discovery for their single profile.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import hashlib
 import hmac
 import json
@@ -46,6 +47,18 @@ _CUSTOM_STATUS: dict[tuple[str, str, str], dict[str, Any]] = {}
 _RETRY_BASE_SECONDS = 30.0
 _RETRY_MAX_SECONDS = 600.0
 _MAX_CONNECT_SECONDS = 20.0
+# A profile's own stdio server stops after this idle time unless its config
+# sets ``idle_timeout_seconds``; Hermes reconnects it lazily on the next call.
+_DEFAULT_STDIO_IDLE_SECONDS = 600
+# Hermes opens one process-wide stderr log under the first profile that starts
+# a stdio server; tasks route to their own profile's log through this variable.
+_STDERR_PROFILE: contextvars.ContextVar[Path | None] = contextvars.ContextVar(
+    "xnobrain_mcp_stderr_profile", default=None
+)
+_STDERR_LOGS: dict[Path, Any] = {}
+# Separate from _MANAGER_LOCK, which sync holds while waiting on the MCP loop.
+_STDERR_LOCK = threading.Lock()
+_STDERR_PATCHED = False
 
 
 def guarded_httpx_client_factory(default_headers: dict[str, str], connect_timeout: float):
@@ -262,7 +275,12 @@ def _resolved_config(
         if str(config.get("auth") or "").lower() == "oauth":
             raise ValueError("Managed MCP integrations support remote header authentication only")
         with profile_context(profile), _profile_secret_context(profile):
-            return _bounded_timeout(mcp_tool._interpolate_env_vars(config))
+            resolved = _bounded_timeout(mcp_tool._interpolate_env_vars(config))
+        if "idle_timeout_seconds" not in resolved and "idle_timeout_seconds" not in (
+            resolved.get("lifecycle") or {}
+        ):
+            resolved["idle_timeout_seconds"] = _DEFAULT_STDIO_IDLE_SECONDS
+        return resolved
     if not isinstance(config, dict) or not isinstance(config.get("url"), str):
         raise ValueError("Managed MCP integrations require an HTTPS endpoint")
     oauth = str(config.get("auth") or "").lower() == "oauth"
@@ -384,6 +402,41 @@ class _PinnedHTTPSMCPServerTask:
             return self._reconnect_or_reraise_group(error)
 
 
+def _profile_stderr_log() -> Any:
+    """Return the append-mode stderr log of the profile running this task."""
+    profile = _STDERR_PROFILE.get()
+    if profile is None:
+        return _HERMES_STDERR_LOG()
+    with _STDERR_LOCK:
+        handle = _STDERR_LOGS.get(profile)
+        if handle is None or handle.closed:
+            try:
+                log_dir = profile / "logs"
+                log_dir.mkdir(parents=True, exist_ok=True)
+                handle = open(
+                    log_dir / "mcp-stderr.log", "a", encoding="utf-8", errors="replace", buffering=1
+                )
+            except OSError:
+                return open(os.devnull, "w", encoding="utf-8")
+            _STDERR_LOGS[profile] = handle
+        return handle
+
+
+def _install_stderr_routing() -> None:
+    """Make Hermes' stderr helper follow the task's profile, without editing Hermes."""
+    global _STDERR_PATCHED, _HERMES_STDERR_LOG
+    from tools import mcp_tool
+
+    with _STDERR_LOCK:
+        if not _STDERR_PATCHED:
+            _HERMES_STDERR_LOG = mcp_tool._get_mcp_stderr_log
+            mcp_tool._get_mcp_stderr_log = _profile_stderr_log
+            _STDERR_PATCHED = True
+
+
+_HERMES_STDERR_LOG: Any = None
+
+
 class ManagedMCPServerTask(_PinnedHTTPSMCPServerTask, MCPServerTask):
     """Native MCP task with profile-scoped tool registration and ownership."""
 
@@ -395,6 +448,7 @@ class ManagedMCPServerTask(_PinnedHTTPSMCPServerTask, MCPServerTask):
         "_registration_current",
         "_config_digest",
         "_control_proxy",
+        "_profile_home",
     )
 
     def __init__(self, server_id: str, scope: str, generation: str, logical_name: str):
@@ -405,6 +459,14 @@ class ManagedMCPServerTask(_PinnedHTTPSMCPServerTask, MCPServerTask):
         self._registration_previous: dict[str, Any] = {}
         self._registration_current: dict[str, Any] = {}
         self._control_proxy = False
+        self._profile_home: Path | None = None
+
+    async def _run_stdio(self, config: dict[str, Any]):
+        token = _STDERR_PROFILE.set(self._profile_home)
+        try:
+            return await super()._run_stdio(config)
+        finally:
+            _STDERR_PROFILE.reset(token)
 
     def _register_profile_tools(self) -> list[str]:
         from tools import mcp_tool
@@ -701,6 +763,8 @@ def sync_profile_mcp(
                     task = ManagedMCPServerTask(server_id, scope, generation, key[2])
                     task._config_digest = config_digest
                     task._control_proxy = isinstance(config.get("xnobrain_connection_id"), str)
+                    task._profile_home = profile
+                    _install_stderr_routing()
                     try:
                         _register_task(task)
                         _MANAGED_TASKS[key] = task
@@ -900,6 +964,11 @@ def disconnect_profile_mcp(
                 continue
             _MANAGED_TASKS.pop(key, None)
             _stop_task(task)
+    if selected is None:
+        with _STDERR_LOCK:
+            handle = _STDERR_LOGS.pop(profile, None)
+        if handle is not None:
+            handle.close()
 
 
 def profile_mcp_status(profile: Path, generation: str) -> dict[str, dict[str, Any]]:
