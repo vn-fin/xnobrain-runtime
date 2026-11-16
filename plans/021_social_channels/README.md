@@ -203,6 +203,33 @@ that profile's session directory. WhatsApp JIDs match
 Control may need `whatsapp` in its channel MCP grant allowlist before a live
 channel turn can run.
 
+## Email, Mattermost, IRC, WeCom, QQ Bot, Yuanbao (2026-11-16)
+
+Parity-only sixth group of platforms, following the checklist: six registry
+descriptors with generic credential fields, the token channel API
+(`PUT`/`PATCH`/logout), connect cards, delegation/group approval, the standalone
+sender or Hermes dispatcher path, and one skill section per platform are done,
+with focused tests. Checklist item 8 (live test with a dev account, recorded in
+`plans/VERIFICATION.md`) is pending. No per-platform tools module, cron delivery
+target, upstream adapter change, or UI work in this repository.
+
+2026-11-16: email, mattermost, irc, wecom, qqbot, yuanbao
+
+- Credentials are descriptor fields: `secret` fields are write-only
+  (`<field>_set` in state), non-secret host/URL/nickname/channel fields are
+  returned under `ChannelState.credentials`. A channel reports `needs_token`
+  until every required field is stored.
+- Email has no gateway pairing step, so it accepts `disabled`, `allowlist`,
+  and `open` only; the registry declares each platform's accepted `dm_policies`
+  and state returns them. WeCom/QQ Bot/Yuanbao group intake pre-filters
+  unapproved groups before the gateway hook, so those three adapters gain a
+  same-style intake wrapper; Mattermost and IRC need none.
+- QQ Bot uses `QQ_ALLOWED_USERS`/`QQ_ALLOW_ALL_USERS`/`QQBOT_HOME_CHANNEL`;
+  Yuanbao also writes `YUANBAO_DM_ALLOW_FROM` because its adapter filters DM
+  intake from that key.
+- QQ Bot and Yuanbao register no standalone sender, so their send path uses
+  Hermes' own `_send_to_platform` dispatcher.
+
 ## Checklist: adding a platform
 
 1. Descriptor in `PLATFORMS` (R1) and in UI `providers.ts` (R5).

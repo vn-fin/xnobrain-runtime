@@ -27,6 +27,8 @@ _THREAD_ID_PATTERNS = {
     platform_id: re.compile(entry.id_pattern) for platform_id, entry in PLATFORMS.items()
 }
 _PLATFORM_READY: dict[str, bool] = {}
+# Core Hermes adapters ship with the engine and register no PlatformEntry.
+_BUILTIN_PLATFORMS = {"qqbot", "yuanbao"}
 BRIDGE_STATUS = {
     "connecting": "starting",
     "needs_login": "needs_login",
@@ -127,12 +129,22 @@ def zalo_plugin_registered() -> bool:
 
 
 def platform_plugin_registered(platform: str) -> bool:
-    """True when Hermes loaded the bundled plugin for one channel platform."""
+    """True when Hermes can load this channel platform in-process."""
     name = str(platform or "").strip().lower()
     if name not in _THREAD_ID_PATTERNS:
         return False
     if _PLATFORM_READY.get(name):
         return True
+    if name in _BUILTIN_PLATFORMS:
+        # QQ Bot and Yuanbao are core Hermes adapters, not plugin registrations.
+        try:
+            from gateway.config import Platform
+
+            Platform(name)
+            _PLATFORM_READY[name] = True
+        except Exception:
+            _PLATFORM_READY[name] = False
+        return bool(_PLATFORM_READY[name])
     try:
         from tools.send_message_tool import prepare_send_message_platforms
 
@@ -490,8 +502,6 @@ async def send_text(
         from gateway.platform_registry import platform_registry
 
         entry = platform_registry.get(name)
-        if entry is None:
-            raise ChannelDeliveryError("channel_platform_unavailable")
         target = Platform(name)
         config = load_gateway_config()
         pconfig = None
@@ -501,7 +511,9 @@ async def send_text(
                 break
         if pconfig is None or not getattr(pconfig, "enabled", False):
             raise ChannelDeliveryError("channel_platform_not_configured")
-        if name in {ZALO_PLATFORM, ZALO_BOT_PLATFORM}:
+        if name in {ZALO_PLATFORM, ZALO_BOT_PLATFORM} or entry is None:
+            # Built-in adapters (QQ Bot, Yuanbao) register no standalone sender;
+            # Hermes' own dispatcher owns their text delivery.
             result = await _send_to_platform(target, pconfig, str(thread_id), text)
         else:
             # Newer platforms deliver through the standalone sender the plugin

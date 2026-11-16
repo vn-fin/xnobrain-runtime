@@ -688,11 +688,14 @@ selects a resource and never authorizes access. A disabled runtime answers `404`
 | `GET /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo/qr` | — | `{status, image_base64}` |
 | `POST /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo/logout` | — | `ChannelState` |
 
-`ChannelState` is `{platform: "zalo"|"zalo_bot"|"telegram"|"discord"|"slack"|"whatsapp", enabled,
-status, own_id, allowed_users, dm_policy, home_channel, allowed_roles,
-history_retention_days, token_set, app_token_set}`.
+`ChannelState` is `{platform: "zalo"|"zalo_bot"|"telegram"|"discord"|"slack"|"whatsapp"|"email"|"mattermost"|"irc"|"wecom"|"qqbot"|"yuanbao", enabled,
+status, own_id, allowed_users, dm_policy, dm_policies, home_channel, allowed_roles,
+history_retention_days, token_set, app_token_set, credentials}`.
 `allowed_roles` is the Discord role allowlist; it defaults to `[]` on every
-other platform.
+other platform. `dm_policies` lists the accepted `dm_policy` values for that
+platform; every platform accepts all four except Email, which does not support
+`pairing`. `credentials` holds non-secret credential fields by name; write-only
+secrets appear only as `<field>_set` booleans.
 `history_retention_days` is the stored channel history retention in days
 (integer `1..365`, default `30` when absent). For the personal channel
 `status` is one of `disabled`, `starting`, `needs_login`, `qr`, `connected`,
@@ -1007,10 +1010,79 @@ and replies carrying `MEDIA:<path>` are delivered as native media by the
 Hermes gateway. Scheduled delivery targets remain Zalo-only. The bridge is an
 unofficial WhatsApp Web client, so an automated account carries a ban risk.
 
+### Email, Mattermost, IRC, WeCom, QQ Bot, and Yuanbao channels
+
+These six Hermes platforms share one generic registry contract. Each has
+`PUT`, `PATCH`, and `POST …/logout` under
+`/xnobrain/api/runtime/v1/agents/{agent_id}/channels/<platform>`; all return
+`ChannelState`. `GET /agents/{agent_id}/channels` returns them after `whatsapp`
+in the order `email`, `mattermost`, `irc`, `wecom`, `qqbot`, `yuanbao`.
+
+| Platform | `PATCH` fields |
+|---|---|
+| `email` | `address`, `password`, `imap_host`, `smtp_host`, `allowed_users`, `dm_policy`, `home_channel` |
+| `mattermost` | `url`, `token`, `allowed_users`, `dm_policy`, `home_channel` |
+| `irc` | `server`, `channel`, `nickname`, `server_password`, `nickserv_password`, `allowed_users`, `dm_policy`, `home_channel` |
+| `wecom` | `bot_id`, `secret`, `allowed_users`, `dm_policy`, `home_channel` |
+| `qqbot` | `app_id`, `client_secret`, `allowed_users`, `dm_policy`, `home_channel` |
+| `yuanbao` | `app_id`, `app_secret`, `ws_url`, `api_domain`, `bot_id`, `allowed_users`, `dm_policy`, `home_channel` |
+
+Secret fields are write-only: `password` (`EMAIL_PASSWORD`), `token`
+(`MATTERMOST_TOKEN`), `server_password`/`nickserv_password`
+(`IRC_SERVER_PASSWORD`, `IRC_NICKSERV_PASSWORD`), `secret` (`WECOM_SECRET`),
+`client_secret` (`QQ_CLIENT_SECRET`), and `app_secret` (`YUANBAO_APP_SECRET`).
+`ChannelState` reports only `<field>_set` booleans for them and never the value.
+The `PATCH` route family returns a generic `422` that never echoes the submitted
+body. Non-secret fields are ordinary settings stored under their Hermes env
+keys and returned in `ChannelState.credentials`: `EMAIL_ADDRESS`,
+`EMAIL_IMAP_HOST`, `EMAIL_SMTP_HOST`, `MATTERMOST_URL`, `IRC_SERVER`,
+`IRC_CHANNEL`, `IRC_NICKNAME`, `WECOM_BOT_ID`, `QQ_APP_ID`, `YUANBAO_APP_ID`,
+`YUANBAO_WS_URL`, `YUANBAO_API_DOMAIN`, and `YUANBAO_BOT_ID`.
+
+`status` is `needs_token` until every required field is present: email
+(`address`, `password`, `imap_host`, `smtp_host`), Mattermost (`url`, `token`),
+IRC (`server`, `channel`; `nickname` has the adapter default), WeCom (`bot_id`,
+`secret`), QQ Bot (`app_id`, `client_secret`), and Yuanbao (`app_id`,
+`app_secret`). After that it follows `disabled`, `pending_restart`,
+`gateway_down`, `configured`, or `connected` like the other bot platforms.
+`connected` comes from the root `gateway_state.json` platform entry and is
+shared by multiplexed agents.
+
+`allowed_users` entries accept each platform's own user id shape: an email
+address, a 26-character Mattermost id, an IRC nick, a WeCom user id, a QQ Bot
+OpenID, or a Yuanbao account. `home_channel` accepts the platform's thread/chat
+id shape and is stored under `EMAIL_HOME_ADDRESS`, `MATTERMOST_HOME_CHANNEL`,
+`IRC_HOME_CHANNEL`, `WECOM_HOME_CHANNEL`, `QQBOT_HOME_CHANNEL`, or
+`YUANBAO_HOME_CHANNEL`. Yuanbao also mirrors `allowed_users` into
+`YUANBAO_DM_ALLOW_FROM`, because its adapter filters direct-message intake from
+that key. `dm_policy` accepts `disabled`, `allowlist`, `pairing`, and `open`;
+`open` writes the adapter's real opt-in (`EMAIL_ALLOW_ALL_USERS`,
+`MATTERMOST_ALLOW_ALL_USERS`, `IRC_ALLOW_ALL_USERS`, `WECOM_ALLOW_ALL_USERS`,
+`QQ_ALLOW_ALL_USERS`, `YUANBAO_ALLOW_ALL_USERS`) and any other policy removes
+it. Email is the exception: its adapter has no gateway pairing step and drops
+unknown senders before authorization, so it accepts only `disabled`,
+`allowlist`, and `open`. A `PATCH` with `dm_policy: "pairing"` for `email`
+returns the existing `422 invalid_dm_policy` shape. Every `ChannelState`
+includes `dm_policies`, the accepted values for that platform, so the UI can
+offer only those choices. Logout removes every credential and disables the
+channel.
+
+All six are delegated, group-approved where they have groups, paired, and
+allowlisted like the other platforms. Direct-message turns under `open` count
+against the same per-platform daily limit as group turns. Email is the one
+platform without a gateway pairing step. The gateway wraps the WeCom, QQ Bot,
+and Yuanbao group intake filters without editing Hermes, so unapproved groups
+reach owner approval instead of being discarded before the authorization hook.
+Email has no groups. There are no Runtime tools modules: every send uses
+`send_channel_message` through the Hermes sender path, and scheduled delivery
+targets remain Zalo-only. QQ Bot and Yuanbao register no standalone sender, so
+Hermes' own dispatcher handles their text delivery.
+
 ### Channel pairing management
 
 Pairing management is generic for every bot-backed platform (`zalo`,
-`zalo_bot`, `telegram`, `discord`, `slack`, `whatsapp`), gated by
+`zalo_bot`, `telegram`, `discord`, `slack`, `whatsapp`, `email`, `mattermost`,
+`irc`, `wecom`, `qqbot`, `yuanbao`), gated by
 `FT_ENABLE_AGENT_CHANNELS`, and available only for an enabled channel whose
 persisted owner binding matches the verified same-agent Personal principal.
 It reuses the pinned Hermes `gateway.pairing.PairingStore`; Runtime has no

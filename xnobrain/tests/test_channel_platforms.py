@@ -42,7 +42,17 @@ _SKILL_DIR = (
     / "social-channels"
     / "platforms"
 )
-_VALID_SAMPLES = ("123456789", "C0123ABCDEF", "chat_123", "user-1", "abc123")
+_VALID_SAMPLES = (
+    "123456789",
+    "C0123ABCDEF",
+    "chat_123",
+    "user-1",
+    "abc123",
+    "user@example.com",
+    "3uo8dkh1p7g1mfk49ear5fzs5c",
+    "#hermes",
+    "direct:user123",
+)
 _UNSUPPORTED_ID = "signal"
 
 

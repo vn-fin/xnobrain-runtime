@@ -305,9 +305,22 @@ class WhatsAppChannelTests(unittest.IsolatedAsyncioTestCase):
 
         platforms = [channel["platform"] for channel in listed["channels"]]
         self.assertEqual(
-            platforms, ["zalo", "zalo_bot", "telegram", "discord", "slack", "whatsapp"]
+            platforms, [
+                "zalo",
+                "zalo_bot",
+                "telegram",
+                "discord",
+                "slack",
+                "whatsapp",
+                "email",
+                "mattermost",
+                "irc",
+                "wecom",
+                "qqbot",
+                "yuanbao",
+            ]
         )
-        whatsapp = listed["channels"][-1]
+        whatsapp = listed["channels"][5]
         self.assertTrue(whatsapp["enabled"])
         self.assertEqual(whatsapp["status"], "needs_login")
 

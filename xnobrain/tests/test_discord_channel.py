@@ -286,7 +286,20 @@ class DiscordChannelTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             [channel["platform"] for channel in listed["channels"]],
-            ["zalo", "zalo_bot", "telegram", "discord", "slack", "whatsapp"],
+            [
+                "zalo",
+                "zalo_bot",
+                "telegram",
+                "discord",
+                "slack",
+                "whatsapp",
+                "email",
+                "mattermost",
+                "irc",
+                "wecom",
+                "qqbot",
+                "yuanbao",
+            ],
         )
         discord = listed["channels"][3]
         self.assertTrue(discord["enabled"])

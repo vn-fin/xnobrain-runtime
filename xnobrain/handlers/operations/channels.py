@@ -125,6 +125,132 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
             "channel logged out successfully",
             200,
         ),
+        "channels_email_update": (
+            lambda: service.set_platform_channel_enabled(
+                path["agent_id"], bool(body["enabled"]), trusted, "email"
+            ),
+            "channel updated successfully",
+            200,
+        ),
+        "channels_email_patch": (
+            lambda: service.patch_platform_channel(
+                path["agent_id"], body, trusted, "email"
+            ),
+            "channel updated successfully",
+            200,
+        ),
+        "channels_email_logout": (
+            lambda: service.logout_platform_channel(
+                path["agent_id"], trusted, "email"
+            ),
+            "channel logged out successfully",
+            200,
+        ),
+        "channels_mattermost_update": (
+            lambda: service.set_platform_channel_enabled(
+                path["agent_id"], bool(body["enabled"]), trusted, "mattermost"
+            ),
+            "channel updated successfully",
+            200,
+        ),
+        "channels_mattermost_patch": (
+            lambda: service.patch_platform_channel(
+                path["agent_id"], body, trusted, "mattermost"
+            ),
+            "channel updated successfully",
+            200,
+        ),
+        "channels_mattermost_logout": (
+            lambda: service.logout_platform_channel(
+                path["agent_id"], trusted, "mattermost"
+            ),
+            "channel logged out successfully",
+            200,
+        ),
+        "channels_irc_update": (
+            lambda: service.set_platform_channel_enabled(
+                path["agent_id"], bool(body["enabled"]), trusted, "irc"
+            ),
+            "channel updated successfully",
+            200,
+        ),
+        "channels_irc_patch": (
+            lambda: service.patch_platform_channel(
+                path["agent_id"], body, trusted, "irc"
+            ),
+            "channel updated successfully",
+            200,
+        ),
+        "channels_irc_logout": (
+            lambda: service.logout_platform_channel(
+                path["agent_id"], trusted, "irc"
+            ),
+            "channel logged out successfully",
+            200,
+        ),
+        "channels_wecom_update": (
+            lambda: service.set_platform_channel_enabled(
+                path["agent_id"], bool(body["enabled"]), trusted, "wecom"
+            ),
+            "channel updated successfully",
+            200,
+        ),
+        "channels_wecom_patch": (
+            lambda: service.patch_platform_channel(
+                path["agent_id"], body, trusted, "wecom"
+            ),
+            "channel updated successfully",
+            200,
+        ),
+        "channels_wecom_logout": (
+            lambda: service.logout_platform_channel(
+                path["agent_id"], trusted, "wecom"
+            ),
+            "channel logged out successfully",
+            200,
+        ),
+        "channels_qqbot_update": (
+            lambda: service.set_platform_channel_enabled(
+                path["agent_id"], bool(body["enabled"]), trusted, "qqbot"
+            ),
+            "channel updated successfully",
+            200,
+        ),
+        "channels_qqbot_patch": (
+            lambda: service.patch_platform_channel(
+                path["agent_id"], body, trusted, "qqbot"
+            ),
+            "channel updated successfully",
+            200,
+        ),
+        "channels_qqbot_logout": (
+            lambda: service.logout_platform_channel(
+                path["agent_id"], trusted, "qqbot"
+            ),
+            "channel logged out successfully",
+            200,
+        ),
+        "channels_yuanbao_update": (
+            lambda: service.set_platform_channel_enabled(
+                path["agent_id"], bool(body["enabled"]), trusted, "yuanbao"
+            ),
+            "channel updated successfully",
+            200,
+        ),
+        "channels_yuanbao_patch": (
+            lambda: service.patch_platform_channel(
+                path["agent_id"], body, trusted, "yuanbao"
+            ),
+            "channel updated successfully",
+            200,
+        ),
+        "channels_yuanbao_logout": (
+            lambda: service.logout_platform_channel(
+                path["agent_id"], trusted, "yuanbao"
+            ),
+            "channel logged out successfully",
+            200,
+        ),
         "channels_pairings_list": (
             lambda: service.list_pairings(path["agent_id"], path["platform"], trusted),
             "channel pairings retrieved successfully",

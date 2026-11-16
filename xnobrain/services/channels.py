@@ -30,6 +30,7 @@ from ..feature_flags import enabled as feature_enabled
 from ..integrations import AgentAPIError, whatsapp_channels, zalo_channels
 from ..integrations.channel_platforms import (
     PLATFORMS,
+    ChannelCredential,
     get_platform,
     matches_id_pattern,
     platform_ids,
@@ -57,35 +58,7 @@ _GROUP_LOCK = threading.RLock()
 _LOGGER = logging.getLogger(__name__)
 _ZALO_ID = re.compile(r"^[0-9]{1,32}$")
 _ZALO_BOT_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
-_ZALO_BOT_TOKEN = re.compile(r"^[0-9]{1,20}:[A-Za-z0-9_-]{8,128}$")
-_TELEGRAM_USER_ID = re.compile(r"^[0-9]{1,20}$")
 _DISCORD_ID = re.compile(PLATFORMS["discord"].id_pattern)
-_DISCORD_TOKEN = re.compile(r"^[A-Za-z0-9_.-]{40,200}$")
-_SLACK_ID = re.compile(PLATFORMS["slack"].id_pattern)
-_SLACK_BOT_TOKEN = re.compile(r"^xoxb-[A-Za-z0-9-]{10,250}$")
-_SLACK_APP_TOKEN = re.compile(r"^xapp-[A-Za-z0-9-]{10,250}$")
-_WHATSAPP_ID = re.compile(PLATFORMS["whatsapp"].id_pattern)
-# Bot platforms store one exact chat id per DM or group and share the same
-# token/allowlist/home-channel settings; only the id shapes differ.
-_BOT_USER_ID_PATTERNS = {
-    "zalo_bot": _ZALO_BOT_ID,
-    "telegram": _TELEGRAM_USER_ID,
-    "discord": _DISCORD_ID,
-    "slack": _SLACK_ID,
-    "whatsapp": _WHATSAPP_ID,
-}
-# One (request field, env key, value pattern) per write-only secret a bot
-# platform needs. Slack is the only platform with two secrets today (bot and
-# app-level Socket Mode token).
-_BOT_SECRETS: dict[str, tuple[tuple[str, str, re.Pattern[str]], ...]] = {
-    "zalo_bot": (("bot_token", "ZALO_BOT_TOKEN", _ZALO_BOT_TOKEN),),
-    "telegram": (("bot_token", "TELEGRAM_BOT_TOKEN", _ZALO_BOT_TOKEN),),
-    "discord": (("bot_token", "DISCORD_BOT_TOKEN", _DISCORD_TOKEN),),
-    "slack": (
-        ("bot_token", "SLACK_BOT_TOKEN", _SLACK_BOT_TOKEN),
-        ("app_token", "SLACK_APP_TOKEN", _SLACK_APP_TOKEN),
-    ),
-}
 # shortcut: one fixed port, so only one agent per Runtime can run WhatsApp; derive
 # a per-profile port (like the Zalo bridge base 3110) when several agents need it.
 _WHATSAPP_BRIDGE_PORT = 3011
@@ -112,7 +85,18 @@ _TOKEN_CONNECT_INSTRUCTIONS = {
         "XNOBrain web app and complete the connection form there. Do not send tokens "
         f"or other credentials in {PLATFORMS[platform].label}."
     )
-    for platform in ("telegram", "discord", "slack", "whatsapp")
+    for platform in (
+        "telegram",
+        "discord",
+        "slack",
+        "whatsapp",
+        "email",
+        "mattermost",
+        "irc",
+        "wecom",
+        "qqbot",
+        "yuanbao",
+    )
 }
 _QR_WAIT_SECONDS = 5.0
 _DEFAULT_MEDIA_MAX_MB = 10.0
@@ -630,23 +614,19 @@ class ChannelsService:
         return limit if limit >= 0 else _DEFAULT_MEDIA_MAX_MB
 
     @staticmethod
-    def _bot_tokens(platform: str) -> tuple[tuple[str, str, re.Pattern[str]], ...]:
-        """The write-only secrets a bot platform needs, as (field, env, pattern)."""
-        try:
-            return _BOT_SECRETS[platform]
-        except KeyError as error:
+    def _bot_credentials(platform: str) -> tuple[ChannelCredential, ...]:
+        """Every credential field a platform stores, in descriptor order."""
+        entry = get_platform(platform)
+        if entry is None:
             raise ServiceError(
                 "unsupported channel platform", status=422, code="invalid_platform"
-            ) from error
+            )
+        return entry.credentials
 
     @classmethod
     def _bot_token_env(cls, platform: str) -> str:
-        """Primary credential env key; every platform has at least one."""
-        return cls._bot_tokens(platform)[0][1]
-
-    @staticmethod
-    def _bot_env_prefix(platform: str) -> str:
-        return str(platform).upper()
+        """Primary credential env key; every token platform has at least one."""
+        return cls._bot_credentials(platform)[0].env
 
     def _bot_approved_user(
         self, agent_id: str, chat_id: str, platform: str = "zalo_bot"
@@ -666,10 +646,14 @@ class ChannelsService:
     def _bot_allowed_user(
         self, profile: Path, chat_id: str, platform: str = "zalo_bot"
     ) -> bool:
+        entry = get_platform(platform)
+        envs = entry.allowed_users_envs if entry is not None else ()
         env = self.repository.env(profile)
-        key = f"{self._bot_env_prefix(platform)}_ALLOWED_USERS"
         allowed = {
-            item.strip() for item in str(env.get(key) or "").split(",") if item.strip()
+            item.strip()
+            for key in envs
+            for item in str(env.get(key) or "").split(",")
+            if item.strip()
         }
         return chat_id in allowed
 
@@ -892,8 +876,9 @@ class ChannelsService:
         }
 
     @staticmethod
-    def _allows_all_users(extra: Mapping[str, Any], env: Mapping[str, str], prefix: str) -> bool:
-        key = f"{prefix}_ALLOW_ALL_USERS"
+    def _allows_all_users(
+        extra: Mapping[str, Any], env: Mapping[str, str], key: str
+    ) -> bool:
         value = str(env.get(key) or os.environ.get(key) or "").strip().lower()
         if value in _ENABLED_VALUES:
             return True
@@ -906,8 +891,9 @@ class ChannelsService:
         """Refuse turns unless the gateway enforced an allowlist or pairing."""
         config = self.repository.config(profile)
         extra = self._platform_extra(config, platform)
-        prefix = self._bot_env_prefix(platform)
-        if self._allows_all_users(extra, self.repository.env(profile), prefix):
+        entry = get_platform(platform)
+        allow_all_env = entry.allow_all_env if entry is not None else ""
+        if self._allows_all_users(extra, self.repository.env(profile), allow_all_env):
             raise ServiceError(
                 "allow-all channel access is not permitted for agent turns",
                 status=403,
@@ -957,9 +943,13 @@ class ChannelsService:
         if platform == "zalo":
             allowed = self._zalo_allowed_users(profile)
         else:
+            entry = get_platform(platform)
             env = self.repository.env(profile)
-            key = f"{self._bot_env_prefix(platform)}_ALLOWED_USERS"
-            allowed = self._env_id_set(env.get(key))
+            allowed = {
+                item
+                for key in (entry.allowed_users_envs if entry is not None else ())
+                for item in self._env_id_set(env.get(key))
+            }
         return bool(
             sender_id in allowed
             or sender_id in self._paired_users(agent_id, platform)
@@ -1441,11 +1431,13 @@ class ChannelsService:
         self._require_feature()
         platform = self._pairing_platform(platform)
         user_id = str(user_id or "").strip()
-        pattern = (
-            _ZALO_ID
-            if platform == "zalo"
-            else _BOT_USER_ID_PATTERNS.get(platform, _ZALO_BOT_ID)
-        )
+        if platform == "zalo":
+            pattern = _ZALO_ID
+        else:
+            entry = get_platform(platform)
+            pattern = re.compile(
+                entry.allowlist_pattern() if entry is not None else _ZALO_BOT_ID.pattern
+            )
         if not pattern.fullmatch(user_id):
             raise ServiceError("channel user ID is invalid", status=422, code="invalid_user_id")
         profile = self._profile(agent_id)
@@ -1863,11 +1855,11 @@ class ChannelsService:
                 status=422,
                 code="invalid_allowed_users",
             )
-        pattern = _BOT_USER_ID_PATTERNS.get(platform, _ZALO_BOT_ID)
+        pattern = entry.allowlist_pattern() if entry is not None else _ZALO_BOT_ID
         result: list[str] = []
         for value in values:
             item = str(value or "").strip()
-            if not pattern.fullmatch(item):
+            if not re.fullmatch(pattern, item):
                 raise ServiceError(
                     f"allowed_users must be {label} user IDs",
                     status=422,
@@ -1934,9 +1926,11 @@ class ChannelsService:
                     continue
                 candidates.append(entry)
         for candidate in candidates:
-            for _, env, _ in self._bot_tokens(platform):
+            for item in self._bot_credentials(platform):
+                if not item.unique:
+                    continue
                 try:
-                    stored = self._read_bot_token(candidate, platform, env)
+                    stored = self._read_bot_token(candidate, platform, item.env)
                 except Exception:
                     continue
                 if stored and hmac.compare_digest(stored, token):
@@ -1944,9 +1938,9 @@ class ChannelsService:
         return False
 
     def _clear_bot_tokens(self, profile: Path, platform: str = "zalo_bot") -> None:
-        """Remove every write-only secret a bot platform stores in the profile."""
+        """Remove every credential a bot platform stores in the profile."""
         self.repository.update_env(
-            profile, {env: None for _, env, _ in self._bot_tokens(platform)}
+            profile, {item.env: None for item in self._bot_credentials(platform)}
         )
 
     def _snapshot_config(self, agent_id: str, profile: Path) -> None:
@@ -2092,6 +2086,7 @@ class ChannelsService:
             "own_id": own_id,
             "allowed_users": allowed_users,
             "dm_policy": self._dm_policy(config),
+            "dm_policies": list(PLATFORMS["zalo"].dm_policies),
             "home_channel": home_channel,
             "history_retention_days": self._retention_days_from_config(config, "zalo"),
             "token_set": False,
@@ -2129,25 +2124,46 @@ class ChannelsService:
     ) -> dict[str, Any]:
         enabled = bool(self._platform_config(config, platform).get("enabled"))
         env = self.repository.env(profile)
-        prefix = self._bot_env_prefix(platform)
-        token_flags = {
-            field: self._read_bot_token(profile, platform, token_env) is not None
-            for field, token_env, _ in self._bot_tokens(platform)
+        entry = get_platform(platform)
+        credentials = entry.credentials if entry is not None else ()
+        values = {
+            item.field: (str(env.get(item.env) or "").strip() or None)
+            for item in credentials
         }
-        # ``token_set`` stays the primary bot token; Slack's second write-only
-        # secret has its own flag and a channel needs every one of them.
-        token_set = bool(token_flags.get("bot_token"))
-        app_token_set = bool(token_flags.get("app_token"))
-        all_tokens_set = all(token_flags.values())
-        allowed_users = [
-            item.strip()
-            for item in str(env.get(f"{prefix}_ALLOWED_USERS") or "").split(",")
-            if item.strip()
-        ]
-        home_channel = str(env.get(f"{prefix}_HOME_CHANNEL") or "").strip() or None
+        secret_flags = {
+            item.field: values[item.field] is not None
+            for item in credentials
+            if item.secret
+        }
+        required_set = all(
+            values[item.field] is not None for item in credentials if item.required
+        )
+        # ``token_set`` stays the primary bot token; platforms without a
+        # ``bot_token`` report whether every required secret is present.
+        if "bot_token" in secret_flags:
+            token_set = bool(secret_flags["bot_token"])
+        else:
+            required_secrets = [
+                secret_flags[item.field]
+                for item in credentials
+                if item.secret and item.required
+            ]
+            token_set = all(required_secrets) if required_secrets else False
+        app_token_set = bool(secret_flags.get("app_token"))
+        allowed_users: list[str] = []
+        for key in entry.allowed_users_envs if entry is not None else ():
+            for item in str(env.get(key) or "").split(","):
+                value = item.strip()
+                if value and value not in allowed_users:
+                    allowed_users.append(value)
+        home_channel = (
+            str(env.get(entry.home_channel_env) or "").strip() or None
+            if entry is not None
+            else None
+        )
         if not enabled:
             status = "disabled"
-        elif not all_tokens_set:
+        elif not required_set:
             status = "needs_token"
         elif gateway.get("pending_restart"):
             status = "pending_restart"
@@ -2164,6 +2180,7 @@ class ChannelsService:
             "own_id": None,
             "allowed_users": allowed_users,
             "dm_policy": self._bot_dm_policy(config, platform),
+            "dm_policies": list(entry.dm_policies) if entry is not None else [],
             "home_channel": home_channel,
             "history_retention_days": (
                 self._retention_days_from_config(config, platform)
@@ -2172,10 +2189,17 @@ class ChannelsService:
             ),
             "token_set": token_set,
             "app_token_set": app_token_set,
+            "credentials": {
+                item.field: values[item.field] or ""
+                for item in credentials
+                if not item.secret
+            },
             "plugin_artifact": (
                 builtin_platform_metadata(platform) if platform == "zalo_bot" else None
             ),
         }
+        for field, is_set in secret_flags.items():
+            state[f"{field}_set"] = is_set
         if platform == "discord":
             state["allowed_roles"] = sorted(
                 self._env_id_set(env.get("DISCORD_ALLOWED_ROLES"))
@@ -2234,6 +2258,7 @@ class ChannelsService:
             "own_id": None,
             "allowed_users": allowed_users,
             "dm_policy": self._bot_dm_policy(config, "whatsapp"),
+            "dm_policies": list(PLATFORMS["whatsapp"].dm_policies),
             "home_channel": home_channel,
             "history_retention_days": None,
             "token_set": False,
@@ -2644,6 +2669,32 @@ class ChannelsService:
     ) -> dict[str, Any]:
         return self._patch_bot(agent_id, body, trusted, "slack")
 
+    def set_platform_channel_enabled(
+        self,
+        agent_id: str,
+        enabled: bool,
+        trusted: Any,
+        platform: str,
+    ) -> dict[str, Any]:
+        """Enable or disable one generic registry platform for an agent."""
+        return self._set_bot_enabled(agent_id, enabled, trusted, platform)
+
+    def patch_platform_channel(
+        self,
+        agent_id: str,
+        body: Mapping[str, Any],
+        trusted: Any,
+        platform: str,
+    ) -> dict[str, Any]:
+        """Apply one generic registry platform's credential/access patch."""
+        return self._patch_bot(agent_id, body, trusted, platform)
+
+    def logout_platform_channel(
+        self, agent_id: str, trusted: Any, platform: str
+    ) -> dict[str, Any]:
+        """Clear every credential and disable one generic registry platform."""
+        return self._logout_bot(agent_id, trusted, platform)
+
     def _patch_bot(
         self,
         agent_id: str,
@@ -2656,32 +2707,35 @@ class ChannelsService:
         binding = self._check_channel_owner(agent_id, profile, trusted)
         config = self.repository.config(profile)
         env_updates: dict[str, str | None] = {}
-        prefix = self._bot_env_prefix(platform)
         entry = get_platform(platform)
         label = entry.label if entry is not None else "channel"
         config_changed = False
-        for field, token_env, pattern in self._bot_tokens(platform):
-            if field not in body:
+        for item in self._bot_credentials(platform):
+            if item.field not in body:
                 continue
-            value = body.get(field)
+            value = body.get(item.field)
             if value is None:
-                env_updates[token_env] = None
+                env_updates[item.env] = None
                 continue
-            token = str(value).strip()
-            if not pattern.fullmatch(token):
+            text = str(value).strip()
+            if not re.fullmatch(item.pattern, text):
                 # Never include the submitted value in the error.
                 raise ServiceError(
-                    f"{field} is invalid",
+                    f"{item.field} is invalid",
                     status=422,
-                    code="invalid_bot_token",
+                    code=(
+                        "invalid_bot_token"
+                        if item.field in {"bot_token", "app_token"}
+                        else f"invalid_{item.field}"
+                    ),
                 )
-            if self._bot_token_in_use(token, profile, platform):
+            if item.unique and self._bot_token_in_use(text, profile, platform):
                 raise ServiceError(
-                    f"{field} is already used by another agent",
+                    f"{item.field} is already used by another agent",
                     status=409,
                     code="bot_token_in_use",
                 )
-            env_updates[token_env] = token
+            env_updates[item.env] = text
         if "allowed_users" in body:
             values = body.get("allowed_users")
             users = (
@@ -2689,7 +2743,9 @@ class ChannelsService:
                 if values is None
                 else self._normalize_channel_ids(values, platform)
             )
-            env_updates[f"{prefix}_ALLOWED_USERS"] = ",".join(users) if users else None
+            joined = ",".join(users) if users else None
+            for key in entry.allowed_users_envs if entry is not None else ():
+                env_updates[key] = joined
         if platform == "discord":
             if "allowed_roles" in body:
                 values = body.get("allowed_roles")
@@ -2701,8 +2757,9 @@ class ChannelsService:
                 env_updates["DISCORD_ALLOWED_ROLES"] = ",".join(roles) if roles else None
         if "home_channel" in body:
             value = body.get("home_channel")
+            home_env = entry.home_channel_env if entry is not None else ""
             if value is None:
-                env_updates[f"{prefix}_HOME_CHANNEL"] = None
+                env_updates[home_env] = None
             else:
                 item = str(value).strip()
                 if not matches_id_pattern(platform, item):
@@ -2711,10 +2768,11 @@ class ChannelsService:
                         status=422,
                         code="invalid_home_channel",
                     )
-                env_updates[f"{prefix}_HOME_CHANNEL"] = item
+                env_updates[home_env] = item
         if "dm_policy" in body:
             policy = str(body.get("dm_policy") or "").strip().lower()
-            if policy not in _DM_POLICIES:
+            accepted = tuple(entry.dm_policies) if entry is not None else tuple(_DM_POLICIES)
+            if policy not in accepted:
                 raise ServiceError(
                     "dm_policy is invalid",
                     status=422,
@@ -2726,7 +2784,7 @@ class ChannelsService:
                 extra = {}
                 bot["extra"] = extra
             extra["dm_policy"] = policy
-            env_updates[f"{prefix}_ALLOW_ALL_USERS"] = (
+            env_updates[entry.allow_all_env if entry is not None else ""] = (
                 "true" if policy == "open" else None
             )
             config_changed = True

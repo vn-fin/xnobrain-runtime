@@ -506,6 +506,95 @@ def install_gateway_zalo_bot_open_access() -> None:
     ZaloAdapter._xnobrain_open_access_wrapper = True
 
 
+def _group_intake_policy(adapter) -> str:
+    """Read an adapter's configured group policy, open when it exposes none."""
+    policy = getattr(adapter, "_group_policy", None)
+    if policy is None:
+        access = getattr(adapter, "_access_policy", None)
+        policy = getattr(access, "group_policy", None)
+        if policy is None:
+            policy = getattr(access, "_group_policy", None)
+    return str(policy or "").strip().lower()
+
+
+def _install_adapter_group_wrapper(
+    adapter_class, method_name: str = "_is_group_allowed"
+) -> None:
+    """Admit groups the adapter would drop before Runtime group approval.
+
+    The wrapper keeps ``group_policy: disabled`` exactly disabled. Every other
+    policy forwards the group to ``install_gateway_group_approval``, which
+    either admits an owner-approved group or reports an unapproved one and
+    stays silent.
+    """
+    if getattr(adapter_class, "_xnobrain_group_intake_wrapper", False):
+        return
+    original = getattr(adapter_class, method_name, None)
+    if not callable(original):
+        return
+
+    def is_group_allowed(self, group_id, *args, **kwargs):
+        if original(self, group_id, *args, **kwargs):
+            return True
+        return _group_intake_policy(self) != "disabled"
+
+    setattr(adapter_class, method_name, is_group_allowed)
+    adapter_class._xnobrain_group_intake_wrapper = True
+
+
+def _install_yuanbao_group_intake_wrapper() -> None:
+    """Admit Yuanbao groups at the intake middleware only.
+
+    ``AccessPolicy.is_group_allowed`` is also consulted when deciding whether a
+    sender may claim the home channel, so the wrapper is installed on
+    ``AccessGuardMiddleware.handle`` instead. That leaves DM intake and every
+    later action on the original policy.
+    """
+    try:
+        from gateway.platforms.yuanbao import AccessGuardMiddleware
+    except Exception:
+        _LOGGER.warning("gateway Yuanbao group intake wrapper unavailable: import failed")
+        return
+    if getattr(AccessGuardMiddleware, "_xnobrain_group_intake_wrapper", False):
+        return
+    original = AccessGuardMiddleware.handle
+
+    async def handle(self, ctx, next_fn):
+        policy = getattr(getattr(ctx, "adapter", None), "_access_policy", None)
+        group_code = str(getattr(ctx, "group_code", "") or "")
+        if (
+            str(getattr(ctx, "chat_type", "") or "").strip().lower() == "group"
+            and policy is not None
+            and group_code
+            and not policy.is_group_allowed(group_code)
+            and _group_intake_policy(policy) != "disabled"
+        ):
+            return await next_fn()
+        return await original(self, ctx, next_fn)
+
+    AccessGuardMiddleware.handle = handle
+    AccessGuardMiddleware._xnobrain_group_intake_wrapper = True
+
+
+def install_gateway_group_intake_access() -> None:
+    """Unblock WeCom, QQ Bot, and Yuanbao groups for owner approval.
+
+    Their adapters default ``group_policy`` to ``pairing`` and drop every group
+    message at intake, before the gateway authorization hook runs. Runtime's
+    owner approval is the product authority for groups, so the wrapper only
+    removes that intake stop and never marks a group approved itself.
+    """
+    try:
+        from gateway.platforms.qqbot.adapter import QQAdapter
+        from plugins.platforms.wecom.adapter import WeComAdapter
+    except Exception:
+        _LOGGER.warning("gateway group intake wrapper unavailable: import failed")
+        return
+    _install_adapter_group_wrapper(QQAdapter)
+    _install_adapter_group_wrapper(WeComAdapter)
+    _install_yuanbao_group_intake_wrapper()
+
+
 def _group_limit(value) -> int:
     if isinstance(value, bool):
         return _GROUP_DEFAULT_LIMIT
@@ -973,6 +1062,7 @@ def main():
         install_gateway_group_approval()
         install_gateway_discord_access()
         install_gateway_zalo_bot_open_access()
+        install_gateway_group_intake_access()
         install_gateway_operator_notice_filter()
         from .hermes_pairings import install_gateway_pairing_locking
 
