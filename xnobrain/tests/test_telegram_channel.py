@@ -170,6 +170,22 @@ class TelegramChannelTests(unittest.IsolatedAsyncioTestCase):
         extra = _configured_profile(config, "telegram")["extra"]
         self.assertEqual(extra["dm_policy"], "allowlist")
 
+    def test_status_follows_the_gateway_platform_state(self):
+        self.service.set_telegram_enabled("agent-1", True)
+        self.service.patch_telegram("agent-1", {"bot_token": TOKEN})
+        running = {"running": True, "pid": 111, "pending_restart": False}
+        state_file = self.root / "gateway_state.json"
+
+        with mock.patch.object(self.service, "_gateway_state", return_value=running):
+            state_file.write_text(
+                '{"platforms": {"telegram": {"state": "connected"}}}', encoding="utf-8"
+            )
+            self.assertEqual(self.service.list_channels("agent-1")["channels"][2]["status"], "connected")
+            state_file.write_text(
+                '{"platforms": {"telegram": {"state": "retrying"}}}', encoding="utf-8"
+            )
+            self.assertEqual(self.service.list_channels("agent-1")["channels"][2]["status"], "configured")
+
     def test_token_is_write_only_and_absent_from_logs_and_snapshots(self):
         self.service.set_telegram_enabled("agent-1", True)
         records: list[str] = []

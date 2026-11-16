@@ -1963,8 +1963,11 @@ class ChannelsService:
         configured rather than connected.
         """
         if platform != "zalo_bot":
-            # Only the bundled Zalo Bot plugin writes this profile state file.
-            return False
+            # shortcut: the gateway state is keyed by platform, not profile, so two
+            # agents with their own bot on one platform share one status; add a
+            # profile-scoped state when multiplexed bots per platform are supported.
+            state = self.repository.gateway_platform_state(self._root_profile(), platform)
+            return state == "connected"
         record = self.repository.zalo_bot_state(profile)
         if not record or record.get("state") != "connected":
             return False
