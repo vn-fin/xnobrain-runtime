@@ -192,6 +192,16 @@ Verify clear, non-destructive behavior for:
 - No mock/demo/smoke-hook data path is present in the production runtime or
   frontend bundle.
 
+## Channel live tests
+
+- 2026-11-16, Telegram DM (plan 021 checklist item 8), local dev stack: a
+  BotFather dev bot connected through the channel card; a direct message to
+  the bot was delegated to Runtime (`POST /internal/channels/turn` 200, about
+  25 s), Control issued the channel MCP grant (200), and the reply arrived in
+  Telegram. The first attempt failed with the delegation-failure text because
+  Control rejected `platform=telegram` (400); fixed in xnobrain-control
+  `6246161`. Group turns are not yet tested live.
+
 ## Release evidence
 
 Attach or link:

@@ -148,8 +148,10 @@ translations and tests in the UI repository.
 Parity-only second platform, following the checklist: the R1 descriptor, the
 token channel API, connect card, delegation/group approval, the standalone
 sender path, and the `platforms/telegram.md` skill section are done, with
-focused tests. Checklist item 8 (live test with a dev account, recorded in
-`plans/VERIFICATION.md`) is pending. No Telegram tools module, cron delivery
+focused tests. Checklist item 8: a live DM turn passed on the dev stack
+(see `plans/VERIFICATION.md`); a live group turn is not yet tested. Control
+had its own platform allowlist for channel MCP grants and needed `telegram`
+added (xnobrain-control `6246161`). No Telegram tools module, cron delivery
 target, upstream adapter change, or UI work in this repository.
 
 ## Checklist: adding a platform
