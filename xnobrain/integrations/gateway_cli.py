@@ -60,9 +60,9 @@ HOME_CHANNEL_NOTICE_PREFIX = "📬 No home channel is set for"
 _GROUP_PLATFORMS = set(group_platform_ids())
 _GROUP_CHAT_TYPES = {"group", "forum", "channel", "thread"}
 _GROUP_LIMIT_TEXT = (
-    "Bạn đã dùng hết {limit} lượt hỏi bot hôm nay trong nhóm này. "
+    "Bạn đã dùng hết {limit} lượt hỏi bot hôm nay. "
     "Hãy quay lại vào ngày mai nhé.\n"
-    "You have used all {limit} bot turns for today in this group. "
+    "You have used all {limit} bot turns for today. "
     "Please come back tomorrow."
 )
 _GROUP_DEFAULT_LIMIT = 20
@@ -411,6 +411,99 @@ def _profile_home_for(runner, source) -> Path | None:
 
 def _group_state_path(profile_home: Path) -> Path:
     return Path(profile_home) / "zalo" / "groups.json"
+
+
+def _adapter_dm_policy(adapter, env_key: str) -> str:
+    """Read one adapter's effective dm_policy from config.extra or its env."""
+    extra = getattr(getattr(adapter, "config", None), "extra", None)
+    value = extra.get("dm_policy") if isinstance(extra, dict) else None
+    if not value:
+        value = os.environ.get(env_key, "")
+    return str(value or "").strip().lower()
+
+
+def _discord_wrapper_allows(adapter, *, is_dm: bool, channel_ids) -> bool:
+    """Whether the Discord access wrapper may admit an adapter-rejected call.
+
+    Only DMs under the pairing/open policy and guild calls that carry channel
+    context (when no role allowlist is set) are relaxed. Voice and every other call without channel context
+    keep the adapter's original denial.
+    """
+    if is_dm:
+        return _adapter_dm_policy(adapter, "DISCORD_DM_POLICY") in {"pairing", "open"}
+    # A configured role allowlist keeps filtering guild senders before approval.
+    return channel_ids is not None and not getattr(adapter, "_allowed_role_ids", None)
+
+
+def install_gateway_discord_access() -> None:
+    """Let Discord pairing and XNOBrain channel approval see unknown senders.
+
+    ``DiscordAdapter._is_allowed_user`` rejects an unknown user before the
+    gateway pairing flow or Runtime group approval runs. The wrapper keeps every
+    original allow and only turns a rejection into an admission for a DM under
+    ``dm_policy: pairing/open`` or a guild call that carries ``channel_ids``
+    (the on_message/slash path), so ``install_gateway_group_approval`` decides.
+    """
+    try:
+        from plugins.platforms.discord.adapter import DiscordAdapter
+    except Exception:
+        _LOGGER.warning("gateway Discord access wrapper unavailable: import failed")
+        return
+    if getattr(DiscordAdapter, "_xnobrain_access_wrapper", False):
+        return
+    original = DiscordAdapter._is_allowed_user
+
+    def is_allowed_user(
+        self,
+        user_id,
+        author=None,
+        *,
+        guild=None,
+        is_dm=False,
+        channel_ids=None,
+    ):
+        allowed = original(
+            self,
+            user_id,
+            author,
+            guild=guild,
+            is_dm=is_dm,
+            channel_ids=channel_ids,
+        )
+        if allowed:
+            return True
+        return _discord_wrapper_allows(
+            self, is_dm=bool(is_dm), channel_ids=channel_ids
+        )
+
+    DiscordAdapter._is_allowed_user = is_allowed_user
+    DiscordAdapter._xnobrain_access_wrapper = True
+
+
+def install_gateway_zalo_bot_open_access() -> None:
+    """Let the vendored Zalo Bot adapter honor ``dm_policy: open``.
+
+    Its ``DM_POLICIES`` predates the product open policy and coerces unknown
+    values to ``disabled`` before the gateway's ``ALLOW_ALL`` grant is read, so
+    its DM pre-filter would drop every open-policy DM. The wrapper only relaxes
+    a rejection when the profile's configured policy is literally ``open``.
+    """
+    try:
+        from plugins.platforms.zalo_bot.adapter import ZaloAdapter
+    except Exception:
+        _LOGGER.warning("gateway Zalo Bot open-access wrapper unavailable: import failed")
+        return
+    if getattr(ZaloAdapter, "_xnobrain_open_access_wrapper", False):
+        return
+    original = ZaloAdapter._passes_allowlist
+
+    def passes_allowlist(self, user_id):
+        if original(self, user_id):
+            return True
+        return _adapter_dm_policy(self, "ZALO_BOT_DM_POLICY") == "open"
+
+    ZaloAdapter._passes_allowlist = passes_allowlist
+    ZaloAdapter._xnobrain_open_access_wrapper = True
 
 
 def _group_limit(value) -> int:
@@ -856,6 +949,8 @@ def main():
         install_gateway_log_redaction()
         install_gateway_pairing_messages()
         install_gateway_group_approval()
+        install_gateway_discord_access()
+        install_gateway_zalo_bot_open_access()
         install_gateway_operator_notice_filter()
         from .hermes_pairings import install_gateway_pairing_locking
 

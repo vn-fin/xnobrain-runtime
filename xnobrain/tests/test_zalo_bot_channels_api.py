@@ -370,12 +370,17 @@ class ZaloBotChannelTests(unittest.IsolatedAsyncioTestCase):
                     raised.exception.code, "invalid_history_retention_days"
                 )
 
-    def test_dm_policy_open_is_rejected(self):
-        with self.assertRaises(ServiceError) as raised:
-            self.service.patch_zalo_bot("agent-1", {"dm_policy": "open"})
-        self.assertEqual(raised.exception.code, "invalid_dm_policy")
-        with self.assertRaises(ValidationError):
-            ChannelZaloBotPatch.model_validate({"dm_policy": "open"})
+    def test_dm_policy_open_is_accepted(self):
+        state = self.service.patch_zalo_bot("agent-1", {"dm_policy": "open"})
+        self.assertEqual(state["dm_policy"], "open")
+        self.assertIn(
+            "ZALO_BOT_ALLOW_ALL_USERS=true",
+            (self.profile / ".env").read_text(encoding="utf-8"),
+        )
+        self.assertEqual(
+            ChannelZaloBotPatch.model_validate({"dm_policy": "open"}).dm_policy,
+            "open",
+        )
 
     def test_list_channels_returns_both_platforms(self):
         self.service.set_zalo_bot_enabled("agent-1", True)
@@ -550,7 +555,7 @@ class ZaloBotChannelTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.json()["error"]["code"], "bot_token_in_use")
         self.assertNotIn(TOKEN, response.text)
 
-    async def test_open_dm_policy_is_rejected_by_the_api(self):
+    async def test_open_dm_policy_is_accepted_by_the_api(self):
         app = FastAPI()
         setup_routes(app, APIHandlers(mock.Mock(channels=self.service)))
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -559,8 +564,8 @@ class ZaloBotChannelTests(unittest.IsolatedAsyncioTestCase):
                 json={"dm_policy": "open"},
             )
 
-        self.assertEqual(response.status_code, 422)
-        self.assertEqual(response.json()["error"]["code"], "invalid_request")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["data"]["dm_policy"], "open")
 
     async def test_bot_ids_are_validated_by_the_api(self):
         app = FastAPI()

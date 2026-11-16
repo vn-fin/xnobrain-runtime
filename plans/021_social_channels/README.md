@@ -169,6 +169,10 @@ repository. Discord ids are numeric snowflakes; the adapter puts a thread's own
 id in `chat_id`. Control already accepts `discord` in its channel MCP grant
 allowlist.
 
+> 2026-11-16: dm_policy open for every platform; Discord pairing and channel
+> approval via gateway wrapper; Discord allowed_roles; open-policy DM guests
+> share the per-platform daily limit.
+
 ## Slack (2026-11-16)
 
 Parity-only fourth platform, following the checklist: the R1 descriptor, the

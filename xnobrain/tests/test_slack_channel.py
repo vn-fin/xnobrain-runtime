@@ -295,8 +295,10 @@ class SlackChannelTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ServiceError) as raised:
             self.service.patch_slack("agent-1", {"home_channel": "../escape"})
         self.assertEqual(raised.exception.code, "invalid_home_channel")
-        with self.assertRaises(ValidationError):
-            ChannelSlackPatch.model_validate({"dm_policy": "open"})
+        self.assertEqual(
+            ChannelSlackPatch.model_validate({"dm_policy": "open"}).dm_policy,
+            "open",
+        )
         with self.assertRaises(ValidationError):
             ChannelSlackPatch.model_validate({"app_token": BAD_APP_TOKEN})
 

@@ -254,8 +254,10 @@ class DiscordChannelTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ServiceError) as raised:
             self.service.patch_discord("agent-1", {"home_channel": "../escape"})
         self.assertEqual(raised.exception.code, "invalid_home_channel")
-        with self.assertRaises(ValidationError):
-            ChannelDiscordPatch.model_validate({"dm_policy": "open"})
+        self.assertEqual(
+            ChannelDiscordPatch.model_validate({"dm_policy": "open"}).dm_policy,
+            "open",
+        )
 
     def test_logout_clears_token_and_disables_the_channel(self):
         self.service.set_discord_enabled("agent-1", True)

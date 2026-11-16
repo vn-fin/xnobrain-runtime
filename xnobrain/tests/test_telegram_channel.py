@@ -247,8 +247,10 @@ class TelegramChannelTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ServiceError) as raised:
             self.service.patch_telegram("agent-1", {"home_channel": "../escape"})
         self.assertEqual(raised.exception.code, "invalid_home_channel")
-        with self.assertRaises(ValidationError):
-            ChannelTelegramPatch.model_validate({"dm_policy": "open"})
+        self.assertEqual(
+            ChannelTelegramPatch.model_validate({"dm_policy": "open"}).dm_policy,
+            "open",
+        )
 
     def test_logout_clears_token_and_disables_the_channel(self):
         self.service.set_telegram_enabled("agent-1", True)

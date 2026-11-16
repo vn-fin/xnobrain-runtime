@@ -302,7 +302,7 @@ class ChannelWriteTests(unittest.IsolatedAsyncioTestCase):
             self.service.patch_channel("agent-1", {"home_channel": "../escape"})
         self.assertEqual(raised.exception.code, "invalid_home_channel")
         with self.assertRaises(ServiceError) as raised:
-            self.service.patch_channel("agent-1", {"dm_policy": "open"})
+            self.service.patch_channel("agent-1", {"dm_policy": "bogus"})
         self.assertEqual(raised.exception.code, "invalid_dm_policy")
 
     def test_history_retention_days_defaults_and_persists(self):

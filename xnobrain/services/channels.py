@@ -91,11 +91,14 @@ _BOT_SECRETS: dict[str, tuple[tuple[str, str, re.Pattern[str]], ...]] = {
 _WHATSAPP_BRIDGE_PORT = 3011
 _SAFE_IDENTITY = re.compile(r"^[^\x00-\x1f/\\]{1,200}$")
 _PAIRING_REQUEST_ID = re.compile(r"^[0-9a-fA-F]{16}$")
-_DM_POLICIES = {"disabled", "allowlist", "pairing"}
+_DM_POLICIES = {"disabled", "allowlist", "pairing", "open"}
 _SAFE_TURN_DM_POLICIES = {"allowlist", "pairing"}
 _TURN_PLATFORMS = set(platform_ids())
 _ENABLED_VALUES = {"1", "true", "yes", "on"}
 _MAX_TURN_TEXT = 20000
+# Open-policy DM guests share the per-platform daily limit under a key that no
+# real chat id can match.
+_GUEST_DM_USAGE_KEY = "@dm"
 _GATEWAY_CONNECT_INSTRUCTION = (
     "To finish connecting this channel, open this agent's conversation in the "
     "XNOBrain web app and complete the connection form there. Do not send tokens, "
@@ -919,6 +922,50 @@ class ChannelsService:
             )
 
     @staticmethod
+    def _env_id_set(value: Any) -> set[str]:
+        return {item.strip() for item in str(value or "").split(",") if item.strip()}
+
+    def _platform_dm_policy(self, profile: Path, platform: str) -> str:
+        config = self.repository.config(profile)
+        if platform == "zalo":
+            return self._dm_policy(config)
+        return self._bot_dm_policy(config, platform)
+
+    def _paired_users(self, agent_id: str, platform: str) -> set[str]:
+        """Return the sender ids with an approved channel pairing."""
+        try:
+            approved = self._pairing_store(agent_id).approved(platform)
+        except Exception:
+            return set()
+        paired: set[str] = set()
+        for entry in approved if isinstance(approved, list) else []:
+            if not isinstance(entry, Mapping):
+                continue
+            user_id = str(entry.get("user_id") or "").strip()
+            if user_id:
+                paired.add(user_id)
+        return paired
+
+    def _owner_trusted(
+        self,
+        agent_id: str,
+        profile: Path,
+        platform: str,
+        sender_id: str,
+    ) -> bool:
+        """True when this sender is in the platform allowlist or pairing store."""
+        if platform == "zalo":
+            allowed = self._zalo_allowed_users(profile)
+        else:
+            env = self.repository.env(profile)
+            key = f"{self._bot_env_prefix(platform)}_ALLOWED_USERS"
+            allowed = self._env_id_set(env.get(key))
+        return bool(
+            sender_id in allowed
+            or sender_id in self._paired_users(agent_id, platform)
+        )
+
+    @staticmethod
     def _turn_label(platform: str) -> str:
         entry = get_platform(platform)
         return entry.label if entry is not None else "Channel"
@@ -1032,16 +1079,28 @@ class ChannelsService:
         self._require_enabled_channel(profile, request["platform"])
         binding = self._require_owner_binding(agent_id, profile)
         group_turn = request["thread_type"] == "group"
+        guest_dm = False
         if not group_turn:
             # dm_policy governs direct messages. An approved group (personal
             # Zalo or Zalo Bot) is authorized by owner approval instead, so it
-            # may run even when DMs are disabled.
-            self._require_safe_dm_policy(profile, request["platform"])
+            # may run even when DMs are disabled. An open policy accepts any DM
+            # sender; group approval is separate and is never opened by it.
+            policy = self._platform_dm_policy(profile, request["platform"])
+            if policy == "open":
+                guest_dm = not self._owner_trusted(
+                    agent_id,
+                    profile,
+                    request["platform"],
+                    request["sender_id"],
+                )
+            else:
+                self._require_safe_dm_policy(profile, request["platform"])
         if group_turn and not self._group_is_approved(
             profile, request["platform"], request["thread_id"]
         ):
             # An unapproved group is always refused, even for a DM-paired
-            # sender, and the mention is recorded for owner approval.
+            # sender, and the mention is recorded for owner approval. Discord
+            # channels use this same owner approval flow.
             self._record_group_seen(
                 profile,
                 request["platform"],
@@ -1085,6 +1144,16 @@ class ChannelsService:
                 profile,
                 request["platform"],
                 request["thread_id"],
+                request["sender_id"],
+                request["message_id"],
+            )
+        elif guest_dm:
+            # An open-policy DM guest shares the platform's daily limit. The
+            # '@dm' key never collides with a real group/chat id.
+            await self._consume_group_turn(
+                profile,
+                request["platform"],
+                _GUEST_DM_USAGE_KEY,
                 request["sender_id"],
                 request["message_id"],
             )
@@ -1808,6 +1877,33 @@ class ChannelsService:
                 result.append(item)
         return result
 
+    @staticmethod
+    def _normalize_discord_ids(values: Any, field: str) -> list[str]:
+        if not isinstance(values, (list, tuple)):
+            raise ServiceError(
+                f"{field} must be a list of Discord IDs",
+                status=422,
+                code=f"invalid_{field}",
+            )
+        if len(values) > 100:
+            raise ServiceError(
+                f"{field} accepts at most 100 Discord IDs",
+                status=422,
+                code=f"invalid_{field}",
+            )
+        result: list[str] = []
+        for value in values:
+            item = str(value or "").strip()
+            if not _DISCORD_ID.fullmatch(item):
+                raise ServiceError(
+                    f"{field} must be Discord snowflake IDs",
+                    status=422,
+                    code=f"invalid_{field}",
+                )
+            if item not in result:
+                result.append(item)
+        return result
+
     def _read_bot_token(
         self, profile: Path, platform: str = "zalo_bot", env: str | None = None
     ) -> str | None:
@@ -2061,7 +2157,7 @@ class ChannelsService:
             status = "connected"
         else:
             status = "configured"
-        return {
+        state = {
             "platform": platform,
             "enabled": enabled,
             "status": status,
@@ -2080,6 +2176,11 @@ class ChannelsService:
                 builtin_platform_metadata(platform) if platform == "zalo_bot" else None
             ),
         }
+        if platform == "discord":
+            state["allowed_roles"] = sorted(
+                self._env_id_set(env.get("DISCORD_ALLOWED_ROLES"))
+            )
+        return state
 
     @staticmethod
     def _whatsapp_session_dir(profile: Path, config: Mapping[str, Any]) -> Path:
@@ -2395,6 +2496,9 @@ class ChannelsService:
                 extra = {}
                 zalo["extra"] = extra
             extra["dm_policy"] = policy
+            env_updates["ZALO_ALLOW_ALL_USERS"] = (
+                "true" if policy == "open" else None
+            )
             config_changed = True
         if "history_retention_days" in body:
             days = self._retention_days_value(body.get("history_retention_days"))
@@ -2586,6 +2690,15 @@ class ChannelsService:
                 else self._normalize_channel_ids(values, platform)
             )
             env_updates[f"{prefix}_ALLOWED_USERS"] = ",".join(users) if users else None
+        if platform == "discord":
+            if "allowed_roles" in body:
+                values = body.get("allowed_roles")
+                roles = (
+                    []
+                    if values is None
+                    else self._normalize_discord_ids(values, "allowed_roles")
+                )
+                env_updates["DISCORD_ALLOWED_ROLES"] = ",".join(roles) if roles else None
         if "home_channel" in body:
             value = body.get("home_channel")
             if value is None:
@@ -2613,6 +2726,9 @@ class ChannelsService:
                 extra = {}
                 bot["extra"] = extra
             extra["dm_policy"] = policy
+            env_updates[f"{prefix}_ALLOW_ALL_USERS"] = (
+                "true" if policy == "open" else None
+            )
             config_changed = True
         if "history_retention_days" in body:
             days = self._retention_days_value(body.get("history_retention_days"))
@@ -2749,6 +2865,9 @@ class ChannelsService:
                 entry["extra"] = extra
             extra["dm_policy"] = policy
             env_updates["WHATSAPP_DM_POLICY"] = policy
+            env_updates["WHATSAPP_ALLOW_ALL_USERS"] = (
+                "true" if policy == "open" else None
+            )
             config_changed = True
         if not config_changed and not env_updates:
             self._write_channel_owner(profile, binding)

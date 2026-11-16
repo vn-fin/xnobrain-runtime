@@ -44,9 +44,8 @@ ChannelStatus = Literal[
     "pending_restart",
     "gateway_down",
 ]
-DmPolicy = Literal["disabled", "allowlist", "pairing"]
-# The vendored zalo_bot adapter also understands "open". The product API
-# deliberately exposes only these safe values; "open" is never accepted.
+DmPolicy = Literal["disabled", "allowlist", "pairing", "open"]
+# "open" lets anyone DM the bot on every platform; group approval is separate.
 
 
 
@@ -166,6 +165,8 @@ class ChannelState(BaseModel):
     allowed_users: list[str] = Field(default_factory=list)
     dm_policy: DmPolicy = "disabled"
     home_channel: str | None = None
+    # Discord role ids admitted by the adapter; empty on other platforms.
+    allowed_roles: list[str] = Field(default_factory=list)
     # None for platforms whose history Runtime does not store (Telegram).
     history_retention_days: int | None = Field(default=30, ge=1, le=365)
     # The bot token itself is write-only and is never part of this contract.
@@ -362,6 +363,11 @@ class ChannelDiscordPatch(BaseModel):
         max_length=500,
         description="Discord user IDs allowed to trigger the agent",
     )
+    allowed_roles: list[str] | None = Field(
+        default=None,
+        max_length=100,
+        description="Discord role IDs allowed to trigger the agent",
+    )
     dm_policy: DmPolicy | None = None
     home_channel: str | None = Field(default=None, max_length=20, pattern=_DISCORD_ID)
 
@@ -375,6 +381,20 @@ class ChannelDiscordPatch(BaseModel):
             item = str(entry or "").strip()
             if not re.fullmatch(_DISCORD_ID, item):
                 raise ValueError("allowed_users entries must be Discord user IDs")
+            if item not in result:
+                result.append(item)
+        return result
+
+    @field_validator("allowed_roles")
+    @classmethod
+    def validate_allowed_roles(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        result: list[str] = []
+        for entry in value:
+            item = str(entry or "").strip()
+            if not re.fullmatch(_DISCORD_ID, item):
+                raise ValueError("allowed_roles entries must be Discord role IDs")
             if item not in result:
                 result.append(item)
         return result

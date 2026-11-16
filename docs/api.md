@@ -684,13 +684,15 @@ selects a resource and never authorizes access. A disabled runtime answers `404`
 | `GET /xnobrain/api/runtime/v1/agents/{agent_id}/channels` | — | `{channels: [ChannelState], gateway: {running, pid, pending_restart}, social_tools: bool}` |
 | `PUT /xnobrain/api/runtime/v1/agents/{agent_id}/channels/social_tools` | `{enabled: bool}` | `{channels: [ChannelState], gateway: {...}, social_tools: bool}` |
 | `PUT /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo` | `{enabled: bool}` | `ChannelState` |
-| `PATCH /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo` | `{allowed_users?: [id], dm_policy?: "disabled"\|"allowlist"\|"pairing", home_channel?: id\|null, history_retention_days?: int}` | `ChannelState` |
+| `PATCH /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo` | `{allowed_users?: [id], dm_policy?: "disabled"\|"allowlist"\|"pairing"\|"open", home_channel?: id\|null, history_retention_days?: int}` | `ChannelState` |
 | `GET /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo/qr` | — | `{status, image_base64}` |
 | `POST /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo/logout` | — | `ChannelState` |
 
 `ChannelState` is `{platform: "zalo"|"zalo_bot"|"telegram"|"discord"|"slack"|"whatsapp", enabled,
-status, own_id, allowed_users, dm_policy, home_channel, history_retention_days,
-token_set, app_token_set}`.
+status, own_id, allowed_users, dm_policy, home_channel, allowed_roles,
+history_retention_days, token_set, app_token_set}`.
+`allowed_roles` is the Discord role allowlist; it defaults to `[]` on every
+other platform.
 `history_retention_days` is the stored channel history retention in days
 (integer `1..365`, default `30` when absent). For the personal channel
 `status` is one of `disabled`, `starting`, `needs_login`, `qr`, `connected`,
@@ -716,8 +718,10 @@ enabled.
 Writes snapshot the profile `config.yaml` first, then atomically update
 `platforms.zalo.enabled`, `platforms.zalo.extra.dm_policy`,
 `platforms.zalo.extra.history_retention_days`, and the profile `.env` keys
-`ZALO_ALLOWED_USERS` and `ZALO_HOME_CHANNEL`. New channels default to
-`dm_policy: disabled` and `history_retention_days: 30`. The root profile's
+`ZALO_ALLOWED_USERS`, `ZALO_HOME_CHANNEL`, and `ZALO_ALLOW_ALL_USERS` (written
+`true` only for `dm_policy: open` and removed for every other policy). New
+channels default to `dm_policy: disabled` and `history_retention_days: 30`. The
+root profile's
 `gateway.multiplex_profiles` and `gateway.multiplex_profile_allowlist` are kept
 in sync with every non-root
 profile whose Zalo channel is enabled; the root profile and `default` are never
@@ -751,7 +755,7 @@ The bundled `zalo_bot` platform plugin is exposed through the same
 | Method and path | Body | Result |
 |---|---|---|
 | `PUT /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo_bot` | `{enabled: bool}` | `ChannelState` |
-| `PATCH /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo_bot` | `{bot_token?: str\|null, allowed_users?: [id]\|null, dm_policy?: "disabled"\|"allowlist"\|"pairing", home_channel?: id\|null, history_retention_days?: int}` | `ChannelState` |
+| `PATCH /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo_bot` | `{bot_token?: str\|null, allowed_users?: [id]\|null, dm_policy?: "disabled"\|"allowlist"\|"pairing"\|"open", home_channel?: id\|null, history_retention_days?: int}` | `ChannelState` |
 | `POST /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo_bot/logout` | — | `ChannelState` |
 
 For `zalo_bot`, `ChannelState` adds `token_set` (never the token itself).
@@ -772,9 +776,9 @@ the route family returns a generic `422` that never echoes the submitted
 value. Until a Control proxy owns the credential, writes store the token in the
 profile `.env` as `ZALO_BOT_TOKEN` (mode `0600`); `null` removes it, and logout
 removes it and disables the channel. Bot user IDs for `allowed_users` and
-`home_channel` match `^[A-Za-z0-9_-]{1,64}$`. `dm_policy: open` is rejected;
-only `disabled`, `allowlist`, and `pairing` are accepted, matching the adapter's
-safe subset.
+`home_channel` match `^[A-Za-z0-9_-]{1,64}$`. `dm_policy` accepts `disabled`,
+`allowlist`, `pairing`, and `open`; `open` also writes
+`ZALO_BOT_ALLOW_ALL_USERS=true`, and any other policy removes it.
 
 | Error | Condition |
 |---|---|
@@ -802,7 +806,7 @@ entries in that order.
 | Method and path | Body | Result |
 |---|---|---|
 | `PUT /xnobrain/api/runtime/v1/agents/{agent_id}/channels/telegram` | `{enabled: bool}` | `ChannelState` |
-| `PATCH /xnobrain/api/runtime/v1/agents/{agent_id}/channels/telegram` | `{bot_token?: str\|null, allowed_users?: [id]\|null, dm_policy?: "disabled"\|"allowlist"\|"pairing", home_channel?: id\|null}` | `ChannelState` |
+| `PATCH /xnobrain/api/runtime/v1/agents/{agent_id}/channels/telegram` | `{bot_token?: str\|null, allowed_users?: [id]\|null, dm_policy?: "disabled"\|"allowlist"\|"pairing"\|"open", home_channel?: id\|null}` | `ChannelState` |
 | `POST /xnobrain/api/runtime/v1/agents/{agent_id}/channels/telegram/logout` | — | `ChannelState` |
 
 For `telegram`, `ChannelState` includes `token_set` (never the token itself) and
@@ -823,12 +827,14 @@ it.
 
 `allowed_users` entries are Telegram user IDs matching `^[0-9]{1,20}$`.
 `home_channel` accepts a positive user id or a negative group/supergroup chat
-id, matching `^-?[0-9]{1,20}$`. `dm_policy: open` is rejected; only `disabled`,
-`allowlist`, and `pairing` are accepted.
+id, matching `^-?[0-9]{1,20}$`. `dm_policy` accepts `disabled`, `allowlist`,
+`pairing`, and `open`; `open` also writes `TELEGRAM_ALLOW_ALL_USERS=true`, and
+any other policy removes it.
 
 Writes snapshot `config.yaml` first, then atomically update
 `platforms.telegram.enabled` and `platforms.telegram.extra.dm_policy`, and the
-`.env` keys `TELEGRAM_ALLOWED_USERS` and `TELEGRAM_HOME_CHANNEL`, request the
+`.env` keys `TELEGRAM_ALLOWED_USERS`, `TELEGRAM_ALLOW_ALL_USERS`, and
+`TELEGRAM_HOME_CHANNEL`, request the
 same `SIGUSR1` gateway restart, and are idempotent. A profile is included in
 `gateway.multiplex_profile_allowlist` when any registered channel platform is
 enabled.
@@ -849,13 +855,13 @@ tag, feature gate, and Control-proxied identity as the other channels.
 | Method and path | Body | Result |
 |---|---|---|
 | `PUT /xnobrain/api/runtime/v1/agents/{agent_id}/channels/discord` | `{enabled: bool}` | `ChannelState` |
-| `PATCH /xnobrain/api/runtime/v1/agents/{agent_id}/channels/discord` | `{bot_token?: str\|null, allowed_users?: [id]\|null, dm_policy?: "disabled"\|"allowlist"\|"pairing", home_channel?: id\|null}` | `ChannelState` |
+| `PATCH /xnobrain/api/runtime/v1/agents/{agent_id}/channels/discord` | `{bot_token?: str\|null, allowed_users?: [id]\|null, allowed_roles?: [id]\|null, dm_policy?: "disabled"\|"allowlist"\|"pairing"\|"open", home_channel?: id\|null}` | `ChannelState` |
 | `POST /xnobrain/api/runtime/v1/agents/{agent_id}/channels/discord/logout` | — | `ChannelState` |
 
 For `discord`, `ChannelState` includes `token_set` (never the token itself) and
-always reports `app_token_set: false`. `status` is one of `disabled`,
-`needs_token` (enabled without a token), `pending_restart`, `gateway_down`,
-`configured`, or `connected`. `connected` comes from the root
+`allowed_roles`, and always reports `app_token_set: false`. `status` is one of
+`disabled`, `needs_token` (enabled without a token), `pending_restart`,
+`gateway_down`, `configured`, or `connected`. `connected` comes from the root
 `gateway_state.json` platform entry, which is keyed by platform rather than by
 profile; two agents with their own Discord bot therefore share one status.
 There is no bridge, QR flow, or Runtime network probe.
@@ -867,24 +873,37 @@ Control proxy owns the credential, writes store the token in the profile
 removes it and disables the channel. A token already stored by another agent
 profile in the workspace returns `409 bot_token_in_use` without echoing it.
 
-`allowed_users` entries are Discord user IDs matching `^[0-9]{1,20}$`.
+`allowed_users` entries and `allowed_roles` are Discord snowflake IDs matching
+`^[0-9]{1,20}$`; `allowed_roles` accepts at most 100 unique entries (duplicates
+collapse), and `null` or `[]` clears it. Roles have no owner-approval flow in
+Runtime, so the adapter's role allowlist is stored as the owner's direct grant.
 `home_channel` accepts a channel or thread snowflake id matching
-`^[0-9]{1,20}$`. `dm_policy: open` is rejected; only `disabled`, `allowlist`,
-and `pairing` are accepted.
+`^[0-9]{1,20}$`. `dm_policy` accepts `disabled`, `allowlist`, `pairing`, and
+`open`; `open` also writes `DISCORD_ALLOW_ALL_USERS=true`, and any other policy
+removes it.
 
 Writes snapshot `config.yaml` first, then atomically update
 `platforms.discord.enabled` and `platforms.discord.extra.dm_policy`, and the
-`.env` keys `DISCORD_ALLOWED_USERS` and `DISCORD_HOME_CHANNEL`, request the
-same `SIGUSR1` gateway restart, and are idempotent. `history_retention_days`
-is `null`: Runtime stores no Discord history.
+`.env` keys `DISCORD_ALLOWED_USERS`, `DISCORD_ALLOWED_ROLES`,
+`DISCORD_ALLOW_ALL_USERS` (only while the policy is open), and
+`DISCORD_HOME_CHANNEL`, request the same `SIGUSR1` gateway restart, and are
+idempotent. `history_retention_days` is `null`: Runtime stores no Discord
+history.
 
-Discord turns are delegated, group-approved, paired, and allowlisted like the
-other group platforms. A Discord thread keeps its own snowflake id as
-`thread_id`, and `chat_type: "thread"` counts as a group. There is no Runtime
-Discord tools module: the channel uses `send_channel_message` through the
-plugin's registered standalone sender, and replies carrying `MEDIA:<path>` are
-delivered as native media by the Hermes gateway. Scheduled delivery targets
-remain Zalo-only.
+The gateway wraps the Discord adapter's sender check without editing upstream:
+an adapter rejection becomes an admission only for a DM under
+`dm_policy: pairing` or `open`, or for a guild message that carries channel
+context, so Runtime's owner approval sees the channel request. Voice and every
+other call without channel context keep the adapter's denial. A guild channel
+must therefore be approved through the normal owner group approval flow; there
+is no separate channel allowlist. A DM is accepted under `open`, or when the
+sender is allowlisted or pairing-approved; role auth in a DM needs the
+adapter's `dm_role_auth_guild` opt-in and is not treated as trust. A thread
+keeps its own snowflake id as `thread_id`, and `chat_type: "thread"` counts as
+a group. There is no Runtime Discord tools module: the channel uses
+`send_channel_message` through the plugin's registered standalone sender, and
+replies carrying `MEDIA:<path>` are delivered as native media by the Hermes
+gateway. Scheduled delivery targets remain Zalo-only.
 
 ### Slack channel
 
@@ -894,7 +913,7 @@ feature gate, and Control-proxied identity as the other channels.
 | Method and path | Body | Result |
 |---|---|---|
 | `PUT /xnobrain/api/runtime/v1/agents/{agent_id}/channels/slack` | `{enabled: bool}` | `ChannelState` |
-| `PATCH /xnobrain/api/runtime/v1/agents/{agent_id}/channels/slack` | `{bot_token?: str\|null, app_token?: str\|null, allowed_users?: [id]\|null, dm_policy?: "disabled"\|"allowlist"\|"pairing", home_channel?: id\|null}` | `ChannelState` |
+| `PATCH /xnobrain/api/runtime/v1/agents/{agent_id}/channels/slack` | `{bot_token?: str\|null, app_token?: str\|null, allowed_users?: [id]\|null, dm_policy?: "disabled"\|"allowlist"\|"pairing"\|"open", home_channel?: id\|null}` | `ChannelState` |
 | `POST /xnobrain/api/runtime/v1/agents/{agent_id}/channels/slack/logout` | — | `ChannelState` |
 
 Slack needs two write-only secrets because Hermes uses Socket Mode: the bot
@@ -916,12 +935,14 @@ the workspace returns `409 bot_token_in_use` without echoing it.
 
 `allowed_users` entries are Slack member IDs matching
 `^[A-Z][A-Z0-9]{1,32}$`. `home_channel` accepts a channel id (`C...`, `G...`)
-matching the same pattern. `dm_policy: open` is rejected; only `disabled`,
-`allowlist`, and `pairing` are accepted.
+matching the same pattern. `dm_policy` accepts `disabled`, `allowlist`,
+`pairing`, and `open`; `open` also writes `SLACK_ALLOW_ALL_USERS=true`, and any
+other policy removes it.
 
 Writes snapshot `config.yaml` first, then atomically update
 `platforms.slack.enabled` and `platforms.slack.extra.dm_policy`, and the
-`.env` keys `SLACK_ALLOWED_USERS` and `SLACK_HOME_CHANNEL`, request the same
+`.env` keys `SLACK_ALLOWED_USERS`, `SLACK_ALLOW_ALL_USERS`, and
+`SLACK_HOME_CHANNEL`, request the same
 `SIGUSR1` gateway restart, and are idempotent. `history_retention_days` is
 `null`: Runtime stores no Slack history.
 
@@ -941,7 +962,7 @@ Control-proxied identity as the other channels.
 | Method and path | Body | Result |
 |---|---|---|
 | `PUT /xnobrain/api/runtime/v1/agents/{agent_id}/channels/whatsapp` | `{enabled: bool}` | `ChannelState` |
-| `PATCH /xnobrain/api/runtime/v1/agents/{agent_id}/channels/whatsapp` | `{allowed_users?: [id]\|null, dm_policy?: "disabled"\|"allowlist"\|"pairing", home_channel?: id\|null}` | `ChannelState` |
+| `PATCH /xnobrain/api/runtime/v1/agents/{agent_id}/channels/whatsapp` | `{allowed_users?: [id]\|null, dm_policy?: "disabled"\|"allowlist"\|"pairing"\|"open", home_channel?: id\|null}` | `ChannelState` |
 | `GET /xnobrain/api/runtime/v1/agents/{agent_id}/channels/whatsapp/qr` | — | `{status, image_base64}` |
 | `POST /xnobrain/api/runtime/v1/agents/{agent_id}/channels/whatsapp/logout` | — | `ChannelState` |
 
@@ -966,13 +987,14 @@ session files are never logged.
 `allowed_users` entries and `home_channel` accept a phone number, a
 `@s.whatsapp.net` or `@lid` JID, or a `@g.us` group JID matching
 `^\+?[0-9]{1,20}(?::[0-9]{1,10})?(?:@(?:s\.whatsapp\.net|g\.us|lid))?$`.
-`dm_policy: open` is rejected; only `disabled`, `allowlist`, and `pairing` are
-accepted.
+`dm_policy` accepts `disabled`, `allowlist`, `pairing`, and `open`; `open` also
+writes `WHATSAPP_ALLOW_ALL_USERS=true`, and any other policy removes it.
 
 Writes snapshot `config.yaml` first, then atomically update
 `platforms.whatsapp.enabled` and `platforms.whatsapp.extra.dm_policy`, and the
 `.env` keys `WHATSAPP_ENABLED`, `WHATSAPP_MODE=bot`, `WHATSAPP_DM_POLICY`,
-`WHATSAPP_ALLOWED_USERS`, and `WHATSAPP_HOME_CHANNEL`. Logout writes
+`WHATSAPP_ALLOWED_USERS`, `WHATSAPP_ALLOW_ALL_USERS`, and
+`WHATSAPP_HOME_CHANNEL`. Logout writes
 `WHATSAPP_ENABLED=false`, disables the platform, and deletes only that
 profile's `platforms/whatsapp/session` directory (or the adapter's configured
 `session_path` when it stays inside the profile).
@@ -1071,8 +1093,12 @@ platform `daily_limit`, while `<profile>/zalo/group_usage.json` stores the
 current Asia/Ho_Chi_Minh calendar day, per-group/per-sender counts, and the
 message IDs counted that day. Both files are written atomically with mode
 `0600`, reject symlinks, and prune prior days. The limit applies to accepted
-group turns: a retried delivery of the same `message_id` does not count twice,
-and every sender counts, including senders approved in the DM pairing store.
+group turns and to DM turns accepted only because `dm_policy` is `open`
+(the sender is neither allowlisted nor pairing-approved). Open-policy DM guests
+are counted under the reserved `@dm` key, which no real chat id can match;
+allowlisted and paired DMs are never counted. A retried delivery of the same
+`message_id` does not count twice, and every group sender counts, including
+senders approved in the DM pairing store.
 
 The gateway reports an unapproved mention through the private route
 `POST /xnobrain/api/runtime/v1/internal/channels/groups/seen` with
@@ -1082,8 +1108,9 @@ per profile/platform/group; for `zalo` the inbound chat name is reported, while
 `zalo_bot` resolves the group name through the bot group manager. A group turn in `run_internal_turn` is refused with
 `403 channel_group_not_approved` while unapproved (and recorded as seen) and
 with `429 channel_group_limit_reached` when the per-member daily limit is
-reached. `daily_limit` is an integer `0..1000`, defaults to `20`, and `0`
-means unlimited.
+reached. An open-policy DM guest over the same limit gets the same
+`429 channel_group_limit_reached`. `daily_limit` is an integer `0..1000`,
+defaults to `20`, and `0` means unlimited.
 
 ### Channel tools
 
@@ -1228,14 +1255,16 @@ catalog APIs, auto-reply, and `custom` are never exposed.
 ### Private gateway turns
 
 `POST /xnobrain/api/runtime/v1/internal/channels/turn` runs one
-already-authorized gateway message as a normal conversation turn in the main
-Runtime, so it uses the same run service, admission path, connect tool,
-policies, and run records as web chat. It builds tools exactly like a web chat
-of that agent: the profile's toolsets, MCP servers, skills, and the rest of
-the agent's normal tool set, for both direct messages and approved groups on
-every platform. The only difference is that the social tools (the
-`xnobrain_channels` toolset, the personal Zalo tools, and the Zalo Bot tools)
-are present only when that agent's `social_tools` switch is on. The gateway
+already-authorized gateway message as a conversation turn in the main Runtime,
+so it uses the same run service, admission path, connect tool, policies, and run
+records as web chat. Every accepted channel turn runs with the agent's normal
+tools: the profile's toolsets, MCP servers, skills, and the rest of the agent's
+tool set, for direct messages and approved groups on every platform. The social
+tools (the `xnobrain_channels` toolset, the personal Zalo tools, and the Zalo Bot
+tools) are present only when that agent's `social_tools` switch is on. Guest
+senders are not tool-restricted: an open-policy DM sender and any member of an
+approved group keep the same tools, and an open-policy DM guest is instead
+limited by the per-platform `daily_limit` described above. The gateway
 response is still text-only: it returns the final reply and usage, not per-tool
 events, attachments, or streamed UI metadata. The reply is the run output the
 gateway sends back to the platform, so the bot answers incoming messages even
@@ -1244,7 +1273,7 @@ when no social tools are bound. It requires the same
 ingestion and is gated by `FT_ENABLE_AGENT_CHANNELS`.
 
 The body is
-`{platform: "zalo"|"zalo_bot"|"telegram"|"discord"|"slack", agent_id, thread_id, thread_type: "dm"|"group", sender_id, sender_name, text, message_id, ts}`.
+`{platform: "zalo"|"zalo_bot"|"telegram"|"discord"|"slack"|"whatsapp", agent_id, thread_id, thread_type: "dm"|"group", sender_id, sender_name, text, message_id, ts}`.
 `zalo` thread and sender IDs are numeric (`^[0-9]{1,32}$`); `zalo_bot` IDs use
 `^[A-Za-z0-9_-]{1,64}$`; `telegram` user ids are positive and group chat ids
 are negative, both matching `^-?[0-9]{1,20}$`; `discord` ids are numeric
@@ -1253,11 +1282,13 @@ uppercase alphanumerics matching `^[A-Z][A-Z0-9]{1,32}$`. The endpoint validates
 that the agent profile exists,
 that the selected platform is enabled (`403 channel_disabled`), that a matching
 persisted owner binding exists (`403 channel_owner_unavailable`), and refuses
-with `403 channel_dm_policy_unsafe` unless the profile's
-`platforms.<platform>.extra.dm_policy` is `allowlist` or `pairing` and
-`ZALO_ALLOW_ALL_USERS`/`ZALO_BOT_ALLOW_ALL_USERS`/`TELEGRAM_ALLOW_ALL_USERS`/
-`DISCORD_ALLOW_ALL_USERS`/`SLACK_ALLOW_ALL_USERS` (and `allow_all`) are not
-enabled. A request body can never supply or override the owner.
+direct messages with `403 channel_dm_policy_unsafe` unless the profile's
+`platforms.<platform>.extra.dm_policy` is `allowlist`, `pairing`, or `open`.
+`open` accepts any DM sender on every platform; `allowlist` and `pairing` keep
+the existing checks and their `*_ALLOW_ALL_USERS` flag must not be enabled.
+Discord DMs under `open` are accepted, and under `allowlist`/`pairing` require
+a listed or paired sender. A request body can never supply or override the
+owner. The full Discord rules are in the Discord channel section.
 
 Each `(platform, agent_id, thread_id)` maps to one personal conversation,
 persisted atomically in `<profile>/zalo/threads.json` (mode `0600`) and reused
@@ -1277,10 +1308,12 @@ active returns `409 channel_turn_running`; a reused message ID with different
 input returns `409 channel_turn_conflict`.
 
 For any registered group platform (`zalo`, `zalo_bot`, `telegram`, `discord`,
-`slack`) with
+`slack`, `whatsapp`) with
 `thread_type: "group"`, the group must already be
 approved for this agent; otherwise the mention is recorded as pending and the
-turn is refused with `403 channel_group_not_approved`. Approval is stored per
+turn is refused with `403 channel_group_not_approved`. `dm_policy: open` never
+opens groups. Discord guild channels use this same owner approval flow.
+Approval is stored per
 platform, so a group ID approved for `zalo_bot` does not authorize the same ID
 on `zalo`. Approved group turns are then counted against the sender's daily
 quota before the run starts, and a sender over the limit receives

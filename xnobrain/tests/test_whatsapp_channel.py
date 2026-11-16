@@ -265,8 +265,10 @@ class WhatsAppChannelTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(state["allowed_users"], [PHONE, PHONE_JID, LID_JID, GROUP_JID])
         with self.assertRaises(ValidationError):
             ChannelWhatsappPatch.model_validate({"home_channel": BAD_ID})
-        with self.assertRaises(ValidationError):
-            ChannelWhatsappPatch.model_validate({"dm_policy": "open"})
+        self.assertEqual(
+            ChannelWhatsappPatch.model_validate({"dm_policy": "open"}).dm_policy,
+            "open",
+        )
 
     def test_turn_request_accepts_whatsapp_jids(self):
         for value in (PHONE, PHONE_JID, LID_JID, GROUP_JID):
