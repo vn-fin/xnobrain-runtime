@@ -109,6 +109,7 @@ class SystemdEnvironmentTests(unittest.TestCase):
             "Environment=RUNTIME_LLM_API_KEY_FILE=/run/xnobrain-runtime/router-api-key",
             raw,
         )
+        self.assertIn("/opt/xnobrain/.tools/node/bin", raw)
         command = shlex.split(service.get("ExecStart"))
         self.assertEqual(command[:3], ["/usr/bin/setpriv", "--no-new-privs", "--"])
         self.assertEqual(command[-1], "/usr/local/bin/xnobrain-gateway-entrypoint")
@@ -194,6 +195,24 @@ class SystemdEnvironmentTests(unittest.TestCase):
         self.assertIn("plugins/platforms/zalo", installer)
         self.assertIn('"$npm_bin" ci --omit=dev --no-audit --no-fund', installer)
 
+    def test_container_hardening_installs_the_gateway_without_enabling_it(self):
+        installer = (ROOT / "scripts/install-container-hardening.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            "/opt/xnobrain/runtime/gateway-entrypoint.sh "
+            "/usr/local/bin/xnobrain-gateway-entrypoint",
+            installer,
+        )
+        self.assertIn(
+            "/opt/xnobrain/runtime/xnobrain-gateway.service "
+            "/etc/systemd/system/xnobrain-gateway.service",
+            installer,
+        )
+        # Reusable images and source rollouts install files only; the workspace
+        # activation step enables the unit once data and credentials exist.
+        self.assertNotIn("systemctl enable xnobrain-gateway.service", installer)
+
     def _run_gateway_entrypoint(self, env):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp = Path(temp_dir)
@@ -247,7 +266,7 @@ class SystemdEnvironmentTests(unittest.TestCase):
         self.assertIn("from xnobrain.integrations.gateway_cli import main", lines[5])
         self.assertNotIn("secret-value", result.stdout + result.stderr)
 
-    def test_gateway_entrypoint_keeps_existing_key_and_does_not_derive_homes(self):
+    def test_gateway_entrypoint_derives_canonical_homes_from_agent_data_root(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             key_file = Path(temp_dir) / "router-api-key"
             key_file.write_text("file-secret\n", encoding="utf-8")
@@ -262,10 +281,37 @@ class SystemdEnvironmentTests(unittest.TestCase):
             )
 
         self.assertEqual(lines[0], "existing-key")
-        self.assertEqual(lines[1], "")
-        self.assertEqual(lines[2], "")
-        self.assertEqual(lines[3], "")
+        self.assertEqual(lines[1], "/opt/data/agent/big-brother")
+        self.assertEqual(lines[2], "/opt/data/agent/big-brother")
+        self.assertEqual(lines[3], "/opt/data/agent")
         self.assertEqual(lines[4], "/opt/xnobrain-app")
+        self.assertIn("from xnobrain.integrations.gateway_cli import main", lines[5])
+
+    def test_gateway_entrypoint_prefers_container_runtime_hermes_layout(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            key_file = Path(temp_dir) / "router-api-key"
+            key_file.write_text("file-secret\n", encoding="utf-8")
+
+            lines, _ = self._run_gateway_entrypoint(
+                {
+                    "RUNTIME_LLM_API_KEY": "existing-key",
+                    "RUNTIME_LLM_API_KEY_FILE": str(key_file),
+                    # The unit file defaults HERMES_* to the Docker layout; the
+                    # Incus container contract must win.
+                    "HERMES_HOME": "/opt/data/agent/big-brother",
+                    "HERMES_ROOT_PROFILE": "/opt/data/agent/big-brother",
+                    "HERMES_PROFILES_ROOT": "/opt/data/agent",
+                    "RUNTIME_HERMES_HOME": "/opt/data/hermes/root",
+                    "RUNTIME_HERMES_ROOT_PROFILE": "/opt/data/hermes/root",
+                    "RUNTIME_HERMES_PROFILES_ROOT": "/opt/data/hermes/profiles",
+                    "XNOBRAIN_APP_DIR": "/opt/xnobrain-app",
+                }
+            )
+
+        self.assertEqual(lines[0], "existing-key")
+        self.assertEqual(lines[1], "/opt/data/hermes/root")
+        self.assertEqual(lines[2], "/opt/data/hermes/root")
+        self.assertEqual(lines[3], "/opt/data/hermes/profiles")
         self.assertIn("from xnobrain.integrations.gateway_cli import main", lines[5])
 
 

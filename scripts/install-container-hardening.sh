@@ -31,6 +31,8 @@ install -o root -g root -m 0755 /opt/xnobrain/runtime/prepare-container.py /usr/
 install -o root -g root -m 0755 /opt/xnobrain/runtime/systemd-entrypoint.sh /usr/local/bin/xnobrain-systemd-entrypoint
 install -o root -g root -m 0644 /opt/xnobrain/runtime/xnobrain-runtime-prepare.service /etc/systemd/system/xnobrain-runtime-prepare.service
 install -o root -g root -m 0644 /opt/xnobrain/runtime/xnobrain-runtime.service /etc/systemd/system/xnobrain-runtime.service
+install -o root -g root -m 0755 /opt/xnobrain/runtime/gateway-entrypoint.sh /usr/local/bin/xnobrain-gateway-entrypoint
+install -o root -g root -m 0644 /opt/xnobrain/runtime/xnobrain-gateway.service /etc/systemd/system/xnobrain-gateway.service
 # Incus/LXC supplies a late global service drop-in which disables NNP. Restore
 # it for this workload only; setpriv in ExecStart also enforces it at exec time.
 install -d -o root -g root -m 0755 /etc/systemd/system/xnobrain-runtime.service.d
