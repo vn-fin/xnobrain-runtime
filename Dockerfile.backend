@@ -116,6 +116,9 @@ COPY runtime/hermes-plugins/platforms/zalo_bot /usr/local/lib/hermes-agent/plugi
 RUN --mount=type=cache,target=/root/.npm \
     cd /usr/local/lib/hermes-agent/plugins/platforms/zalo/bridge \
     && npm ci --omit=dev --no-audit --no-fund
+RUN --mount=type=cache,target=/root/.npm \
+    cd /usr/local/lib/hermes-agent/scripts/whatsapp-bridge \
+    && npm ci --omit=dev --no-audit --no-fund
 
 # Match the interactive sandbox image: office Python helpers and common agent
 # CLIs are ready immediately instead of being lazily downloaded at first use.

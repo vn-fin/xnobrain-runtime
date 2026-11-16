@@ -687,7 +687,7 @@ selects a resource and never authorizes access. A disabled runtime answers `404`
 | `GET /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo/qr` | — | `{status, image_base64}` |
 | `POST /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo/logout` | — | `ChannelState` |
 
-`ChannelState` is `{platform: "zalo"|"zalo_bot"|"telegram"|"discord"|"slack", enabled,
+`ChannelState` is `{platform: "zalo"|"zalo_bot"|"telegram"|"discord"|"slack"|"whatsapp", enabled,
 status, own_id, allowed_users, dm_policy, home_channel, history_retention_days,
 token_set, app_token_set}`.
 `history_retention_days` is the stored channel history retention in days
@@ -828,7 +828,7 @@ gateway. Scheduled delivery targets remain Zalo-only.
 The Hermes `discord` platform plugin is exposed through the same `Channels`
 tag, feature gate, and Control-proxied identity as the other channels.
 `GET /agents/{agent_id}/channels` returns `zalo`, `zalo_bot`, `telegram`,
-`discord`, and `slack` entries in that order.
+`discord`, `slack`, and `whatsapp` entries in that order.
 
 | Method and path | Body | Result |
 |---|---|---|
@@ -916,10 +916,62 @@ counts as a group. There is no Runtime Slack tools module: the channel uses
 replies carrying `MEDIA:<path>` are delivered as native media by the Hermes
 gateway. Scheduled delivery targets remain Zalo-only.
 
+### WhatsApp channel
+
+The Hermes `whatsapp` platform plugin (personal account over a local Baileys
+bridge) is exposed through the same `Channels` tag, feature gate, and
+Control-proxied identity as the other channels.
+
+| Method and path | Body | Result |
+|---|---|---|
+| `PUT /xnobrain/api/runtime/v1/agents/{agent_id}/channels/whatsapp` | `{enabled: bool}` | `ChannelState` |
+| `PATCH /xnobrain/api/runtime/v1/agents/{agent_id}/channels/whatsapp` | `{allowed_users?: [id]\|null, dm_policy?: "disabled"\|"allowlist"\|"pairing", home_channel?: id\|null}` | `ChannelState` |
+| `GET /xnobrain/api/runtime/v1/agents/{agent_id}/channels/whatsapp/qr` | — | `{status, image_base64}` |
+| `POST /xnobrain/api/runtime/v1/agents/{agent_id}/channels/whatsapp/logout` | — | `ChannelState` |
+
+`status` is one of `disabled`, `needs_login` (enabled without
+`<profile>/platforms/whatsapp/session/creds.json`), `qr` (a pairing process is
+running), `connected` (the root `gateway_state.json` platform entry is
+`connected`), `pending_restart`, `gateway_down`, `starting`, or `closed`.
+`history_retention_days` is `null`: Runtime stores no WhatsApp history.
+`token_set` and `app_token_set` are always false; the session is a QR pairing.
+
+`GET …/whatsapp/qr` starts one pair-only bridge subprocess per agent profile
+(`node bridge.js --pair-only --pair-json --session <session>`), waits up to
+five seconds for the first QR, and returns it as a PNG in `image_base64` while
+`status` is `qr`. A cached in-memory pairing process is reused while it runs.
+When the bridge reports `connected` and `creds.json` exists, the process is
+stopped and the gateway receives the same `SIGUSR1` restart as a settings
+write; the channel then reports `pending_restart` until the new gateway is up.
+A missing Node bridge, a timeout (ten minutes), an error event, logout, and
+Runtime shutdown all stop the subprocess. QR payloads, credentials, and
+session files are never logged.
+
+`allowed_users` entries and `home_channel` accept a phone number, a
+`@s.whatsapp.net` or `@lid` JID, or a `@g.us` group JID matching
+`^\+?[0-9]{1,20}(?::[0-9]{1,10})?(?:@(?:s\.whatsapp\.net|g\.us|lid))?$`.
+`dm_policy: open` is rejected; only `disabled`, `allowlist`, and `pairing` are
+accepted.
+
+Writes snapshot `config.yaml` first, then atomically update
+`platforms.whatsapp.enabled` and `platforms.whatsapp.extra.dm_policy`, and the
+`.env` keys `WHATSAPP_ENABLED`, `WHATSAPP_MODE=bot`, `WHATSAPP_DM_POLICY`,
+`WHATSAPP_ALLOWED_USERS`, and `WHATSAPP_HOME_CHANNEL`. Logout writes
+`WHATSAPP_ENABLED=false`, disables the platform, and deletes only that
+profile's `platforms/whatsapp/session` directory (or the adapter's configured
+`session_path` when it stays inside the profile).
+
+WhatsApp turns are delegated, group-approved, paired, and allowlisted like the
+other group platforms. There is no Runtime WhatsApp tools module: the channel
+uses `send_channel_message` through the plugin's registered standalone sender,
+and replies carrying `MEDIA:<path>` are delivered as native media by the
+Hermes gateway. Scheduled delivery targets remain Zalo-only. The bridge is an
+unofficial WhatsApp Web client, so an automated account carries a ban risk.
+
 ### Channel pairing management
 
 Pairing management is generic for every bot-backed platform (`zalo`,
-`zalo_bot`, `telegram`, `discord`, `slack`), gated by
+`zalo_bot`, `telegram`, `discord`, `slack`, `whatsapp`), gated by
 `FT_ENABLE_AGENT_CHANNELS`, and available only for an enabled channel whose
 persisted owner binding matches the verified same-agent Personal principal.
 It reuses the pinned Hermes `gateway.pairing.PairingStore`; Runtime has no

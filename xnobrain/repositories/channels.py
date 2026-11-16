@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import time
 from pathlib import Path
 from typing import Any, Mapping
@@ -271,6 +272,45 @@ class ChannelsRepository:
                 code="channel_state_unavailable",
             ) from error
         self.base._sync_dir(path.parent)
+        return True
+
+    def delete_session_directory(self, profile: Any, directory: Any) -> bool:
+        """Delete one session directory strictly beneath the profile root."""
+        root = self._profile_root(profile)
+        target = Path(directory)
+        if target.is_symlink():
+            raise StoreError(
+                "agent channel session is unsafe", status=400, code="channel_path_unsafe"
+            )
+        try:
+            resolved = target.resolve(strict=False)
+        except OSError as error:
+            raise StoreError(
+                "agent channel session is unavailable",
+                status=500,
+                code="channel_state_unavailable",
+            ) from error
+        if resolved == root or root not in resolved.parents:
+            raise StoreError(
+                "agent channel session escapes the profile",
+                status=400,
+                code="channel_path_unsafe",
+            )
+        if not resolved.exists():
+            return False
+        if not resolved.is_dir():
+            raise StoreError(
+                "agent channel session is unsafe", status=400, code="channel_path_unsafe"
+            )
+        try:
+            shutil.rmtree(resolved)
+        except OSError as error:
+            raise StoreError(
+                "agent channel session is unavailable",
+                status=500,
+                code="channel_state_unavailable",
+            ) from error
+        self.base._sync_dir(resolved.parent)
         return True
 
     @staticmethod

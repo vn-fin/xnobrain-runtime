@@ -179,6 +179,21 @@ ids (`C`/`G`/`D`) and member ids (`U`/`W`) are uppercase alphanumerics; a
 thread reply keeps the channel id. Control already accepts `slack` in its
 channel MCP grant allowlist.
 
+## WhatsApp (2026-11-16)
+
+Parity-only fifth platform, following the checklist: the R1 descriptor, the
+personal QR channel API (`PUT`/`PATCH`/`GET qr`/logout), connect card,
+delegation/group approval, the standalone sender path, and the
+`platforms/whatsapp.md` skill section are done, with focused tests. Checklist
+item 8 (live pairing with a dev account, recorded in `plans/VERIFICATION.md`)
+is pending. No WhatsApp tools module, cron delivery target, upstream adapter
+change, or UI work in this repository. Pairing starts Hermes' pair-only Node
+bridge per profile and stops it after `creds.json` appears; logout deletes only
+that profile's session directory. WhatsApp JIDs match
+`^\+?[0-9]{1,20}(?::[0-9]{1,10})?(?:@(?:s\.whatsapp\.net|g\.us|lid))?$`.
+Control may need `whatsapp` in its channel MCP grant allowlist before a live
+channel turn can run.
+
 ## Checklist: adding a platform
 
 1. Descriptor in `PLATFORMS` (R1) and in UI `providers.ts` (R5).

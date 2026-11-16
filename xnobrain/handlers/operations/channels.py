@@ -98,6 +98,26 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
             "channel logged out successfully",
             200,
         ),
+        "channels_whatsapp_update": (
+            lambda: service.set_whatsapp_enabled(path["agent_id"], bool(body["enabled"]), trusted),
+            "channel updated successfully",
+            200,
+        ),
+        "channels_whatsapp_patch": (
+            lambda: service.patch_whatsapp(path["agent_id"], body, trusted),
+            "channel updated successfully",
+            200,
+        ),
+        "channels_whatsapp_qr": (
+            lambda: service.channel_qr_whatsapp(path["agent_id"]),
+            "channel QR retrieved successfully",
+            200,
+        ),
+        "channels_whatsapp_logout": (
+            lambda: service.logout_whatsapp(path["agent_id"], trusted),
+            "channel logged out successfully",
+            200,
+        ),
         "channels_pairings_list": (
             lambda: service.list_pairings(path["agent_id"], path["platform"], trusted),
             "channel pairings retrieved successfully",

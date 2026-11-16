@@ -420,14 +420,14 @@ class ChannelGroupServiceTests(ChannelGroupFixture):
 
     async def test_unknown_platform_is_rejected(self):
         with self.assertRaises(ServiceError) as raised:
-            await self.service.list_groups("agent-1", "whatsapp", self._trusted())
+            await self.service.list_groups("agent-1", "signal", self._trusted())
         self.assertEqual(raised.exception.status, 422)
         self.assertEqual(raised.exception.code, "invalid_platform")
 
         with self.assertRaises(ServiceError) as raised:
             self.service.record_group_seen(
                 {
-                    "platform": "whatsapp",
+                    "platform": "signal",
                     "agent_id": "agent-1",
                     "group_id": "123456",
                 },

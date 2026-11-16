@@ -167,6 +167,10 @@ class XNOBrainApplication:
                     for task in tuple(cron_tasks.values()):
                         task.cancel()
                     with suppress(Exception):
+                        await asyncio.wait_for(
+                            self.service.channels.shutdown(), timeout=10
+                        )
+                    with suppress(Exception):
                         async with shutdown_stage("conversation_runs"):
                             await self.service.conversation_runs.shutdown()
                     with suppress(Exception):

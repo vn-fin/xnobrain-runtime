@@ -112,7 +112,7 @@ class ChannelIngestionTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             ChannelInboundMessage.model_validate(_body(text=""))
         with self.assertRaises(ValidationError):
-            ChannelInboundMessage.model_validate(_body(platform="whatsapp"))
+            ChannelInboundMessage.model_validate(_body(platform="signal"))
 
     def test_append_is_persisted_as_a_marked_external_user_message(self):
         result = self.service.append_internal(_body(), TOKEN)

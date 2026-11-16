@@ -384,7 +384,7 @@ class ZaloBotChannelTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             [channel["platform"] for channel in listed["channels"]],
-            ["zalo", "zalo_bot", "telegram", "discord", "slack"],
+            ["zalo", "zalo_bot", "telegram", "discord", "slack", "whatsapp"],
         )
         self.assertFalse(listed["channels"][0]["token_set"])
         self.assertTrue(listed["channels"][1]["enabled"])

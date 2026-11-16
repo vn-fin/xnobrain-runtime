@@ -190,7 +190,7 @@ class ChannelTurnModelTests(unittest.TestCase):
 
     def test_request_rejects_unsafe_ids_and_unknown_platforms(self):
         for overrides in (
-            {"platform": "whatsapp"},
+            {"platform": "signal"},
             {"thread_id": "../escape"},
             {"sender_id": "bad/id"},
             {"message_id": ""},
@@ -321,7 +321,7 @@ class ChannelTurnServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_unknown_platform_is_rejected_before_creation(self):
         with self.assertRaises(ServiceError) as raised:
-            await self.service.run_internal_turn(_body(platform="whatsapp"), TOKEN)
+            await self.service.run_internal_turn(_body(platform="signal"), TOKEN)
         self.assertEqual(raised.exception.status, 422)
         self.assertEqual(raised.exception.code, "invalid_platform")
         self.assertEqual(self.platform.create_calls, [])

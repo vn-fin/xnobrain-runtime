@@ -110,6 +110,26 @@ PLATFORMS: dict[str, ChannelPlatform] = {
         skill_section="slack.md",
         token_operation_prefix="channels_slack_",
     ),
+    "whatsapp": ChannelPlatform(
+        id="whatsapp",
+        label="WhatsApp",
+        auth="qr",
+        connect_auth_kind="qr",
+        # Baileys JIDs: a phone number (``8490...@s.whatsapp.net``), a LID
+        # (``1234...@lid``), or a group (``1203...@g.us``). ``to_whatsapp_jid``
+        # also accepts a bare number and strips a legacy ``:device`` suffix.
+        id_pattern=(
+            r"^\+?[0-9]{1,20}(?::[0-9]{1,10})?"
+            r"(?:@(?:s\.whatsapp\.net|g\.us|lid))?$"
+        ),
+        groups=True,
+        # The platform plugin registers max_message_length=4096.
+        max_message_length=4096,
+        # Hermes already ships the WhatsApp adapter; Runtime adds no
+        # WhatsApp-specific tool module.
+        tools_module=None,
+        skill_section="whatsapp.md",
+    ),
 }
 
 # Pydantic Literal type covering exactly the registered platform ids.

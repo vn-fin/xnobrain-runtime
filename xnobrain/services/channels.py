@@ -12,6 +12,7 @@ import re
 import signal
 import threading
 import time
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Mapping
@@ -26,7 +27,7 @@ except Exception:  # pragma: no cover - fixed-offset fallback
 from ..defaults import BIG_BROTHER_AGENT_ID
 from ..feature_flags import FEATURE_AGENT_CHANNELS
 from ..feature_flags import enabled as feature_enabled
-from ..integrations import AgentAPIError, zalo_channels
+from ..integrations import AgentAPIError, whatsapp_channels, zalo_channels
 from ..integrations.channel_platforms import (
     PLATFORMS,
     get_platform,
@@ -63,6 +64,7 @@ _DISCORD_TOKEN = re.compile(r"^[A-Za-z0-9_.-]{40,200}$")
 _SLACK_ID = re.compile(PLATFORMS["slack"].id_pattern)
 _SLACK_BOT_TOKEN = re.compile(r"^xoxb-[A-Za-z0-9-]{10,250}$")
 _SLACK_APP_TOKEN = re.compile(r"^xapp-[A-Za-z0-9-]{10,250}$")
+_WHATSAPP_ID = re.compile(PLATFORMS["whatsapp"].id_pattern)
 # Bot platforms store one exact chat id per DM or group and share the same
 # token/allowlist/home-channel settings; only the id shapes differ.
 _BOT_USER_ID_PATTERNS = {
@@ -70,6 +72,7 @@ _BOT_USER_ID_PATTERNS = {
     "telegram": _TELEGRAM_USER_ID,
     "discord": _DISCORD_ID,
     "slack": _SLACK_ID,
+    "whatsapp": _WHATSAPP_ID,
 }
 # One (request field, env key, value pattern) per write-only secret a bot
 # platform needs. Slack is the only platform with two secrets today (bot and
@@ -106,7 +109,7 @@ _TOKEN_CONNECT_INSTRUCTIONS = {
         "XNOBrain web app and complete the connection form there. Do not send tokens "
         f"or other credentials in {PLATFORMS[platform].label}."
     )
-    for platform in ("telegram", "discord", "slack")
+    for platform in ("telegram", "discord", "slack", "whatsapp")
 }
 _QR_WAIT_SECONDS = 5.0
 _DEFAULT_MEDIA_MAX_MB = 10.0
@@ -124,6 +127,18 @@ _SOCIAL_CHANNELS_SKILL_ROOT = (
 )
 
 
+@dataclass
+class _WhatsAppPairing:
+    """One in-memory pairing subprocess and its latest QR state."""
+
+    process: Any
+    session: Path
+    task: asyncio.Task | None = None
+    status: str = "starting"
+    qr_png: bytes | None = None
+    error: str = ""
+
+
 class ChannelsService:
     """Own the Zalo channel lifecycle for one workspace Runtime."""
 
@@ -131,6 +146,8 @@ class ChannelsService:
         self.platform = platform
         self.repository = ChannelsRepository(platform.repository)
         self.mcp_grants = WorkspaceMcpGrantClient()
+        self._whatsapp_pairings: dict[str, _WhatsAppPairing] = {}
+        self._whatsapp_pairings_lock = threading.RLock()
 
     @staticmethod
     def _authorize(supplied: str | None) -> None:
@@ -2065,17 +2082,77 @@ class ChannelsService:
             ),
         }
 
+    @staticmethod
+    def _whatsapp_session_dir(profile: Path, config: Mapping[str, Any]) -> Path:
+        return whatsapp_channels.session_directory(profile, config)
+
+    def _whatsapp_pairing_key(self, profile: Path) -> str:
+        return str(Path(profile).resolve())
+
+    def _whatsapp_pairing_record(self, profile: Path) -> _WhatsAppPairing | None:
+        with self._whatsapp_pairings_lock:
+            return self._whatsapp_pairings.get(self._whatsapp_pairing_key(profile))
+
+    def _whatsapp_channel_state(
+        self,
+        profile: Path,
+        config: Mapping[str, Any],
+        gateway: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        enabled = bool(self._platform_config(config, "whatsapp").get("enabled"))
+        env = self.repository.env(profile)
+        allowed_users = [
+            item.strip()
+            for item in str(env.get("WHATSAPP_ALLOWED_USERS") or "").split(",")
+            if item.strip()
+        ]
+        home_channel = str(env.get("WHATSAPP_HOME_CHANNEL") or "").strip() or None
+        session = self._whatsapp_session_dir(profile, config)
+        if not enabled:
+            status = "disabled"
+        elif gateway.get("pending_restart"):
+            status = "pending_restart"
+        elif not gateway.get("running"):
+            status = "gateway_down"
+        elif self._bot_runtime_connected(profile, "whatsapp"):
+            status = "connected"
+        else:
+            record = self._whatsapp_pairing_record(profile)
+            if record is not None and record.status in {"starting", "qr"}:
+                status = "qr"
+            elif not whatsapp_channels.has_credentials(session):
+                status = "needs_login"
+            else:
+                state = self.repository.gateway_platform_state(
+                    self._root_profile(), "whatsapp"
+                )
+                status = "starting" if state in {"connecting", "starting"} else "closed"
+        return {
+            "platform": "whatsapp",
+            "enabled": enabled,
+            "status": status,
+            "own_id": None,
+            "allowed_users": allowed_users,
+            "dm_policy": self._bot_dm_policy(config, "whatsapp"),
+            "home_channel": home_channel,
+            "history_retention_days": None,
+            "token_set": False,
+            "app_token_set": False,
+        }
+
     def list_channels(self, agent_id: str) -> dict[str, Any]:
         self._require_feature()
         profile = self._profile(agent_id)
         config = self.repository.config(profile)
         gateway = self._gateway_state()
         states = [self._channel_state(profile, config, gateway)]
-        states.extend(
-            self._bot_channel_state(profile, config, gateway, platform)
-            for platform in platform_ids()
-            if platform != "zalo"
-        )
+        for platform in platform_ids():
+            if platform == "zalo":
+                continue
+            if platform == "whatsapp":
+                states.append(self._whatsapp_channel_state(profile, config, gateway))
+            else:
+                states.append(self._bot_channel_state(profile, config, gateway, platform))
         return {
             "channels": states,
             "gateway": gateway,
@@ -2570,3 +2647,318 @@ class ChannelsService:
         self._sync_root_multiplex()
         gateway = self._restart_gateway()
         return self._bot_channel_state(profile, config, gateway, platform)
+
+    def set_whatsapp_enabled(
+        self, agent_id: str, enabled: bool, trusted: Any = None
+    ) -> dict[str, Any]:
+        self._require_feature()
+        profile = self._profile(agent_id)
+        binding = self._check_channel_owner(agent_id, profile, trusted) if enabled else None
+        config = self.repository.config(profile)
+        self._snapshot_config(agent_id, profile)
+        entry = self._ensure_platform_config(config, "whatsapp")
+        entry["enabled"] = bool(enabled)
+        if enabled:
+            extra = entry.get("extra")
+            if not isinstance(extra, dict):
+                extra = {}
+                entry["extra"] = extra
+            extra.setdefault("dm_policy", "disabled")
+        self.repository.write_config(profile, config)
+        env_updates: dict[str, str | None] = {
+            "WHATSAPP_ENABLED": "true" if enabled else "false"
+        }
+        if enabled:
+            env_updates["WHATSAPP_MODE"] = "bot"
+            env_updates["WHATSAPP_DM_POLICY"] = self._bot_dm_policy(config, "whatsapp")
+        else:
+            self._cancel_whatsapp_pairing(self._whatsapp_pairing_key(profile))
+        self.repository.update_env(profile, env_updates)
+        if enabled:
+            self._write_channel_owner(profile, binding)
+        else:
+            self._delete_owner_when_no_channel_enabled(profile, config)
+        self._sync_root_multiplex()
+        gateway = self._restart_gateway()
+        return self._whatsapp_channel_state(profile, config, gateway)
+
+    def patch_whatsapp(
+        self, agent_id: str, body: Mapping[str, Any], trusted: Any = None
+    ) -> dict[str, Any]:
+        self._require_feature()
+        profile = self._profile(agent_id)
+        binding = self._check_channel_owner(agent_id, profile, trusted)
+        config = self.repository.config(profile)
+        env_updates: dict[str, str | None] = {}
+        config_changed = False
+        if "allowed_users" in body:
+            values = body.get("allowed_users")
+            users = (
+                []
+                if values is None
+                else self._normalize_channel_ids(values, "whatsapp")
+            )
+            env_updates["WHATSAPP_ALLOWED_USERS"] = ",".join(users) if users else None
+        if "home_channel" in body:
+            value = body.get("home_channel")
+            if value is None:
+                env_updates["WHATSAPP_HOME_CHANNEL"] = None
+            else:
+                item = str(value).strip()
+                if not matches_id_pattern("whatsapp", item):
+                    raise ServiceError(
+                        "home_channel must be a WhatsApp chat ID",
+                        status=422,
+                        code="invalid_home_channel",
+                    )
+                env_updates["WHATSAPP_HOME_CHANNEL"] = item
+        if "dm_policy" in body:
+            policy = str(body.get("dm_policy") or "").strip().lower()
+            if policy not in _DM_POLICIES:
+                raise ServiceError(
+                    "dm_policy is invalid",
+                    status=422,
+                    code="invalid_dm_policy",
+                )
+            entry = self._ensure_platform_config(config, "whatsapp")
+            extra = entry.get("extra")
+            if not isinstance(extra, dict):
+                extra = {}
+                entry["extra"] = extra
+            extra["dm_policy"] = policy
+            env_updates["WHATSAPP_DM_POLICY"] = policy
+            config_changed = True
+        if not config_changed and not env_updates:
+            self._write_channel_owner(profile, binding)
+            return self._whatsapp_channel_state(
+                profile, config, self._gateway_state()
+            )
+        self._snapshot_config(agent_id, profile)
+        if config_changed:
+            self.repository.write_config(profile, config)
+        if env_updates:
+            self.repository.update_env(profile, env_updates)
+        self._write_channel_owner(profile, binding)
+        gateway = self._restart_gateway()
+        return self._whatsapp_channel_state(profile, config, gateway)
+
+    async def _watch_whatsapp_pairing(
+        self, key: str, record: _WhatsAppPairing
+    ) -> None:
+        process = record.process
+        try:
+
+            async def consume() -> None:
+                stream = getattr(process, "stdout", None)
+                if stream is None:
+                    return
+                while True:
+                    raw = await stream.readline()
+                    if not raw:
+                        return
+                    if len(raw) > whatsapp_channels.MAX_QR_PAYLOAD_BYTES * 2:
+                        continue
+                    try:
+                        payload = json.loads(raw.decode("utf-8", "replace").strip())
+                    except (UnicodeDecodeError, ValueError):
+                        continue
+                    if not isinstance(payload, dict):
+                        continue
+                    event = str(payload.get("event") or "").strip()
+                    if event == "qr":
+                        qr = str(payload.get("qr") or "").strip()
+                        if qr:
+                            record.qr_png = await asyncio.to_thread(
+                                whatsapp_channels.render_qr_png, qr
+                            )
+                            record.status = "qr"
+                    elif event == "connected":
+                        record.status = "connected"
+                        return
+                    elif event == "error":
+                        record.error = str(payload.get("error") or "")[:200]
+                        record.status = "error"
+                        return
+
+            await asyncio.wait_for(
+                consume(), timeout=whatsapp_channels.PAIRING_TIMEOUT_SECONDS
+            )
+            if record.status in {"starting", "qr"}:
+                record.status = "error"
+                record.error = "pairing process exited"
+        except (asyncio.TimeoutError, TimeoutError):
+            record.status = "timeout"
+        except asyncio.CancelledError:
+            record.status = "cancelled"
+            raise
+        except Exception as error:
+            record.status = "error"
+            record.error = type(error).__name__
+        finally:
+            if record.status == "connected":
+                try:
+                    await asyncio.wait_for(process.wait(), timeout=3)
+                except (asyncio.TimeoutError, TimeoutError):
+                    await whatsapp_channels.terminate_pairing(process)
+                if whatsapp_channels.has_credentials(record.session):
+                    gateway = self._restart_gateway()
+                    record.status = (
+                        "pending_restart"
+                        if gateway.get("pending_restart")
+                        else "connected"
+                    )
+                else:
+                    record.status = "error"
+                    record.error = "pairing completed without credentials"
+            else:
+                await whatsapp_channels.terminate_pairing(process)
+            with self._whatsapp_pairings_lock:
+                if self._whatsapp_pairings.get(key) is record:
+                    # Keep the terminal record for the current QR request and
+                    # replace it on the next attempt.
+                    record.task = None
+
+    async def _start_whatsapp_pairing(
+        self, key: str, session: Path
+    ) -> _WhatsAppPairing | None:
+        try:
+            process = await whatsapp_channels.spawn_pairing(session, "bot")
+        except Exception as error:
+            _LOGGER.warning(
+                "whatsapp pairing unavailable: %s", type(error).__name__
+            )
+            return None
+        record = _WhatsAppPairing(process=process, session=session)
+        with self._whatsapp_pairings_lock:
+            existing = self._whatsapp_pairings.get(key)
+            if existing is not None and existing.status in {"starting", "qr"}:
+                duplicate = record
+                record = existing
+            else:
+                duplicate = None
+                self._whatsapp_pairings[key] = record
+        if duplicate is not None:
+            await whatsapp_channels.terminate_pairing(duplicate.process)
+            return record
+        record.task = asyncio.create_task(
+            self._watch_whatsapp_pairing(key, record),
+            name="whatsapp-pairing",
+        )
+        return record
+
+    async def _stop_whatsapp_pairing(self, key: str) -> None:
+        with self._whatsapp_pairings_lock:
+            record = self._whatsapp_pairings.pop(key, None)
+        if record is None:
+            return
+        if record.task is not None and not record.task.done():
+            record.status = "cancelled"
+            record.task.cancel()
+            await whatsapp_channels.terminate_pairing(record.process)
+            try:
+                await record.task
+            except (asyncio.CancelledError, Exception):
+                pass
+        else:
+            await whatsapp_channels.terminate_pairing(record.process)
+
+    def _cancel_whatsapp_pairing(self, key: str) -> None:
+        """Synchronous best-effort stop used by the disable path."""
+        with self._whatsapp_pairings_lock:
+            record = self._whatsapp_pairings.pop(key, None)
+        if record is None:
+            return
+        record.status = "cancelled"
+        if record.task is not None and not record.task.done():
+            record.task.cancel()
+        if getattr(record.process, "returncode", None) is None:
+            try:
+                record.process.terminate()
+            except (ProcessLookupError, OSError):
+                pass
+
+    async def channel_qr_whatsapp(self, agent_id: str) -> dict[str, Any]:
+        self._require_feature()
+        profile = self._profile(agent_id)
+        config = self.repository.config(profile)
+        if not bool(self._platform_config(config, "whatsapp").get("enabled")):
+            raise ServiceError("channel is disabled", status=409, code="channel_disabled")
+        gateway = self._gateway_state()
+        if gateway.get("pending_restart"):
+            return {"status": "pending_restart", "image_base64": None}
+        if not gateway.get("running"):
+            return {"status": "gateway_down", "image_base64": None}
+        session = self._whatsapp_session_dir(profile, config)
+        if whatsapp_channels.has_credentials(session):
+            state = self.repository.gateway_platform_state(
+                self._root_profile(), "whatsapp"
+            )
+            if state == "connected":
+                status = "connected"
+            elif state in {"connecting", "starting"}:
+                status = "starting"
+            else:
+                status = "closed"
+            return {"status": status, "image_base64": None}
+
+        key = self._whatsapp_pairing_key(profile)
+        with self._whatsapp_pairings_lock:
+            record = self._whatsapp_pairings.get(key)
+        if (
+            record is None
+            or record.status in {"error", "timeout", "cancelled"}
+            or (record.task is None and record.status != "starting")
+        ):
+            await self._stop_whatsapp_pairing(key)
+            record = await self._start_whatsapp_pairing(key, session)
+            if record is None:
+                return {"status": "needs_login", "image_base64": None}
+        deadline = time.monotonic() + _QR_WAIT_SECONDS
+        while time.monotonic() < deadline:
+            if record.status in {"qr", "connected", "pending_restart", "error", "timeout"}:
+                break
+            if record.task is not None and record.task.done():
+                break
+            await asyncio.sleep(0.05)
+        if record.status == "pending_restart":
+            return {"status": "pending_restart", "image_base64": None}
+        if record.status == "connected":
+            return {"status": "connected", "image_base64": None}
+        if record.status == "qr":
+            return {
+                "status": "qr",
+                "image_base64": (
+                    base64.b64encode(record.qr_png).decode("ascii")
+                    if record.qr_png
+                    else None
+                ),
+            }
+        if record.status in {"error", "timeout", "cancelled"}:
+            return {"status": "needs_login", "image_base64": None}
+        # The bridge is still starting; keep the UI polling for the first QR.
+        return {"status": "qr", "image_base64": None}
+
+    async def logout_whatsapp(
+        self, agent_id: str, trusted: Any = None
+    ) -> dict[str, Any]:
+        self._require_feature()
+        profile = self._profile(agent_id)
+        config = self.repository.config(profile)
+        self._snapshot_config(agent_id, profile)
+        await self._stop_whatsapp_pairing(self._whatsapp_pairing_key(profile))
+        session = self._whatsapp_session_dir(profile, config)
+        self.repository.delete_session_directory(profile, session)
+        self._ensure_platform_config(config, "whatsapp")["enabled"] = False
+        self.repository.write_config(profile, config)
+        self.repository.update_env(profile, {"WHATSAPP_ENABLED": "false"})
+        self._delete_owner_when_no_channel_enabled(profile, config)
+        self._sync_root_multiplex()
+        gateway = self._restart_gateway()
+        return self._whatsapp_channel_state(profile, config, gateway)
+
+    async def shutdown(self) -> None:
+        """Stop every pairing subprocess owned by this service instance."""
+        with self._whatsapp_pairings_lock:
+            keys = list(self._whatsapp_pairings)
+        for key in keys:
+            await self._stop_whatsapp_pairing(key)

@@ -331,7 +331,7 @@ class SlackChannelTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             [channel["platform"] for channel in listed["channels"]],
-            ["zalo", "zalo_bot", "telegram", "discord", "slack"],
+            ["zalo", "zalo_bot", "telegram", "discord", "slack", "whatsapp"],
         )
         slack = listed["channels"][4]
         self.assertTrue(slack["enabled"])

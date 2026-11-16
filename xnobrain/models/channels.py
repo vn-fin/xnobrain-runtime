@@ -31,6 +31,7 @@ _DISCORD_TOKEN = r"^[A-Za-z0-9_.-]{40,200}$"
 _SLACK_ID = PLATFORMS["slack"].id_pattern
 _SLACK_BOT_TOKEN = r"^xoxb-[A-Za-z0-9-]{10,250}$"
 _SLACK_APP_TOKEN = r"^xapp-[A-Za-z0-9-]{10,250}$"
+_WHATSAPP_ID = PLATFORMS["whatsapp"].id_pattern
 ChannelStatus = Literal[
     "disabled",
     "starting",
@@ -414,6 +415,42 @@ class ChannelSlackPatch(BaseModel):
             item = str(entry or "").strip()
             if not re.fullmatch(_SLACK_ID, item):
                 raise ValueError("allowed_users entries must be Slack member IDs")
+            if item not in result:
+                result.append(item)
+        return result
+
+
+class ChannelWhatsappUpdate(BaseModel):
+    """Enable or disable the WhatsApp channel for one agent."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
+
+
+class ChannelWhatsappPatch(BaseModel):
+    """Partial WhatsApp access-policy update for one agent."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    allowed_users: list[str] | None = Field(
+        default=None,
+        max_length=500,
+        description="WhatsApp phone numbers or JIDs allowed to trigger the agent",
+    )
+    dm_policy: DmPolicy | None = None
+    home_channel: str | None = Field(default=None, max_length=64, pattern=_WHATSAPP_ID)
+
+    @field_validator("allowed_users")
+    @classmethod
+    def validate_allowed_users(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        result: list[str] = []
+        for entry in value:
+            item = str(entry or "").strip()
+            if not re.fullmatch(_WHATSAPP_ID, item):
+                raise ValueError("allowed_users entries must be WhatsApp user IDs")
             if item not in result:
                 result.append(item)
         return result
