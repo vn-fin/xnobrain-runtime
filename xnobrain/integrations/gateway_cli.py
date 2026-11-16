@@ -249,7 +249,7 @@ def install_gateway_group_approval() -> None:
         if _is_group_source(source):
             profile_home = _profile_home_for(runner, source)
             platform = _source_platform(source)
-            group_id = str(getattr(source, "chat_id", "") or "")
+            group_id = _group_id(source)
             if profile_home is not None and _group_is_approved(
                 profile_home, platform, group_id
             ):
@@ -585,6 +585,18 @@ def _is_group_source(source) -> bool:
     )
 
 
+def _group_id(source) -> str:
+    """Return the id a group is approved and counted under.
+
+    A Discord thread (often auto-created when the bot is mentioned) belongs to
+    its parent channel, so it shares that channel's approval and daily limit.
+    """
+    parent = str(getattr(source, "parent_chat_id", "") or "")
+    if parent and _source_chat_type(source) == "thread":
+        return parent
+    return str(getattr(source, "chat_id", "") or "")
+
+
 def _response_error_code(envelope) -> str:
     if not isinstance(envelope, dict):
         return ""
@@ -708,8 +720,9 @@ def _delegation_payload(message, history, source, event_message_id):
     from hermes_constants import get_hermes_home
 
     platform = str(getattr(getattr(source, "platform", None), "value", "") or "")
-    thread_id = str(getattr(source, "chat_id", "") or "")
-    sender_id = str(getattr(source, "user_id", "") or thread_id)
+    chat_id = str(getattr(source, "chat_id", "") or "")
+    thread_id = _group_id(source) if _is_group_source(source) else chat_id
+    sender_id = str(getattr(source, "user_id", "") or chat_id)
     message_id = str(event_message_id or getattr(source, "message_id", "") or "")
     text = str(message or "")
     agent_id = get_hermes_home().name
@@ -872,7 +885,7 @@ def install_runtime_channel_delegation() -> None:
                     _group_limit_notice(
                         profile_home,
                         platform,
-                        str(getattr(source, "chat_id", "") or ""),
+                        _group_id(source) if _is_group_source(source) else "@dm",
                         str(getattr(source, "user_id", "") or getattr(source, "chat_id", "") or ""),
                     )
                     if profile_home is not None
