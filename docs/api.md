@@ -893,14 +893,15 @@ history.
 The gateway wraps the Discord adapter's sender check without editing upstream:
 an adapter rejection becomes an admission only for a DM under
 `dm_policy: pairing` or `open`, or for a guild message that carries channel
-context, so Runtime's owner approval sees the channel request. Voice and every
-other call without channel context keep the adapter's denial. A guild channel
-must therefore be approved through the normal owner group approval flow; there
-is no separate channel allowlist. A DM is accepted under `open`, or when the
+context, so Runtime's owner approval sees the server request. Voice and every
+other call without channel context keep the adapter's denial. Discord groups
+are approved per server: the group id is the guild id, so every channel and
+thread (including threads the bot auto-creates) shares one approval and one
+daily limit; there is no separate channel allowlist. A DM is accepted under `open`, or when the
 sender is allowlisted or pairing-approved; role auth in a DM needs the
-adapter's `dm_role_auth_guild` opt-in and is not treated as trust. A thread
-keeps its own snowflake id as `thread_id`, and `chat_type: "thread"` counts as
-a group. There is no Runtime Discord tools module: the channel uses
+adapter's `dm_role_auth_guild` opt-in and is not treated as trust. A guild
+message's `thread_id` is the guild id, and `chat_type: "thread"` counts as a
+group. There is no Runtime Discord tools module: the channel uses
 `send_channel_message` through the plugin's registered standalone sender, and
 replies carrying `MEDIA:<path>` are delivered as native media by the Hermes
 gateway. Scheduled delivery targets remain Zalo-only.

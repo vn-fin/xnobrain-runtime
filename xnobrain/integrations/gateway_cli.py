@@ -588,9 +588,14 @@ def _is_group_source(source) -> bool:
 def _group_id(source) -> str:
     """Return the id a group is approved and counted under.
 
-    A Discord thread (often auto-created when the bot is mentioned) belongs to
-    its parent channel, so it shares that channel's approval and daily limit.
+    Discord is approved per server, so every channel and thread (often
+    auto-created when the bot is mentioned) shares the server's approval and
+    daily limit. Elsewhere a thread belongs to its parent chat.
     """
+    if _source_platform(source) == "discord":
+        guild = str(getattr(source, "scope_id", "") or getattr(source, "guild_id", "") or "")
+        if guild:
+            return guild
     parent = str(getattr(source, "parent_chat_id", "") or "")
     if parent and _source_chat_type(source) == "thread":
         return parent
@@ -618,6 +623,10 @@ async def _post_group_seen(_runner, source, profile_home: Path, group_id: str) -
         group_name = ""
         if platform == "zalo":
             group_name = " ".join(str(getattr(source, "chat_name", "") or "").split())[:100]
+        elif platform == "discord":
+            # Discord chat names read "Server / #channel[ / thread]".
+            server = str(getattr(source, "chat_name", "") or "").split(" / ", 1)[0]
+            group_name = " ".join(server.split())[:100]
         payload = {
             "platform": platform,
             "agent_id": Path(profile_home).name,

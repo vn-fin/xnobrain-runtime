@@ -620,20 +620,22 @@ class DiscordDelegationTests(unittest.TestCase):
                 self.assertEqual(payload["thread_type"], "group")
                 self.assertEqual(payload["thread_id"], "987654321098765432")
 
-    def test_thread_payload_and_approval_use_the_parent_channel(self):
-        source = self._source("111111111111111111", "thread")
-        source.parent_chat_id = "987654321098765432"
+    def test_channels_and_threads_are_approved_per_server(self):
+        thread = self._source("111111111111111111", "thread")
+        thread.parent_chat_id = "987654321098765432"
+        thread.guild_id = "555555555555555555"
+        channel = self._source("987654321098765432", "group")
+        channel.guild_id = "555555555555555555"
         with mock.patch(
             "hermes_constants.get_hermes_home",
             return_value=SimpleNamespace(name="agent-1"),
         ):
-            payload = gateway_cli._delegation_payload("hello", [], source, "message-3")
+            payload = gateway_cli._delegation_payload("hello", [], thread, "message-3")
 
-        self.assertEqual(payload["thread_id"], "987654321098765432")
-        self.assertEqual(gateway_cli._group_id(source), "987654321098765432")
-        group = self._source("111111111111111111", "group")
-        group.parent_chat_id = "987654321098765432"
-        self.assertEqual(gateway_cli._group_id(group), "111111111111111111")
+        self.assertEqual(payload["thread_id"], "555555555555555555")
+        self.assertEqual(gateway_cli._group_id(channel), "555555555555555555")
+        thread.guild_id = None
+        self.assertEqual(gateway_cli._group_id(thread), "987654321098765432")
 
 
 class DiscordSkillTests(unittest.TestCase):

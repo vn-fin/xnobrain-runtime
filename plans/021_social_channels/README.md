@@ -172,6 +172,8 @@ allowlist.
 > 2026-11-16: dm_policy open for every platform; Discord pairing and channel
 > approval via gateway wrapper; Discord allowed_roles; open-policy DM guests
 > share the per-platform daily limit.
+> 2026-11-16: Discord groups are approved per server (guild id), covering
+> every channel and auto-created thread.
 
 ## Slack (2026-11-16)
 
