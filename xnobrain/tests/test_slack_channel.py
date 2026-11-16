@@ -346,6 +346,10 @@ class SlackChannelTests(unittest.IsolatedAsyncioTestCase):
                 "wecom",
                 "qqbot",
                 "yuanbao",
+                "matrix",
+                "feishu",
+                "dingtalk",
+                "google_chat",
             ],
         )
         slack = listed["channels"][4]

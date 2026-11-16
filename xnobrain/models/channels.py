@@ -23,7 +23,8 @@ from ..integrations.channel_platforms import (
 )
 
 _IDENTITY = r"^[^\x00-\x1f/\\]{1,200}$"
-_GROUP_ID = _IDENTITY
+_TURN_ID = r"^[^\x00-\x1f\\]{1,200}$"
+_GROUP_ID = r"^[^\x00-\x1f\\]{1,200}$"
 _ZALO_ID = r"^[0-9]{1,32}$"
 _ZALO_BOT_ID = r"^[A-Za-z0-9_-]{1,64}$"
 _ZALO_BOT_TOKEN = r"^[0-9]{1,20}:[A-Za-z0-9_-]{8,128}$"
@@ -41,6 +42,10 @@ _IRC_ID = PLATFORMS["irc"].id_pattern
 _WECOM_ID = PLATFORMS["wecom"].id_pattern
 _QQBOT_ID = PLATFORMS["qqbot"].id_pattern
 _YUANBAO_ID = PLATFORMS["yuanbao"].id_pattern
+_MATRIX_ID = PLATFORMS["matrix"].id_pattern
+_FEISHU_ID = PLATFORMS["feishu"].id_pattern
+_DINGTALK_ID = PLATFORMS["dingtalk"].id_pattern
+_GOOGLE_CHAT_ID = PLATFORMS["google_chat"].id_pattern
 ChannelStatus = Literal[
     "disabled",
     "starting",
@@ -106,9 +111,9 @@ class ChannelTurnRequest(BaseModel):
 
     platform: ChannelPlatformId
     agent_id: str = Field(min_length=1, max_length=200, pattern=_IDENTITY)
-    thread_id: str = Field(min_length=1, max_length=64, pattern=_IDENTITY)
+    thread_id: str = Field(min_length=1, max_length=200, pattern=_TURN_ID)
     thread_type: Literal["dm", "group"]
-    sender_id: str = Field(min_length=1, max_length=64, pattern=_IDENTITY)
+    sender_id: str = Field(min_length=1, max_length=200, pattern=_TURN_ID)
     sender_name: str = Field(default="", max_length=200)
     text: str = Field(min_length=1, max_length=20000)
     message_id: str = Field(min_length=1, max_length=128, pattern=_IDENTITY)
@@ -809,6 +814,175 @@ class ChannelYuanbaoPatch(BaseModel):
     @classmethod
     def validate_allowed_users(cls, value: list[str] | None) -> list[str] | None:
         return _platform_user_ids(value, "yuanbao")
+
+
+class ChannelMatrixUpdate(BaseModel):
+    """Enable or disable the Matrix channel for one agent."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
+
+
+class ChannelMatrixPatch(BaseModel):
+    """Partial Matrix settings update for one agent.
+
+    ``access_token`` is write-only. It is never serialized into a response or
+    an error payload; the validation handler redacts the submitted body for
+    this operation family.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    homeserver: str | None = Field(
+        default=None,
+        max_length=500,
+        pattern=credential_pattern("matrix", "homeserver"),
+    )
+    access_token: str | None = Field(
+        default=None,
+        max_length=1024,
+        pattern=credential_pattern("matrix", "access_token"),
+        description="Write-only Matrix access token",
+    )
+    allowed_users: list[str] | None = Field(default=None, max_length=500)
+    dm_policy: DmPolicy | None = None
+    home_channel: str | None = Field(default=None, max_length=400, pattern=_MATRIX_ID)
+
+    @field_validator("allowed_users")
+    @classmethod
+    def validate_allowed_users(cls, value: list[str] | None) -> list[str] | None:
+        return _platform_user_ids(value, "matrix")
+
+
+class ChannelFeishuUpdate(BaseModel):
+    """Enable or disable the Feishu / Lark channel for one agent."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
+
+
+class ChannelFeishuPatch(BaseModel):
+    """Partial Feishu / Lark settings update for one agent.
+
+    ``app_secret`` is write-only. It is never serialized into a response or an
+    error payload; the validation handler redacts the submitted body for this
+    operation family.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    app_id: str | None = Field(
+        default=None,
+        max_length=204,
+        pattern=credential_pattern("feishu", "app_id"),
+    )
+    app_secret: str | None = Field(
+        default=None,
+        max_length=256,
+        pattern=credential_pattern("feishu", "app_secret"),
+        description="Write-only Feishu / Lark app secret",
+    )
+    domain: Literal["feishu", "lark"] | None = Field(
+        default=None,
+        description="Feishu China or Lark international",
+    )
+    allowed_users: list[str] | None = Field(default=None, max_length=500)
+    dm_policy: DmPolicy | None = None
+    home_channel: str | None = Field(default=None, max_length=200, pattern=_FEISHU_ID)
+
+    @field_validator("allowed_users")
+    @classmethod
+    def validate_allowed_users(cls, value: list[str] | None) -> list[str] | None:
+        return _platform_user_ids(value, "feishu")
+
+
+class ChannelDingtalkUpdate(BaseModel):
+    """Enable or disable the DingTalk channel for one agent."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
+
+
+class ChannelDingtalkPatch(BaseModel):
+    """Partial DingTalk settings update for one agent.
+
+    ``client_secret`` is write-only. It is never serialized into a response or
+    an error payload; the validation handler redacts the submitted body for
+    this operation family.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    client_id: str | None = Field(
+        default=None,
+        max_length=256,
+        pattern=credential_pattern("dingtalk", "client_id"),
+    )
+    client_secret: str | None = Field(
+        default=None,
+        max_length=256,
+        pattern=credential_pattern("dingtalk", "client_secret"),
+        description="Write-only DingTalk client secret",
+    )
+    allowed_users: list[str] | None = Field(default=None, max_length=500)
+    dm_policy: DmPolicy | None = None
+    home_channel: str | None = Field(
+        default=None, max_length=200, pattern=_DINGTALK_ID
+    )
+
+    @field_validator("allowed_users")
+    @classmethod
+    def validate_allowed_users(cls, value: list[str] | None) -> list[str] | None:
+        return _platform_user_ids(value, "dingtalk")
+
+
+class ChannelGoogleChatUpdate(BaseModel):
+    """Enable or disable the Google Chat channel for one agent."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
+
+
+class ChannelGoogleChatPatch(BaseModel):
+    """Partial Google Chat settings update for one agent.
+
+    ``service_account_json`` is write-only and may be multi-line. It is stored
+    compacted on one `.env` line and never serialized into a response or an
+    error payload; the validation handler redacts the submitted body for this
+    operation family.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    service_account_json: str | None = Field(
+        default=None,
+        max_length=20000,
+        description="Write-only Google service account JSON object",
+    )
+    project_id: str | None = Field(
+        default=None,
+        max_length=63,
+        pattern=credential_pattern("google_chat", "project_id"),
+    )
+    subscription_name: str | None = Field(
+        default=None,
+        max_length=310,
+        pattern=credential_pattern("google_chat", "subscription_name"),
+    )
+    allowed_users: list[str] | None = Field(default=None, max_length=500)
+    dm_policy: DmPolicy | None = None
+    home_channel: str | None = Field(
+        default=None, max_length=300, pattern=_GOOGLE_CHAT_ID
+    )
+
+    @field_validator("allowed_users")
+    @classmethod
+    def validate_allowed_users(cls, value: list[str] | None) -> list[str] | None:
+        return _platform_user_ids(value, "google_chat")
 
 
 class ChannelPairingPending(BaseModel):

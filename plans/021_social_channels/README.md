@@ -233,6 +233,38 @@ target, upstream adapter change, or UI work in this repository.
 - QQ Bot and Yuanbao register no standalone sender, so their send path uses
   Hermes' own `_send_to_platform` dispatcher.
 
+## Matrix, Feishu / Lark, DingTalk, Google Chat (2026-11-16)
+
+Parity-only next group of platforms, following the checklist: registry
+descriptors with generic credential fields, the token channel API
+(`PUT`/`PATCH`/logout), connect cards, delegation/group approval, standalone
+senders, and one skill section per platform are done, with focused tests.
+Checklist item 8 (live test with a dev account, recorded in
+`plans/VERIFICATION.md`) is pending. No per-platform tools module, cron delivery
+target, upstream adapter change, or UI work in this repository.
+
+2026-11-16: matrix, feishu, dingtalk, google_chat
+
+- Matrix uses a homeserver URL plus a write-only access token. Password login
+  and a bot user id are not exposed; E2EE stays off by default with no crypto
+  store path.
+- Feishu stores `app_id`, a write-only `app_secret`, and a `domain`
+  (`feishu`/`lark`). Every product write pins
+  `FEISHU_CONNECTION_MODE=websocket`; webhook mode is not supported.
+- DingTalk stores `client_id` plus a write-only `client_secret` and uses Stream
+  Mode only; no webhook URL is written.
+- Google Chat stores the service account JSON as a write-only secret, compacted
+  onto one `.env` line, plus `project_id` and `subscription_name`. Only Pub/Sub
+  streaming pull is configured; no HTTP events URL is written.
+- All four support pairing because unknown DMs reach the gateway authorization
+  hook. Open DM guests share the daily limit.
+- Feishu's inbound `_admit` drops groups under its own group policy before the
+  approval hook, so it gains an intake wrapper scoped to `_admit`; disabled
+  groups and unmentioned groups keep the adapter's denial. Matrix, DingTalk,
+  and Google Chat need no wrapper.
+- Every platform registers a standalone sender, so the send path uses it
+  directly.
+
 ## Checklist: adding a platform
 
 1. Descriptor in `PLATFORMS` (R1) and in UI `providers.ts` (R5).

@@ -688,7 +688,7 @@ selects a resource and never authorizes access. A disabled runtime answers `404`
 | `GET /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo/qr` | — | `{status, image_base64}` |
 | `POST /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo/logout` | — | `ChannelState` |
 
-`ChannelState` is `{platform: "zalo"|"zalo_bot"|"telegram"|"discord"|"slack"|"whatsapp"|"email"|"mattermost"|"irc"|"wecom"|"qqbot"|"yuanbao", enabled,
+`ChannelState` is `{platform: "zalo"|"zalo_bot"|"telegram"|"discord"|"slack"|"whatsapp"|"email"|"mattermost"|"irc"|"wecom"|"qqbot"|"yuanbao"|"matrix"|"feishu"|"dingtalk"|"google_chat", enabled,
 status, own_id, allowed_users, dm_policy, dm_policies, home_channel, allowed_roles,
 auto_thread, history_retention_days, token_set, app_token_set, credentials}`.
 `allowed_roles` is the Discord role allowlist; it defaults to `[]` on every
@@ -1084,11 +1084,69 @@ Email has no groups. There are no Runtime tools modules: every send uses
 targets remain Zalo-only. QQ Bot and Yuanbao register no standalone sender, so
 Hermes' own dispatcher handles their text delivery.
 
+### Matrix, Feishu / Lark, DingTalk, and Google Chat channels
+
+These four platform plugins expose the same generic `PUT`, `PATCH`, and
+`POST …/logout` routes under
+`/xnobrain/api/runtime/v1/agents/{agent_id}/channels/<platform>` and return
+`ChannelState`. `GET /agents/{agent_id}/channels` returns them after `yuanbao`
+in the order `matrix`, `feishu`, `dingtalk`, `google_chat`.
+
+| Platform | `PATCH` fields |
+|---|---|
+| `matrix` | `homeserver`, `access_token`, `allowed_users`, `dm_policy`, `home_channel` |
+| `feishu` | `app_id`, `app_secret`, `domain`, `allowed_users`, `dm_policy`, `home_channel` |
+| `dingtalk` | `client_id`, `client_secret`, `allowed_users`, `dm_policy`, `home_channel` |
+| `google_chat` | `service_account_json`, `project_id`, `subscription_name`, `allowed_users`, `dm_policy`, `home_channel` |
+
+Secret fields are write-only: `access_token` (`MATRIX_ACCESS_TOKEN`),
+`app_secret` (`FEISHU_APP_SECRET`), `client_secret`
+(`DINGTALK_CLIENT_SECRET`), and `service_account_json`
+(`GOOGLE_CHAT_SERVICE_ACCOUNT_JSON`). `ChannelState` reports only
+`<field>_set` for them, and the generic `422` never echoes the submitted body.
+Non-secret fields are returned in `ChannelState.credentials` and stored under
+`MATRIX_HOMESERVER`, `FEISHU_APP_ID`, `FEISHU_DOMAIN`, `DINGTALK_CLIENT_ID`,
+`GOOGLE_CHAT_PROJECT_ID`, or `GOOGLE_CHAT_SUBSCRIPTION_NAME`.
+
+`status` is `needs_token` until every required field is present: Matrix
+(`homeserver`, `access_token`), Feishu (`app_id`, `app_secret`; `domain` is
+optional and defaults to `feishu`), DingTalk (`client_id`, `client_secret`),
+and Google Chat (`service_account_json`, `project_id`,
+`subscription_name`). After that it follows the same
+`disabled`/`pending_restart`/`gateway_down`/`configured`/`connected` states.
+
+`allowed_users` entries accept a Matrix user id (`@user:server`), a Feishu
+`ou_`/`on_` id, a DingTalk staff id, or a Google Chat email. `home_channel`
+accepts the platform's thread/chat id shape and is stored under
+`MATRIX_HOME_ROOM`, `FEISHU_HOME_CHANNEL`, `DINGTALK_HOME_CHANNEL`, or
+`GOOGLE_CHAT_HOME_CHANNEL`. `dm_policy` accepts `disabled`, `allowlist`,
+`pairing`, and `open`; `open` writes `MATRIX_ALLOW_ALL_USERS`,
+`FEISHU_ALLOW_ALL_USERS`, `DINGTALK_ALLOW_ALL_USERS`, or
+`GOOGLE_CHAT_ALLOW_ALL_USERS`. Open direct-message guests share the existing
+per-platform daily limit.
+
+Matrix uses an access token only; password login and a bot user id are not part
+of this channel. E2EE is off by default and no crypto store path is configured.
+Feishu always writes `FEISHU_CONNECTION_MODE=websocket`; webhook mode is not
+supported. DingTalk uses Stream Mode only and writes no webhook URL. Google Chat
+uses Pub/Sub streaming pull only and writes no HTTP events URL; the service
+account JSON is validated, compacted onto one profile `.env` line, and never
+returned or logged.
+
+All four are delegated, pair through the gateway, and are group-approved per
+group. The gateway wraps Feishu's inbound `_admit` group-policy rejection so
+unapproved groups reach owner approval, while disabled groups and unmentioned
+groups keep the adapter's denial. Matrix, DingTalk, and Google Chat do not drop
+groups before the approval hook, so they need no wrapper. There are no Runtime
+tools modules: `send_channel_message` uses each plugin's registered standalone
+sender, and scheduled delivery targets remain Zalo-only.
+
 ### Channel pairing management
 
 Pairing management is generic for every bot-backed platform (`zalo`,
 `zalo_bot`, `telegram`, `discord`, `slack`, `whatsapp`, `email`, `mattermost`,
-`irc`, `wecom`, `qqbot`, `yuanbao`), gated by
+`irc`, `wecom`, `qqbot`, `yuanbao`, `matrix`, `feishu`, `dingtalk`,
+`google_chat`), gated by
 `FT_ENABLE_AGENT_CHANNELS`, and available only for an enabled channel whose
 persisted owner binding matches the verified same-agent Personal principal.
 It reuses the pinned Hermes `gateway.pairing.PairingStore`; Runtime has no

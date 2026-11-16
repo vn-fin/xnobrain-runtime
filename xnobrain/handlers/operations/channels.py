@@ -245,8 +245,84 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
             200,
         ),
         "channels_yuanbao_logout": (
+            lambda: service.logout_platform_channel(path["agent_id"], trusted, "yuanbao"),
+            "channel logged out successfully",
+            200,
+        ),
+        "channels_matrix_update": (
+            lambda: service.set_platform_channel_enabled(
+                path["agent_id"], bool(body["enabled"]), trusted, "matrix"
+            ),
+            "channel updated successfully",
+            200,
+        ),
+        "channels_matrix_patch": (
+            lambda: service.patch_platform_channel(
+                path["agent_id"], body, trusted, "matrix"
+            ),
+            "channel updated successfully",
+            200,
+        ),
+        "channels_matrix_logout": (
+            lambda: service.logout_platform_channel(path["agent_id"], trusted, "matrix"),
+            "channel logged out successfully",
+            200,
+        ),
+        "channels_feishu_update": (
+            lambda: service.set_platform_channel_enabled(
+                path["agent_id"], bool(body["enabled"]), trusted, "feishu"
+            ),
+            "channel updated successfully",
+            200,
+        ),
+        "channels_feishu_patch": (
+            lambda: service.patch_platform_channel(
+                path["agent_id"], body, trusted, "feishu"
+            ),
+            "channel updated successfully",
+            200,
+        ),
+        "channels_feishu_logout": (
+            lambda: service.logout_platform_channel(path["agent_id"], trusted, "feishu"),
+            "channel logged out successfully",
+            200,
+        ),
+        "channels_dingtalk_update": (
+            lambda: service.set_platform_channel_enabled(
+                path["agent_id"], bool(body["enabled"]), trusted, "dingtalk"
+            ),
+            "channel updated successfully",
+            200,
+        ),
+        "channels_dingtalk_patch": (
+            lambda: service.patch_platform_channel(
+                path["agent_id"], body, trusted, "dingtalk"
+            ),
+            "channel updated successfully",
+            200,
+        ),
+        "channels_dingtalk_logout": (
+            lambda: service.logout_platform_channel(path["agent_id"], trusted, "dingtalk"),
+            "channel logged out successfully",
+            200,
+        ),
+        "channels_google_chat_update": (
+            lambda: service.set_platform_channel_enabled(
+                path["agent_id"], bool(body["enabled"]), trusted, "google_chat"
+            ),
+            "channel updated successfully",
+            200,
+        ),
+        "channels_google_chat_patch": (
+            lambda: service.patch_platform_channel(
+                path["agent_id"], body, trusted, "google_chat"
+            ),
+            "channel updated successfully",
+            200,
+        ),
+        "channels_google_chat_logout": (
             lambda: service.logout_platform_channel(
-                path["agent_id"], trusted, "yuanbao"
+                path["agent_id"], trusted, "google_chat"
             ),
             "channel logged out successfully",
             200,

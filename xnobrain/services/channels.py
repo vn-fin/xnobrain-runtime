@@ -96,6 +96,10 @@ _TOKEN_CONNECT_INSTRUCTIONS = {
         "wecom",
         "qqbot",
         "yuanbao",
+        "matrix",
+        "feishu",
+        "dingtalk",
+        "google_chat",
     )
 }
 _QR_WAIT_SECONDS = 5.0
@@ -2645,6 +2649,10 @@ class ChannelsService:
             extra.setdefault("dm_policy", "disabled")
         self.repository.write_config(profile, config)
         env_updates: dict[str, str | None] = {}
+        entry = get_platform(platform)
+        if enabled and entry is not None:
+            for key, value in entry.fixed_env:
+                env_updates[key] = value
         if enabled and platform == "discord":
             # Product default is off. Seed the adapter flag once; an existing
             # operator value is authoritative and is never overwritten.
@@ -2721,6 +2729,9 @@ class ChannelsService:
         entry = get_platform(platform)
         label = entry.label if entry is not None else "channel"
         config_changed = False
+        if entry is not None:
+            for key, value in entry.fixed_env:
+                env_updates[key] = value
         for item in self._bot_credentials(platform):
             if item.field not in body:
                 continue
@@ -2729,6 +2740,19 @@ class ChannelsService:
                 env_updates[item.env] = None
                 continue
             text = str(value).strip()
+            if item.json:
+                try:
+                    parsed = json.loads(text)
+                except (TypeError, ValueError):
+                    parsed = None
+                if not isinstance(parsed, dict):
+                    # Never include the submitted value in the error.
+                    raise ServiceError(
+                        f"{item.field} is invalid",
+                        status=422,
+                        code=f"invalid_{item.field}",
+                    )
+                text = json.dumps(parsed, separators=(",", ":"), ensure_ascii=False)
             if not re.fullmatch(item.pattern, text):
                 # Never include the submitted value in the error.
                 raise ServiceError(

@@ -52,6 +52,10 @@ _VALID_SAMPLES = (
     "3uo8dkh1p7g1mfk49ear5fzs5c",
     "#hermes",
     "direct:user123",
+    "!room:server",
+    "oc_123456",
+    "cid123==",
+    "spaces/AAAA",
 )
 _UNSUPPORTED_ID = "signal"
 

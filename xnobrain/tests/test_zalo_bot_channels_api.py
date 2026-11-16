@@ -402,6 +402,10 @@ class ZaloBotChannelTests(unittest.IsolatedAsyncioTestCase):
                 "wecom",
                 "qqbot",
                 "yuanbao",
+                "matrix",
+                "feishu",
+                "dingtalk",
+                "google_chat",
             ],
         )
         self.assertFalse(listed["channels"][0]["token_set"])

@@ -292,6 +292,10 @@ class TelegramChannelTests(unittest.IsolatedAsyncioTestCase):
                 "wecom",
                 "qqbot",
                 "yuanbao",
+                "matrix",
+                "feishu",
+                "dingtalk",
+                "google_chat",
             ],
         )
         telegram = listed["channels"][2]

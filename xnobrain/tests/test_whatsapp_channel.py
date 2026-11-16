@@ -318,6 +318,10 @@ class WhatsAppChannelTests(unittest.IsolatedAsyncioTestCase):
                 "wecom",
                 "qqbot",
                 "yuanbao",
+                "matrix",
+                "feishu",
+                "dingtalk",
+                "google_chat",
             ]
         )
         whatsapp = listed["channels"][5]

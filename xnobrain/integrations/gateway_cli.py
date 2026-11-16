@@ -576,13 +576,61 @@ def _install_yuanbao_group_intake_wrapper() -> None:
     AccessGuardMiddleware._xnobrain_group_intake_wrapper = True
 
 
-def install_gateway_group_intake_access() -> None:
-    """Unblock WeCom, QQ Bot, and Yuanbao groups for owner approval.
+def _feishu_group_policy(adapter, chat_id: str) -> str:
+    """Read Feishu's effective group policy for one chat."""
+    rules = getattr(adapter, "_group_rules", None) or {}
+    rule = rules.get(chat_id) if chat_id else None
+    if rule is not None:
+        policy = getattr(rule, "policy", "")
+    else:
+        policy = getattr(adapter, "_default_group_policy", "") or getattr(
+            adapter, "_group_policy", ""
+        )
+    return str(policy or "").strip().lower()
 
-    Their adapters default ``group_policy`` to ``pairing`` and drop every group
-    message at intake, before the gateway authorization hook runs. Runtime's
-    owner approval is the product authority for groups, so the wrapper only
-    removes that intake stop and never marks a group approved itself.
+
+def _install_feishu_group_intake_wrapper() -> None:
+    """Admit Feishu groups at ``_admit`` only.
+
+    ``FeishuAdapter._admit`` drops non-DM traffic when its group policy rejects
+    the sender, before the gateway authorization hook can run owner approval.
+    ``_allow_group_message`` is also used for approval and update-prompt clicks,
+    so the wrapper stays on the inbound admission method and only clears its
+    ``group_policy_rejected`` result. Disabled groups and unmentioned groups
+    keep the adapter's denial.
+    """
+    try:
+        from plugins.platforms.feishu.adapter import FeishuAdapter
+    except Exception:
+        _LOGGER.warning("gateway Feishu group intake wrapper unavailable: import failed")
+        return
+    if getattr(FeishuAdapter, "_xnobrain_group_intake_wrapper", False):
+        return
+    original = FeishuAdapter._admit
+
+    def _admit(self, sender, message):
+        reason = original(self, sender, message)
+        if reason != "group_policy_rejected":
+            return reason
+        chat_id = str(getattr(message, "chat_id", "") or "")
+        if _feishu_group_policy(self, chat_id) == "disabled":
+            return reason
+        if self._require_mention_for(chat_id) and not self._mentions_self(message):
+            return reason
+        return None
+
+    FeishuAdapter._admit = _admit
+    FeishuAdapter._xnobrain_group_intake_wrapper = True
+
+
+def install_gateway_group_intake_access() -> None:
+    """Unblock WeCom, QQ Bot, Yuanbao, and Feishu groups for owner approval.
+
+    Their adapters default their group policy to pairing/allowlist and drop
+    every group message at intake, before the gateway authorization hook runs.
+    Runtime's owner approval is the product authority for groups, so the
+    wrappers only remove that intake stop and never mark a group approved
+    themselves.
     """
     try:
         from gateway.platforms.qqbot.adapter import QQAdapter
@@ -593,6 +641,7 @@ def install_gateway_group_intake_access() -> None:
     _install_adapter_group_wrapper(QQAdapter)
     _install_adapter_group_wrapper(WeComAdapter)
     _install_yuanbao_group_intake_wrapper()
+    _install_feishu_group_intake_wrapper()
 
 
 def _group_limit(value) -> int:

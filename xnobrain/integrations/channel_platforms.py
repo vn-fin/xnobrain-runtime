@@ -32,6 +32,8 @@ class ChannelCredential:
     # Reject a value another profile already stores. Applies to bot tokens and
     # client secrets; shared passwords (mail, IRC server) are not identities.
     unique: bool = False
+    # Accept a JSON object, validate it, and store it compacted on one .env line.
+    json: bool = False
 
 
 @dataclass(frozen=True)
@@ -66,6 +68,8 @@ class ChannelPlatform:
     home_channel_env_name: str | None = None
     # Direct-message policies this adapter can actually enforce end to end.
     dm_policies: tuple[str, ...] = DM_POLICIES
+    # Env values every product write must pin (for example a forced transport).
+    fixed_env: tuple[tuple[str, str], ...] = ()
 
     @property
     def env_prefix(self) -> str:
@@ -118,6 +122,23 @@ _YUANBAO_ID = r"^(?:(?:direct|group):)?[A-Za-z0-9_.\-]{1,64}$"
 _YUANBAO_USER = r"^[A-Za-z0-9_.\-]{1,64}$"
 _PASSWORD = r"^[^\x00-\x1f]{1,256}$"
 _SECRET = r"^[A-Za-z0-9._\-]{1,256}$"
+_TOK_EN = r"^[A-Za-z0-9._~+\-/=]{10,1024}$"
+_MATRIX_ID = r"^[@!][A-Za-z0-9._=\-]{1,190}:[A-Za-z0-9.\-]{1,190}(?::[0-9]{1,5})?$"
+_MATRIX_USER = r"^@[A-Za-z0-9._=\-]{1,190}:[A-Za-z0-9.\-]{1,190}(?::[0-9]{1,5})?$"
+_FEISHU_ID = r"^(?:oc|ou|on|cli)_[A-Za-z0-9]{1,200}$"
+_FEISHU_USER = r"^(?:ou|on)_[A-Za-z0-9]{1,200}$"
+_FEISHU_APP_ID = r"^cli_[A-Za-z0-9]{1,200}$"
+_DINGTALK_ID = r"^[A-Za-z0-9_@.$=\-:]{1,200}$"
+_GOOGLE_CHAT_ID = (
+    r"^(?:(?:spaces|users)/[A-Za-z0-9_-]{1,200}"
+    r"|[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,63})$"
+)
+_GOOGLE_CHAT_USER = _EMAIL_ADDRESS
+_JSON_OBJECT = r"^[\s\S]{2,20000}$"
+_GCP_PROJECT = r"^[a-z][a-z0-9\-]{4,61}[a-z0-9]$"
+_GCP_SUBSCRIPTION = (
+    r"^projects/[A-Za-z0-9_\-]{1,100}/subscriptions/[A-Za-z0-9_\-]{1,200}$"
+)
 _ZALO_BOT_TOKEN = r"^[0-9]{1,20}:[A-Za-z0-9_-]{8,128}$"
 _DISCORD_TOKEN = r"^[A-Za-z0-9_.-]{40,200}$"
 _SLACK_BOT_TOKEN = r"^xoxb-[A-Za-z0-9-]{10,250}$"
@@ -509,6 +530,153 @@ PLATFORMS: dict[str, ChannelPlatform] = {
         # YUANBAO_ALLOWED_USERS. Keep both in step.
         dm_allowlist_envs=("YUANBAO_ALLOWED_USERS", "YUANBAO_DM_ALLOW_FROM"),
         allow_all_env_name="YUANBAO_ALLOW_ALL_USERS",
+    ),
+    "matrix": ChannelPlatform(
+        id="matrix",
+        label="Matrix",
+        auth="token",
+        connect_auth_kind="api_key",
+        # Room ids are ``!room:server`` and user ids ``@user:server``; the
+        # adapter keeps a room id in ``chat_id`` even inside a thread.
+        id_pattern=_MATRIX_ID,
+        groups=True,
+        # The platform plugin registers max_message_length=16000.
+        max_message_length=16000,
+        tools_module=None,
+        skill_section="matrix.md",
+        token_operation_prefix="channels_matrix_",
+        user_id_pattern=_MATRIX_USER,
+        credentials=(
+            ChannelCredential(
+                field="homeserver",
+                env="MATRIX_HOMESERVER",
+                pattern=_HTTP_URL,
+                required=True,
+            ),
+            ChannelCredential(
+                field="access_token",
+                env="MATRIX_ACCESS_TOKEN",
+                pattern=_TOK_EN,
+                secret=True,
+                required=True,
+                unique=True,
+            ),
+        ),
+        allow_all_env_name="MATRIX_ALLOW_ALL_USERS",
+        # The adapter reads the cron home from MATRIX_HOME_ROOM.
+        home_channel_env_name="MATRIX_HOME_ROOM",
+    ),
+    "feishu": ChannelPlatform(
+        id="feishu",
+        label="Feishu / Lark",
+        auth="token",
+        connect_auth_kind="api_key",
+        # Feishu ids are app-scoped open ids, tenant user ids, and chat ids.
+        id_pattern=_FEISHU_ID,
+        groups=True,
+        # The platform plugin registers max_message_length=8000.
+        max_message_length=8000,
+        tools_module=None,
+        skill_section="feishu.md",
+        token_operation_prefix="channels_feishu_",
+        user_id_pattern=_FEISHU_USER,
+        credentials=(
+            ChannelCredential(
+                field="app_id",
+                env="FEISHU_APP_ID",
+                pattern=_FEISHU_APP_ID,
+                required=True,
+            ),
+            ChannelCredential(
+                field="app_secret",
+                env="FEISHU_APP_SECRET",
+                pattern=_SECRET,
+                secret=True,
+                required=True,
+                unique=True,
+            ),
+            ChannelCredential(
+                field="domain",
+                env="FEISHU_DOMAIN",
+                pattern=r"^(?:feishu|lark)$",
+            ),
+        ),
+        allow_all_env_name="FEISHU_ALLOW_ALL_USERS",
+        home_channel_env_name="FEISHU_HOME_CHANNEL",
+        # The product only supports the outbound WebSocket transport.
+        fixed_env=(("FEISHU_CONNECTION_MODE", "websocket"),),
+    ),
+    "dingtalk": ChannelPlatform(
+        id="dingtalk",
+        label="DingTalk",
+        auth="token",
+        connect_auth_kind="api_key",
+        # Conversation ids and staff ids are opaque alphanumerics; conversation
+        # ids commonly carry ``=`` and ``$`` characters.
+        id_pattern=_DINGTALK_ID,
+        groups=True,
+        # The adapter caps text at 20000 characters.
+        max_message_length=20000,
+        tools_module=None,
+        skill_section="dingtalk.md",
+        token_operation_prefix="channels_dingtalk_",
+        credentials=(
+            ChannelCredential(
+                field="client_id",
+                env="DINGTALK_CLIENT_ID",
+                pattern=_SECRET,
+                required=True,
+            ),
+            ChannelCredential(
+                field="client_secret",
+                env="DINGTALK_CLIENT_SECRET",
+                pattern=_SECRET,
+                secret=True,
+                required=True,
+                unique=True,
+            ),
+        ),
+        allow_all_env_name="DINGTALK_ALLOW_ALL_USERS",
+    ),
+    "google_chat": ChannelPlatform(
+        id="google_chat",
+        label="Google Chat",
+        auth="token",
+        connect_auth_kind="api_key",
+        # Google Chat spaces are ``spaces/<id>`` or ``users/<id>``; the sender
+        # id is the user's email when Chat provides one.
+        id_pattern=_GOOGLE_CHAT_ID,
+        groups=True,
+        # The platform plugin registers max_message_length=4000.
+        max_message_length=4000,
+        tools_module=None,
+        skill_section="google_chat.md",
+        token_operation_prefix="channels_google_chat_",
+        user_id_pattern=_GOOGLE_CHAT_USER,
+        credentials=(
+            ChannelCredential(
+                field="service_account_json",
+                env="GOOGLE_CHAT_SERVICE_ACCOUNT_JSON",
+                pattern=_JSON_OBJECT,
+                secret=True,
+                required=True,
+                json=True,
+            ),
+            ChannelCredential(
+                field="project_id",
+                env="GOOGLE_CHAT_PROJECT_ID",
+                pattern=_GCP_PROJECT,
+                required=True,
+            ),
+            ChannelCredential(
+                field="subscription_name",
+                env="GOOGLE_CHAT_SUBSCRIPTION_NAME",
+                pattern=_GCP_SUBSCRIPTION,
+                required=True,
+            ),
+        ),
+        allow_all_env_name="GOOGLE_CHAT_ALLOW_ALL_USERS",
+        home_channel_env_name="GOOGLE_CHAT_HOME_CHANNEL",
     ),
 }
 

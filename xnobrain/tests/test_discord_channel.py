@@ -332,6 +332,10 @@ class DiscordChannelTests(unittest.IsolatedAsyncioTestCase):
                 "wecom",
                 "qqbot",
                 "yuanbao",
+                "matrix",
+                "feishu",
+                "dingtalk",
+                "google_chat",
             ],
         )
         discord = listed["channels"][3]
