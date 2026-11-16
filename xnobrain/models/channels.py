@@ -14,6 +14,8 @@ from pydantic import (
     model_validator,
 )
 
+from ..integrations.channel_platforms import ChannelPlatformId, matches_id_pattern
+
 _IDENTITY = r"^[^\x00-\x1f/\\]{1,200}$"
 _ZALO_ID = r"^[0-9]{1,32}$"
 _ZALO_BOT_ID = r"^[A-Za-z0-9_-]{1,64}$"
@@ -67,7 +69,7 @@ class ChannelTurnRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    platform: Literal["zalo", "zalo_bot"]
+    platform: ChannelPlatformId
     agent_id: str = Field(min_length=1, max_length=200, pattern=_IDENTITY)
     thread_id: str = Field(min_length=1, max_length=64, pattern=_IDENTITY)
     thread_type: Literal["dm", "group"]
@@ -79,9 +81,8 @@ class ChannelTurnRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_platform_ids(self) -> "ChannelTurnRequest":
-        pattern = _ZALO_ID if self.platform == "zalo" else _ZALO_BOT_ID
         for value in (self.thread_id, self.sender_id):
-            if not re.fullmatch(pattern, value):
+            if not matches_id_pattern(self.platform, value):
                 raise ValueError(f"{self.platform} thread and sender IDs are invalid")
         return self
 
@@ -108,7 +109,7 @@ class SendChannelMessageRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    platform: Literal["zalo", "zalo_bot"] = "zalo"
+    platform: ChannelPlatformId = "zalo"
     thread_type: Literal["dm", "group"] = "dm"
     recipient: str = Field(min_length=1, max_length=200)
     text: str = Field(min_length=1, max_length=20000)
@@ -145,7 +146,7 @@ class ChannelPluginArtifact(BaseModel):
 class ChannelState(BaseModel):
     """One agent-scoped channel and its runtime status."""
 
-    platform: Literal["zalo", "zalo_bot"] = "zalo"
+    platform: ChannelPlatformId = "zalo"
     enabled: bool
     status: ChannelStatus
     own_id: str | None = None
@@ -277,7 +278,7 @@ class ChannelPairingApproved(BaseModel):
 class ChannelPairingListResult(BaseModel):
     """Sanitized pairing state for one enabled channel."""
 
-    platform: Literal["zalo", "zalo_bot"]
+    platform: ChannelPlatformId
     dm_policy: DmPolicy
     pending: list[ChannelPairingPending] = Field(default_factory=list)
     approved: list[ChannelPairingApproved] = Field(default_factory=list)
@@ -339,7 +340,7 @@ class ChannelGroupApproved(BaseModel):
 class ChannelGroupListResult(BaseModel):
     """Sanitized group approval state for one agent's channel."""
 
-    platform: Literal["zalo", "zalo_bot"] = "zalo_bot"
+    platform: ChannelPlatformId = "zalo_bot"
     daily_limit: int = Field(default=20, ge=0, le=1000)
     pending: list[ChannelGroupPending] = Field(default_factory=list)
     approved: list[ChannelGroupApproved] = Field(default_factory=list)

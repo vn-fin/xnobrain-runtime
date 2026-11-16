@@ -27,6 +27,11 @@ from ..defaults import BIG_BROTHER_AGENT_ID
 from ..feature_flags import FEATURE_AGENT_CHANNELS
 from ..feature_flags import enabled as feature_enabled
 from ..integrations import AgentAPIError, zalo_channels
+from ..integrations.channel_platforms import (
+    get_platform,
+    matches_id_pattern,
+    platform_ids,
+)
 from ..integrations.channel_tool_common import (
     DEFAULT_RETENTION_DAYS,
     MAX_RETENTION_DAYS,
@@ -55,7 +60,7 @@ _SAFE_IDENTITY = re.compile(r"^[^\x00-\x1f/\\]{1,200}$")
 _PAIRING_REQUEST_ID = re.compile(r"^[0-9a-fA-F]{16}$")
 _DM_POLICIES = {"disabled", "allowlist", "pairing"}
 _SAFE_TURN_DM_POLICIES = {"allowlist", "pairing"}
-_TURN_PLATFORMS = {"zalo", "zalo_bot"}
+_TURN_PLATFORMS = set(platform_ids())
 # A run started from a channel chat may only use these toolsets. Every other
 # built-in toolset, profile MCP server toolset and host tool stays out of it.
 CHANNEL_TURN_TOOLSETS = ("xnobrain_channels", "web", "vision", "tts", "todo")
@@ -785,8 +790,9 @@ class ChannelsService:
         sender_name = " ".join(str(body.get("sender_name") or "").split())[:200]
         if not _SAFE_IDENTITY.fullmatch(agent_id) or not _SAFE_IDENTITY.fullmatch(message_id):
             raise ServiceError("channel turn identifiers are invalid", status=422)
-        pattern = _ZALO_ID if platform == "zalo" else _ZALO_BOT_ID
-        if not pattern.fullmatch(thread_id) or not pattern.fullmatch(sender_id):
+        if not matches_id_pattern(platform, thread_id) or not matches_id_pattern(
+            platform, sender_id
+        ):
             raise ServiceError("channel thread identifiers are invalid", status=422)
         if thread_type not in {"dm", "group"}:
             raise ServiceError("channel thread type is invalid", status=422)
@@ -1303,10 +1309,10 @@ class ChannelsService:
 
     @staticmethod
     def _group_platform(value: Any) -> str:
-        platform = str(value or "").strip().lower()
-        if platform not in {"zalo", "zalo_bot"}:
+        entry = get_platform(value)
+        if entry is None:
             raise ServiceError("unsupported channel platform", status=422, code="invalid_platform")
-        return platform
+        return entry.id
 
     @staticmethod
     def _group_id(value: Any) -> str:
@@ -1972,7 +1978,7 @@ class ChannelsService:
         current = config if config is not None else self.repository.config(profile)
         enabled = any(
             bool(self._platform_config(current, platform).get("enabled"))
-            for platform in ("zalo", "zalo_bot")
+            for platform in platform_ids()
         )
         if enabled:
             return False
@@ -1982,7 +1988,7 @@ class ChannelsService:
     def _has_enabled_channel(config: Mapping[str, Any]) -> bool:
         return any(
             bool(ChannelsService._platform_config(config, platform).get("enabled"))
-            for platform in ("zalo", "zalo_bot")
+            for platform in platform_ids()
         )
 
     @staticmethod
@@ -2085,7 +2091,7 @@ class ChannelsService:
                     continue
                 if any(
                     bool(self._platform_config(config, platform).get("enabled"))
-                    for platform in ("zalo", "zalo_bot")
+                    for platform in platform_ids()
                 ):
                     enabled_profiles.append(entry.name)
         enabled_profiles = sorted(set(enabled_profiles))

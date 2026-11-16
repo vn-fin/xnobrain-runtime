@@ -32,6 +32,7 @@ from ..defaults import (
     BIG_BROTHER_SKILL_ID,
     CUSTOM_SKILL_CATEGORY,
 )
+from .channel_platforms import PLATFORMS, platform_ids
 from .llm_router import (
     _SAFE_ID_RE,
     LLM_ROUTER_DEFAULT_MODEL,
@@ -54,8 +55,11 @@ TODO_STATUSES = {"pending", "in_progress", "completed", "cancelled"}
 CONNECT_KINDS = {"catalog_mcp", "plugin_mcp", "custom_mcp"}
 CONNECT_AUTH_KINDS = {"oauth", "api_key", "none"}
 CHANNEL_CONNECT_KIND = "channel"
-CHANNEL_CONNECT_PLATFORMS = {"zalo", "zalo_bot"}
-CHANNEL_CONNECT_AUTH_KINDS = {"qr", "api_key"}
+CHANNEL_CONNECT_PLATFORMS = set(platform_ids())
+CHANNEL_CONNECT_AUTH_KINDS = {entry.connect_auth_kind for entry in PLATFORMS.values()}
+CHANNEL_CONNECT_LABELS = {
+    entry.id: (entry.label, entry.connect_auth_kind) for entry in PLATFORMS.values()
+}
 MAX_TODO_ITEMS = 256
 MAX_TODO_CONTENT_CHARS = 4000
 GENERATED_AGENT_ID_LENGTH = 6
@@ -203,10 +207,7 @@ def _integration_connect_event(result: Any) -> dict[str, Any] | None:
         if set(raw) - allowed:
             return None
         platform = text("platform", 32)
-        expected = {
-            "zalo": ("Zalo", "qr"),
-            "zalo_bot": ("Zalo Bot", "api_key"),
-        }.get(platform)
+        expected = CHANNEL_CONNECT_LABELS.get(platform)
         if (
             platform not in CHANNEL_CONNECT_PLATFORMS
             or auth_kind not in CHANNEL_CONNECT_AUTH_KINDS

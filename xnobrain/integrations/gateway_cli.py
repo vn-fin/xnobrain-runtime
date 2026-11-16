@@ -25,9 +25,10 @@ from .accounting_context import (
     accounting_enabled,
     inference_accounting,
 )
+from .channel_platforms import group_platform_ids, platform_ids
 
 _LOGGER = logging.getLogger(__name__)
-_DELEGATED_PLATFORMS = {"zalo", "zalo_bot"}
+_DELEGATED_PLATFORMS = set(platform_ids())
 _TYPING_INTERVAL_SECONDS = 4.0
 # The HTTP call must outlive the run's own bounded session timeout. Once the
 # Runtime may have accepted a turn, the gateway never starts a native second
@@ -56,7 +57,7 @@ HOME_CHANNEL_NOTICE_PREFIX = "📬 No home channel is set for"
 # Zalo personal and Zalo Bot group traffic is owner-approved per group and
 # never falls back to the native gateway agent. DM-only slash commands are
 # stripped by the adapter.
-_GROUP_PLATFORMS = {"zalo", "zalo_bot"}
+_GROUP_PLATFORMS = set(group_platform_ids())
 _GROUP_CHAT_TYPES = {"group", "forum", "channel", "thread"}
 _GROUP_LIMIT_TEXT = (
     "Bạn đã dùng hết {limit} lượt hỏi bot hôm nay trong nhóm này. "

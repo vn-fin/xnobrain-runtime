@@ -4,9 +4,14 @@ from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-# The Zalo Bot PATCH body carries a write-only token. FastAPI's default 422
+from ..integrations.channel_platforms import PLATFORMS
+
+# A platform PATCH body can carry a write-only token. FastAPI's default 422
 # echoes the rejected input, so those operations return a generic error instead.
-_REDACTED_OPERATION_PREFIXES = ("extensions_", "channels_zalo_bot_")
+_REDACTED_OPERATION_PREFIXES = (
+    "extensions_",
+    *(entry.token_operation_prefix for entry in PLATFORMS.values() if entry.token_operation_prefix),
+)
 
 
 def install_extension_validation_handler(app) -> None:

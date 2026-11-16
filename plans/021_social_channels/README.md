@@ -41,7 +41,7 @@ A platform is supported only when every row of the checklist below is done.
 
 ## Design
 
-### R1 — Runtime platform registry
+### R1 — Runtime platform registry (done 2026-11-16)
 
 New `xnobrain/integrations/channel_platforms.py`, the Runtime twin of the UI
 descriptor:

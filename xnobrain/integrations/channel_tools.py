@@ -13,6 +13,7 @@ from pydantic import ValidationError
 
 from ..models.channels import SendChannelMessageRequest
 from . import channel_tool_common, zalo_channels
+from .channel_platforms import PLATFORMS, platform_ids
 from .zalo_channels import ChannelDeliveryError
 
 _LOCK = threading.RLock()
@@ -22,6 +23,7 @@ _SCHEMA: dict = {}
 
 TOOL_NAME = "send_channel_message"
 TOOLSET = "xnobrain_channels"
+_PLATFORM_LIST = " and ".join(f"{entry.label} ('{entry.id}')" for entry in PLATFORMS.values())
 
 
 def _error(code: str, **extra) -> str:
@@ -86,9 +88,9 @@ def register_tools(profile_dir) -> None:
         function = {
             "name": TOOL_NAME,
             "description": (
-                "Send plain text on a messaging channel. Platforms: 'zalo' "
-                "(personal account, direct messages or approved groups) and "
-                "'zalo_bot' (bot, direct messages or approved groups). Pass an exact "
+                "Send plain text on a messaging channel. "
+                f"Platforms: {_PLATFORM_LIST}; direct messages or approved groups. "
+                "Pass an exact "
                 "Zalo thread id or an exact contact name seen in the agent's Zalo "
                 "history; bot sends require an exact chat id. On the personal "
                 "account, optional quote_message_id replies to one stored message in "
@@ -102,8 +104,8 @@ def register_tools(profile_dir) -> None:
                 "properties": {
                     "platform": {
                         "type": "string",
-                        "enum": ["zalo", "zalo_bot"],
-                        "default": "zalo",
+                        "enum": list(platform_ids()),
+                        "default": zalo_channels.ZALO_PLATFORM,
                     },
                     "thread_type": {
                         "type": "string",

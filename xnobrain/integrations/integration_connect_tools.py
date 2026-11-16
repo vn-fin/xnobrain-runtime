@@ -16,6 +16,7 @@ from ..defaults import BIG_BROTHER_AGENT_ID
 from ..services.base import ServiceError
 from ..services.conversation_authority import HostAuthority
 from ..trusted_context import TrustedRequestContext
+from .channel_platforms import PLATFORMS, ChannelPlatformId, get_platform, platform_ids
 
 _LOCK = threading.RLock()
 _BINDINGS = {}
@@ -25,14 +26,18 @@ TOOL_NAME = "xnobrain_integration_connect"
 TOOLSET = "xnobrain_integration_connect"
 CONNECT_KINDS = {"catalog_mcp", "plugin_mcp", "custom_mcp"}
 CHANNEL_KIND = "channel"
-CHANNEL_PLATFORMS = {"zalo", "zalo_bot"}
+CHANNEL_PLATFORMS = set(platform_ids())
 AUTH_KINDS = {"oauth", "api_key", "none"}
 MAX_CATALOG_CANDIDATES = 5
+_CONNECT_PLATFORM_EXAMPLES = " or ".join(
+    f"platform='{entry.id}' for {entry.label}" for entry in PLATFORMS.values()
+)
 CONNECT_GUIDANCE = (
     "When the user asks to add, connect or sign in to an MCP server, integration, "
-    "connector or app (for example Notion or Todoist), or to connect Zalo Personal "
-    "or Zalo Bot, call xnobrain_integration_connect first. Use kind='channel' with "
-    "platform='zalo' for Zalo Personal or platform='zalo_bot' for Zalo Bot. For an "
+    "connector or app (for example Notion or Todoist), or to connect "
+    f"{' or '.join(entry.label for entry in PLATFORMS.values())}, call "
+    "xnobrain_integration_connect first. Use kind='channel' with "
+    f"{_CONNECT_PLATFORM_EXAMPLES}. For an "
     "app, try kind='catalog_mcp' with catalog_id set to the lowercase app name "
     "first (for example 'composio'); the XNOBrain catalog is not the Hermes plugin "
     "index, so do not use `hermes plugins search` to decide. If the result is "
@@ -55,7 +60,7 @@ class IntegrationConnectArguments(BaseModel):
 
     kind: Literal["catalog_mcp", "plugin_mcp", "custom_mcp", "channel"]
     agent_id: str | None = Field(default=BIG_BROTHER_AGENT_ID)
-    platform: Literal["zalo", "zalo_bot"] | None = None
+    platform: ChannelPlatformId | None = None
     catalog_id: str | None = None
     plugin_id: str | None = None
     server_name: str | None = None
@@ -178,16 +183,16 @@ def _connect_request(
 
 
 def _channel_request(request: IntegrationConnectArguments, target: str) -> dict:
-    platform = str(request.platform or "")
-    if platform not in CHANNEL_PLATFORMS:
+    entry = get_platform(request.platform or "")
+    if entry is None:
         raise _ConnectError("invalid_channel_platform")
     return {
         "id": uuid.uuid4().hex,
         "kind": CHANNEL_KIND,
         "agent_id": target,
-        "display_name": "Zalo" if platform == "zalo" else "Zalo Bot",
-        "auth_kind": "qr" if platform == "zalo" else "api_key",
-        "platform": platform,
+        "display_name": entry.label,
+        "auth_kind": entry.connect_auth_kind,
+        "platform": entry.id,
     }
 
 
@@ -361,8 +366,10 @@ def _function_schema() -> dict:
         "name": TOOL_NAME,
         "description": (
             "Use this FIRST whenever the user asks to add, connect or sign in to an MCP "
-            "server, integration, connector or app, or to connect Zalo Personal or Zalo "
-            "Bot. For a channel, pass kind='channel' and platform='zalo' or 'zalo_bot'. "
+            "server, integration, connector or app, or to connect "
+            f"{' or '.join(entry.label for entry in PLATFORMS.values())}. "
+            "For a channel, pass kind='channel' and "
+            f"{' or '.join(repr(entry.id) for entry in PLATFORMS.values())}. "
             "For an app, try kind='catalog_mcp' with catalog_id (lowercase app name, "
             "e.g. 'composio') first; on catalog_unknown retry with a returned candidate, "
             "and use kind='custom_mcp' only when nothing fits. The XNOBrain catalog is "

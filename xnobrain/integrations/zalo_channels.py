@@ -10,9 +10,11 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Mapping
 
+from .channel_platforms import PLATFORMS, get_platform
+
 ZALO_PLATFORM = "zalo"
 ZALO_BOT_PLATFORM = "zalo_bot"
-DEFAULT_MAX_MESSAGE_LENGTH = 2000
+DEFAULT_MAX_MESSAGE_LENGTH = PLATFORMS[ZALO_PLATFORM].max_message_length
 BRIDGE_PORT_BASE = 3110
 BRIDGE_TOKEN_FILE = "bridge.token"
 MAX_KNOWN_NAMES = 20
@@ -152,7 +154,8 @@ def max_message_length(platform: str = ZALO_PLATFORM) -> int:
             return int(entry.max_message_length)
     except Exception:
         pass
-    return DEFAULT_MAX_MESSAGE_LENGTH
+    descriptor = get_platform(platform or ZALO_PLATFORM)
+    return descriptor.max_message_length if descriptor is not None else DEFAULT_MAX_MESSAGE_LENGTH
 
 
 def _fallback_profile_index(profile: Path, profiles_root: Path, root_profile: Path) -> int:
