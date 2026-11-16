@@ -102,6 +102,10 @@ RUN --mount=type=cache,target=/root/.npm \
     && uv pip install --python /usr/local/lib/hermes-agent/venv/bin/python \
       'edge-tts==7.2.7' \
       'python-telegram-bot[webhooks]==22.8' \
+      'discord.py[voice]==2.7.1' \
+      'brotlicffi==1.2.0.1' \
+      'slack-bolt==1.30.0' \
+      'slack-sdk==3.43.0' \
     && rm -f /tmp/hermes-install.sh \
     && rm -rf /opt/hermes-build-home
 

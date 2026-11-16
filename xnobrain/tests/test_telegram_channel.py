@@ -277,7 +277,7 @@ class TelegramChannelTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             [channel["platform"] for channel in listed["channels"]],
-            ["zalo", "zalo_bot", "telegram"],
+            ["zalo", "zalo_bot", "telegram", "discord", "slack"],
         )
         telegram = listed["channels"][2]
         self.assertTrue(telegram["enabled"])

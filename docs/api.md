@@ -687,8 +687,9 @@ selects a resource and never authorizes access. A disabled runtime answers `404`
 | `GET /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo/qr` | — | `{status, image_base64}` |
 | `POST /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo/logout` | — | `ChannelState` |
 
-`ChannelState` is `{platform: "zalo"|"zalo_bot"|"telegram", enabled, status, own_id,
-allowed_users, dm_policy, home_channel, history_retention_days, token_set}`.
+`ChannelState` is `{platform: "zalo"|"zalo_bot"|"telegram"|"discord"|"slack", enabled,
+status, own_id, allowed_users, dm_policy, home_channel, history_retention_days,
+token_set, app_token_set}`.
 `history_retention_days` is the stored channel history retention in days
 (integer `1..365`, default `30` when absent). For the personal channel
 `status` is one of `disabled`, `starting`, `needs_login`, `qr`, `connected`,
@@ -788,12 +789,13 @@ entries in that order.
 | `PATCH /xnobrain/api/runtime/v1/agents/{agent_id}/channels/telegram` | `{bot_token?: str\|null, allowed_users?: [id]\|null, dm_policy?: "disabled"\|"allowlist"\|"pairing", home_channel?: id\|null}` | `ChannelState` |
 | `POST /xnobrain/api/runtime/v1/agents/{agent_id}/channels/telegram/logout` | — | `ChannelState` |
 
-For `telegram`, `ChannelState` includes `token_set` (never the token itself).
-`status` is one of `disabled`, `needs_token` (enabled without a token),
-`pending_restart`, `gateway_down`, or `configured`. There is no bridge, QR
-flow, or Runtime network probe; the plugin verifies the token when the gateway
-connects, and Runtime reports `configured` while the gateway is running because
-the upstream adapter exposes no per-profile state file like `zalo_bot` writes.
+For `telegram`, `ChannelState` includes `token_set` (never the token itself) and
+always reports `app_token_set: false`. `status` is one of `disabled`,
+`needs_token` (enabled without a token), `pending_restart`, `gateway_down`,
+`configured`, or `connected`. There is no bridge, QR flow, or Runtime network
+probe; the plugin verifies the token when the gateway connects. `connected`
+comes from the root `gateway_state.json` platform entry, which is keyed by
+platform rather than by profile, so multiplexed agents share one status.
 
 `bot_token` is write-only and must match `^[0-9]{1,20}:[A-Za-z0-9_-]{8,128}$`;
 the route family returns a generic `422` that never echoes the submitted
@@ -821,10 +823,103 @@ uses `send_channel_message` through the plugin's registered standalone sender,
 and replies carrying `MEDIA:<path>` are delivered as native media by the Hermes
 gateway. Scheduled delivery targets remain Zalo-only.
 
+### Discord channel
+
+The Hermes `discord` platform plugin is exposed through the same `Channels`
+tag, feature gate, and Control-proxied identity as the other channels.
+`GET /agents/{agent_id}/channels` returns `zalo`, `zalo_bot`, `telegram`,
+`discord`, and `slack` entries in that order.
+
+| Method and path | Body | Result |
+|---|---|---|
+| `PUT /xnobrain/api/runtime/v1/agents/{agent_id}/channels/discord` | `{enabled: bool}` | `ChannelState` |
+| `PATCH /xnobrain/api/runtime/v1/agents/{agent_id}/channels/discord` | `{bot_token?: str\|null, allowed_users?: [id]\|null, dm_policy?: "disabled"\|"allowlist"\|"pairing", home_channel?: id\|null}` | `ChannelState` |
+| `POST /xnobrain/api/runtime/v1/agents/{agent_id}/channels/discord/logout` | — | `ChannelState` |
+
+For `discord`, `ChannelState` includes `token_set` (never the token itself) and
+always reports `app_token_set: false`. `status` is one of `disabled`,
+`needs_token` (enabled without a token), `pending_restart`, `gateway_down`,
+`configured`, or `connected`. `connected` comes from the root
+`gateway_state.json` platform entry, which is keyed by platform rather than by
+profile; two agents with their own Discord bot therefore share one status.
+There is no bridge, QR flow, or Runtime network probe.
+
+`bot_token` is write-only and must match `^[A-Za-z0-9_.-]{40,200}$`; the route
+family returns a generic `422` that never echoes the submitted value. Until a
+Control proxy owns the credential, writes store the token in the profile
+`.env` as `DISCORD_BOT_TOKEN` (mode `0600`); `null` removes it, and logout
+removes it and disables the channel. A token already stored by another agent
+profile in the workspace returns `409 bot_token_in_use` without echoing it.
+
+`allowed_users` entries are Discord user IDs matching `^[0-9]{1,20}$`.
+`home_channel` accepts a channel or thread snowflake id matching
+`^[0-9]{1,20}$`. `dm_policy: open` is rejected; only `disabled`, `allowlist`,
+and `pairing` are accepted.
+
+Writes snapshot `config.yaml` first, then atomically update
+`platforms.discord.enabled` and `platforms.discord.extra.dm_policy`, and the
+`.env` keys `DISCORD_ALLOWED_USERS` and `DISCORD_HOME_CHANNEL`, request the
+same `SIGUSR1` gateway restart, and are idempotent. `history_retention_days`
+is `null`: Runtime stores no Discord history.
+
+Discord turns are delegated, group-approved, paired, and allowlisted like the
+other group platforms. A Discord thread keeps its own snowflake id as
+`thread_id`, and `chat_type: "thread"` counts as a group. There is no Runtime
+Discord tools module: the channel uses `send_channel_message` through the
+plugin's registered standalone sender, and replies carrying `MEDIA:<path>` are
+delivered as native media by the Hermes gateway. Scheduled delivery targets
+remain Zalo-only.
+
+### Slack channel
+
+The Hermes `slack` platform plugin is exposed through the same `Channels` tag,
+feature gate, and Control-proxied identity as the other channels.
+
+| Method and path | Body | Result |
+|---|---|---|
+| `PUT /xnobrain/api/runtime/v1/agents/{agent_id}/channels/slack` | `{enabled: bool}` | `ChannelState` |
+| `PATCH /xnobrain/api/runtime/v1/agents/{agent_id}/channels/slack` | `{bot_token?: str\|null, app_token?: str\|null, allowed_users?: [id]\|null, dm_policy?: "disabled"\|"allowlist"\|"pairing", home_channel?: id\|null}` | `ChannelState` |
+| `POST /xnobrain/api/runtime/v1/agents/{agent_id}/channels/slack/logout` | — | `ChannelState` |
+
+Slack needs two write-only secrets because Hermes uses Socket Mode: the bot
+token (`xoxb-...`) and the app-level token (`xapp-...`, scope
+`connections:write`). `ChannelState` exposes `token_set` for the bot token and
+`app_token_set` for the app token, never the values. `status` is `needs_token`
+until **both** are stored; it then follows `disabled`, `pending_restart`,
+`gateway_down`, `configured`, or `connected` like the other bot platforms.
+`connected` comes from the root `gateway_state.json` platform entry and is
+therefore shared by multiplexed agents.
+
+`bot_token` must match `^xoxb-[A-Za-z0-9-]{10,250}$` and `app_token` must match
+`^xapp-[A-Za-z0-9-]{10,250}$`; the route family returns a generic `422` that
+never echoes either submitted value. Until a Control proxy owns the
+credentials, writes store them in the profile `.env` as `SLACK_BOT_TOKEN` and
+`SLACK_APP_TOKEN` (mode `0600`); `null` removes one, and logout removes both
+and disables the channel. A token already stored by another agent profile in
+the workspace returns `409 bot_token_in_use` without echoing it.
+
+`allowed_users` entries are Slack member IDs matching
+`^[A-Z][A-Z0-9]{1,32}$`. `home_channel` accepts a channel id (`C...`, `G...`)
+matching the same pattern. `dm_policy: open` is rejected; only `disabled`,
+`allowlist`, and `pairing` are accepted.
+
+Writes snapshot `config.yaml` first, then atomically update
+`platforms.slack.enabled` and `platforms.slack.extra.dm_policy`, and the
+`.env` keys `SLACK_ALLOWED_USERS` and `SLACK_HOME_CHANNEL`, request the same
+`SIGUSR1` gateway restart, and are idempotent. `history_retention_days` is
+`null`: Runtime stores no Slack history.
+
+Slack turns are delegated, group-approved, paired, and allowlisted like the
+other group platforms. A thread reply keeps the channel id as `thread_id` and
+counts as a group. There is no Runtime Slack tools module: the channel uses
+`send_channel_message` through the plugin's registered standalone sender, and
+replies carrying `MEDIA:<path>` are delivered as native media by the Hermes
+gateway. Scheduled delivery targets remain Zalo-only.
+
 ### Channel pairing management
 
 Pairing management is generic for every bot-backed platform (`zalo`,
-`zalo_bot`, `telegram`), gated by
+`zalo_bot`, `telegram`, `discord`, `slack`), gated by
 `FT_ENABLE_AGENT_CHANNELS`, and available only for an enabled channel whose
 persisted owner binding matches the verified same-agent Personal principal.
 It reuses the pinned Hermes `gateway.pairing.PairingStore`; Runtime has no
@@ -869,7 +964,7 @@ vendor source is edited.
 ### Channel group approval and daily limits
 
 Group approval is available for every group platform (`zalo`, `zalo_bot`,
-`telegram`) and is gated by
+`telegram`, `discord`, `slack`) and is gated by
 the same feature flag, enabled-channel check, and verified same-agent Personal
 owner binding as pairing management. Group approval is always required: a
 sender who is DM-paired with this agent still cannot chat in an unapproved
@@ -931,7 +1026,7 @@ the platform.
 
 | Tool | Action | Confirmation |
 |---|---|---|
-| `send_channel_message` | text to `zalo` (DM or approved group, optional quote and mentions), `zalo_bot`, or `telegram` | in chat, before every send |
+| `send_channel_message` | text to `zalo` (DM or approved group, optional quote and mentions), `zalo_bot`, `telegram`, `discord`, or `slack` | in chat, before every send |
 | `zalo_status`, `zalo_me` | bridge status / own profile | none |
 | `zalo_list_friends`, `zalo_list_groups` | friend and group listings | none |
 | `zalo_list_conversations` | readable DM and approved group conversations | none |
@@ -1079,16 +1174,19 @@ attachments, or streamed UI metadata. It requires the same
 ingestion and is gated by `FT_ENABLE_AGENT_CHANNELS`.
 
 The body is
-`{platform: "zalo"|"zalo_bot"|"telegram", agent_id, thread_id, thread_type: "dm"|"group", sender_id, sender_name, text, message_id, ts}`.
+`{platform: "zalo"|"zalo_bot"|"telegram"|"discord"|"slack", agent_id, thread_id, thread_type: "dm"|"group", sender_id, sender_name, text, message_id, ts}`.
 `zalo` thread and sender IDs are numeric (`^[0-9]{1,32}$`); `zalo_bot` IDs use
 `^[A-Za-z0-9_-]{1,64}$`; `telegram` user ids are positive and group chat ids
-are negative, both matching `^-?[0-9]{1,20}$`. The endpoint validates that the
-agent profile exists,
+are negative, both matching `^-?[0-9]{1,20}$`; `discord` ids are numeric
+snowflakes matching `^[0-9]{1,20}$`; `slack` channel and member ids are
+uppercase alphanumerics matching `^[A-Z][A-Z0-9]{1,32}$`. The endpoint validates
+that the agent profile exists,
 that the selected platform is enabled (`403 channel_disabled`), that a matching
 persisted owner binding exists (`403 channel_owner_unavailable`), and refuses
 with `403 channel_dm_policy_unsafe` unless the profile's
 `platforms.<platform>.extra.dm_policy` is `allowlist` or `pairing` and
-`ZALO_ALLOW_ALL_USERS`/`ZALO_BOT_ALLOW_ALL_USERS` (and `allow_all`) are not
+`ZALO_ALLOW_ALL_USERS`/`ZALO_BOT_ALLOW_ALL_USERS`/`TELEGRAM_ALLOW_ALL_USERS`/
+`DISCORD_ALLOW_ALL_USERS`/`SLACK_ALLOW_ALL_USERS` (and `allow_all`) are not
 enabled. A request body can never supply or override the owner.
 
 Each `(platform, agent_id, thread_id)` maps to one personal conversation,
@@ -1108,7 +1206,8 @@ of starting a second turn. A different message while the thread's run is
 active returns `409 channel_turn_running`; a reused message ID with different
 input returns `409 channel_turn_conflict`.
 
-For any registered group platform (`zalo`, `zalo_bot`, `telegram`) with
+For any registered group platform (`zalo`, `zalo_bot`, `telegram`, `discord`,
+`slack`) with
 `thread_type: "group"`, the group must already be
 approved for this agent; otherwise the mention is recorded as pending and the
 turn is refused with `403 channel_group_not_approved`. Approval is stored per
@@ -1131,7 +1230,8 @@ not part of the gateway contract.
 
 #### Owner binding and channel MCP grants
 
-Enabling or patching `zalo`, `zalo_bot`, or `telegram` through a
+Enabling or patching `zalo`, `zalo_bot`, `telegram`, `discord`, or `slack`
+through a
 Control-proxied request that carries a verified principal writes
 `<profile>/.xnobrain/channels/owner.json`
 (mode `0600`, atomic, never through a symlink) with only

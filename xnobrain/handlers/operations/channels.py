@@ -68,6 +68,36 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
             "channel logged out successfully",
             200,
         ),
+        "channels_discord_update": (
+            lambda: service.set_discord_enabled(path["agent_id"], bool(body["enabled"]), trusted),
+            "channel updated successfully",
+            200,
+        ),
+        "channels_discord_patch": (
+            lambda: service.patch_discord(path["agent_id"], body, trusted),
+            "channel updated successfully",
+            200,
+        ),
+        "channels_discord_logout": (
+            lambda: service.logout_discord(path["agent_id"], trusted),
+            "channel logged out successfully",
+            200,
+        ),
+        "channels_slack_update": (
+            lambda: service.set_slack_enabled(path["agent_id"], bool(body["enabled"]), trusted),
+            "channel updated successfully",
+            200,
+        ),
+        "channels_slack_patch": (
+            lambda: service.patch_slack(path["agent_id"], body, trusted),
+            "channel updated successfully",
+            200,
+        ),
+        "channels_slack_logout": (
+            lambda: service.logout_slack(path["agent_id"], trusted),
+            "channel logged out successfully",
+            200,
+        ),
         "channels_pairings_list": (
             lambda: service.list_pairings(path["agent_id"], path["platform"], trusted),
             "channel pairings retrieved successfully",

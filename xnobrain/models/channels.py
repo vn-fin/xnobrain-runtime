@@ -26,6 +26,11 @@ _ZALO_BOT_ID = r"^[A-Za-z0-9_-]{1,64}$"
 _ZALO_BOT_TOKEN = r"^[0-9]{1,20}:[A-Za-z0-9_-]{8,128}$"
 _TELEGRAM_ID = PLATFORMS["telegram"].id_pattern
 _TELEGRAM_USER_ID = r"^[0-9]{1,20}$"
+_DISCORD_ID = PLATFORMS["discord"].id_pattern
+_DISCORD_TOKEN = r"^[A-Za-z0-9_.-]{40,200}$"
+_SLACK_ID = PLATFORMS["slack"].id_pattern
+_SLACK_BOT_TOKEN = r"^xoxb-[A-Za-z0-9-]{10,250}$"
+_SLACK_APP_TOKEN = r"^xapp-[A-Za-z0-9-]{10,250}$"
 ChannelStatus = Literal[
     "disabled",
     "starting",
@@ -163,6 +168,9 @@ class ChannelState(BaseModel):
     history_retention_days: int | None = Field(default=30, ge=1, le=365)
     # The bot token itself is write-only and is never part of this contract.
     token_set: bool = False
+    # A second write-only secret for platforms that need one (Slack's app-level
+    # Socket Mode token); always false for single-token platforms.
+    app_token_set: bool = False
     plugin_artifact: ChannelPluginArtifact | None = None
 
 
@@ -306,6 +314,106 @@ class ChannelTelegramPatch(BaseModel):
             item = str(entry or "").strip()
             if not re.fullmatch(_TELEGRAM_USER_ID, item):
                 raise ValueError("allowed_users entries must be Telegram user IDs")
+            if item not in result:
+                result.append(item)
+        return result
+
+
+class ChannelDiscordUpdate(BaseModel):
+    """Enable or disable the Discord channel for one agent."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
+
+
+class ChannelDiscordPatch(BaseModel):
+    """Partial Discord access-policy and credential update for one agent.
+
+    ``bot_token`` is write-only. It is never serialized into a response or an
+    error payload; the validation handler redacts the submitted body for this
+    operation family.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    bot_token: str | None = Field(
+        default=None,
+        max_length=200,
+        pattern=_DISCORD_TOKEN,
+        description="Write-only Discord bot token from the Developer Portal",
+    )
+    allowed_users: list[str] | None = Field(
+        default=None,
+        max_length=500,
+        description="Discord user IDs allowed to trigger the agent",
+    )
+    dm_policy: DmPolicy | None = None
+    home_channel: str | None = Field(default=None, max_length=20, pattern=_DISCORD_ID)
+
+    @field_validator("allowed_users")
+    @classmethod
+    def validate_allowed_users(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        result: list[str] = []
+        for entry in value:
+            item = str(entry or "").strip()
+            if not re.fullmatch(_DISCORD_ID, item):
+                raise ValueError("allowed_users entries must be Discord user IDs")
+            if item not in result:
+                result.append(item)
+        return result
+
+
+class ChannelSlackUpdate(BaseModel):
+    """Enable or disable the Slack channel for one agent."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
+
+
+class ChannelSlackPatch(BaseModel):
+    """Partial Slack access-policy and credential update for one agent.
+
+    ``bot_token`` and ``app_token`` are write-only. They are never serialized
+    into a response or an error payload; the validation handler redacts the
+    submitted body for this operation family.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    bot_token: str | None = Field(
+        default=None,
+        max_length=300,
+        pattern=_SLACK_BOT_TOKEN,
+        description="Write-only Slack bot token (xoxb-...)",
+    )
+    app_token: str | None = Field(
+        default=None,
+        max_length=300,
+        pattern=_SLACK_APP_TOKEN,
+        description="Write-only Slack app-level token for Socket Mode (xapp-...)",
+    )
+    allowed_users: list[str] | None = Field(
+        default=None,
+        max_length=500,
+        description="Slack member IDs allowed to trigger the agent",
+    )
+    dm_policy: DmPolicy | None = None
+    home_channel: str | None = Field(default=None, max_length=33, pattern=_SLACK_ID)
+
+    @field_validator("allowed_users")
+    @classmethod
+    def validate_allowed_users(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        result: list[str] = []
+        for entry in value:
+            item = str(entry or "").strip()
+            if not re.fullmatch(_SLACK_ID, item):
+                raise ValueError("allowed_users entries must be Slack member IDs")
             if item not in result:
                 result.append(item)
         return result

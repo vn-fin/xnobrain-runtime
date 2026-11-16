@@ -75,6 +75,41 @@ PLATFORMS: dict[str, ChannelPlatform] = {
         skill_section="telegram.md",
         token_operation_prefix="channels_telegram_",
     ),
+    "discord": ChannelPlatform(
+        id="discord",
+        label="Discord",
+        auth="token",
+        connect_auth_kind="api_key",
+        # Discord user, channel and thread ids are numeric snowflakes. The
+        # adapter puts the thread id itself in ``chat_id`` for a thread.
+        id_pattern=r"^[0-9]{1,20}$",
+        groups=True,
+        # The platform plugin registers max_message_length=2000.
+        max_message_length=2000,
+        # Hermes already ships the Discord adapter; Runtime adds no
+        # Discord-specific tool module.
+        tools_module=None,
+        skill_section="discord.md",
+        token_operation_prefix="channels_discord_",
+    ),
+    "slack": ChannelPlatform(
+        id="slack",
+        label="Slack",
+        auth="token",
+        connect_auth_kind="api_key",
+        # Slack channel ids are ``C``/``G``/``D`` and member ids ``U``/``W``,
+        # all uppercase alphanumerics. A thread reply keeps the channel id in
+        # ``chat_id`` and carries the thread timestamp separately.
+        id_pattern=r"^[A-Z][A-Z0-9]{1,32}$",
+        groups=True,
+        # The platform plugin registers max_message_length=39000.
+        max_message_length=39000,
+        # Hermes already ships the Slack adapter; Runtime adds no Slack-specific
+        # tool module.
+        tools_module=None,
+        skill_section="slack.md",
+        token_operation_prefix="channels_slack_",
+    ),
 }
 
 # Pydantic Literal type covering exactly the registered platform ids.

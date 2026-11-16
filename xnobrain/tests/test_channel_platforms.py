@@ -42,8 +42,8 @@ _SKILL_DIR = (
     / "social-channels"
     / "platforms"
 )
-_VALID_SAMPLES = ("123456789", "chat_123", "user-1", "abc123")
-_UNSUPPORTED_ID = "discord"
+_VALID_SAMPLES = ("123456789", "C0123ABCDEF", "chat_123", "user-1", "abc123")
+_UNSUPPORTED_ID = "signal"
 
 
 def _sample_id(entry) -> str:

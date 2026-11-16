@@ -154,6 +154,31 @@ had its own platform allowlist for channel MCP grants and needed `telegram`
 added (xnobrain-control `6246161`). No Telegram tools module, cron delivery
 target, upstream adapter change, or UI work in this repository.
 
+## Discord (2026-11-16)
+
+Parity-only third platform, following the checklist: the R1 descriptor, the
+token channel API (`PUT`/`PATCH`/logout), connect card, delegation/group
+approval, the standalone sender path, and the `platforms/discord.md` skill
+section are done, with focused tests. Checklist item 8 (live test with a dev
+account, recorded in `plans/VERIFICATION.md`) is pending. No Discord tools
+module, cron delivery target, upstream adapter change, or UI work in this
+repository. Discord ids are numeric snowflakes; the adapter puts a thread's own
+id in `chat_id`. Control already accepts `discord` in its channel MCP grant
+allowlist.
+
+## Slack (2026-11-16)
+
+Parity-only fourth platform, following the checklist: the R1 descriptor, the
+token channel API (`PUT`/`PATCH`/logout with two write-only secrets, bot token
+and Socket Mode app token), connect card, delegation/group approval, the
+standalone sender path, and the `platforms/slack.md` skill section are done,
+with focused tests. Checklist item 8 (live test with a dev account, recorded in
+`plans/VERIFICATION.md`) is pending. No Slack tools module, cron delivery
+target, upstream adapter change, or UI work in this repository. Slack channel
+ids (`C`/`G`/`D`) and member ids (`U`/`W`) are uppercase alphanumerics; a
+thread reply keeps the channel id. Control already accepts `slack` in its
+channel MCP grant allowlist.
+
 ## Checklist: adding a platform
 
 1. Descriptor in `PLATFORMS` (R1) and in UI `providers.ts` (R5).

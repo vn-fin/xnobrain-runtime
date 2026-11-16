@@ -28,6 +28,7 @@ from ..feature_flags import FEATURE_AGENT_CHANNELS
 from ..feature_flags import enabled as feature_enabled
 from ..integrations import AgentAPIError, zalo_channels
 from ..integrations.channel_platforms import (
+    PLATFORMS,
     get_platform,
     matches_id_pattern,
     platform_ids,
@@ -57,10 +58,31 @@ _ZALO_ID = re.compile(r"^[0-9]{1,32}$")
 _ZALO_BOT_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _ZALO_BOT_TOKEN = re.compile(r"^[0-9]{1,20}:[A-Za-z0-9_-]{8,128}$")
 _TELEGRAM_USER_ID = re.compile(r"^[0-9]{1,20}$")
+_DISCORD_ID = re.compile(PLATFORMS["discord"].id_pattern)
+_DISCORD_TOKEN = re.compile(r"^[A-Za-z0-9_.-]{40,200}$")
+_SLACK_ID = re.compile(PLATFORMS["slack"].id_pattern)
+_SLACK_BOT_TOKEN = re.compile(r"^xoxb-[A-Za-z0-9-]{10,250}$")
+_SLACK_APP_TOKEN = re.compile(r"^xapp-[A-Za-z0-9-]{10,250}$")
 # Bot platforms store one exact chat id per DM or group and share the same
 # token/allowlist/home-channel settings; only the id shapes differ.
-_BOT_USER_ID_PATTERNS = {"zalo_bot": _ZALO_BOT_ID, "telegram": _TELEGRAM_USER_ID}
-_BOT_TOKEN_ENVS = {"zalo_bot": "ZALO_BOT_TOKEN", "telegram": "TELEGRAM_BOT_TOKEN"}
+_BOT_USER_ID_PATTERNS = {
+    "zalo_bot": _ZALO_BOT_ID,
+    "telegram": _TELEGRAM_USER_ID,
+    "discord": _DISCORD_ID,
+    "slack": _SLACK_ID,
+}
+# One (request field, env key, value pattern) per write-only secret a bot
+# platform needs. Slack is the only platform with two secrets today (bot and
+# app-level Socket Mode token).
+_BOT_SECRETS: dict[str, tuple[tuple[str, str, re.Pattern[str]], ...]] = {
+    "zalo_bot": (("bot_token", "ZALO_BOT_TOKEN", _ZALO_BOT_TOKEN),),
+    "telegram": (("bot_token", "TELEGRAM_BOT_TOKEN", _ZALO_BOT_TOKEN),),
+    "discord": (("bot_token", "DISCORD_BOT_TOKEN", _DISCORD_TOKEN),),
+    "slack": (
+        ("bot_token", "SLACK_BOT_TOKEN", _SLACK_BOT_TOKEN),
+        ("app_token", "SLACK_APP_TOKEN", _SLACK_APP_TOKEN),
+    ),
+}
 _SAFE_IDENTITY = re.compile(r"^[^\x00-\x1f/\\]{1,200}$")
 _PAIRING_REQUEST_ID = re.compile(r"^[0-9a-fA-F]{16}$")
 _DM_POLICIES = {"disabled", "allowlist", "pairing"}
@@ -76,11 +98,16 @@ _GATEWAY_CONNECT_INSTRUCTION = (
     "XNOBrain web app and complete the connection form there. Do not send tokens, "
     "QR callback values or other credentials in Zalo."
 )
-_TELEGRAM_CONNECT_INSTRUCTION = (
-    "To finish connecting this channel, open this agent's conversation in the "
-    "XNOBrain web app and complete the connection form there. Do not send tokens "
-    "or other credentials in Telegram."
-)
+# Hermes-native token platforms finish connecting in the web app; the personal
+# Zalo channel keeps its QR-specific wording.
+_TOKEN_CONNECT_INSTRUCTIONS = {
+    platform: (
+        "To finish connecting this channel, open this agent's conversation in the "
+        "XNOBrain web app and complete the connection form there. Do not send tokens "
+        f"or other credentials in {PLATFORMS[platform].label}."
+    )
+    for platform in ("telegram", "discord", "slack")
+}
 _QR_WAIT_SECONDS = 5.0
 _DEFAULT_MEDIA_MAX_MB = 10.0
 # The plugin refreshes its per-profile state file every 30 seconds; a record
@@ -583,13 +610,19 @@ class ChannelsService:
         return limit if limit >= 0 else _DEFAULT_MEDIA_MAX_MB
 
     @staticmethod
-    def _bot_token_env(platform: str) -> str:
+    def _bot_tokens(platform: str) -> tuple[tuple[str, str, re.Pattern[str]], ...]:
+        """The write-only secrets a bot platform needs, as (field, env, pattern)."""
         try:
-            return _BOT_TOKEN_ENVS[platform]
+            return _BOT_SECRETS[platform]
         except KeyError as error:
             raise ServiceError(
                 "unsupported channel platform", status=422, code="invalid_platform"
             ) from error
+
+    @classmethod
+    def _bot_token_env(cls, platform: str) -> str:
+        """Primary credential env key; every platform has at least one."""
+        return cls._bot_tokens(platform)[0][1]
 
     @staticmethod
     def _bot_env_prefix(platform: str) -> str:
@@ -1073,10 +1106,8 @@ class ChannelsService:
         usage = raw_usage if isinstance(raw_usage, Mapping) else {}
         reply = str(record.get("output") or "")
         if connect_requested:
-            reply = (
-                _TELEGRAM_CONNECT_INSTRUCTION
-                if request["platform"] == "telegram"
-                else _GATEWAY_CONNECT_INSTRUCTION
+            reply = _TOKEN_CONNECT_INSTRUCTIONS.get(
+                request["platform"], _GATEWAY_CONNECT_INSTRUCTION
             )
         return {
             "conversation_id": conversation_id,
@@ -1761,12 +1792,12 @@ class ChannelsService:
                 result.append(item)
         return result
 
-    def _read_bot_token(self, profile: Path, platform: str = "zalo_bot") -> str | None:
+    def _read_bot_token(
+        self, profile: Path, platform: str = "zalo_bot", env: str | None = None
+    ) -> str | None:
         """Temporary profile-local token storage; a Control proxy replaces it."""
-        value = (
-            str(self.repository.env(profile).get(self._bot_token_env(platform)) or "")
-            .strip()
-        )
+        key = env or self._bot_token_env(platform)
+        value = str(self.repository.env(profile).get(key) or "").strip()
         return value or None
 
     def _bot_token_in_use(
@@ -1791,19 +1822,20 @@ class ChannelsService:
                     continue
                 candidates.append(entry)
         for candidate in candidates:
-            try:
-                stored = self._read_bot_token(candidate, platform)
-            except Exception:
-                continue
-            if stored and hmac.compare_digest(stored, token):
-                return True
+            for _, env, _ in self._bot_tokens(platform):
+                try:
+                    stored = self._read_bot_token(candidate, platform, env)
+                except Exception:
+                    continue
+                if stored and hmac.compare_digest(stored, token):
+                    return True
         return False
 
-    def _write_bot_token(
-        self, profile: Path, token: str | None, platform: str = "zalo_bot"
-    ) -> None:
-        """Temporary profile-local token storage; a Control proxy replaces it."""
-        self.repository.update_env(profile, {self._bot_token_env(platform): token})
+    def _clear_bot_tokens(self, profile: Path, platform: str = "zalo_bot") -> None:
+        """Remove every write-only secret a bot platform stores in the profile."""
+        self.repository.update_env(
+            profile, {env: None for _, env, _ in self._bot_tokens(platform)}
+        )
 
     def _snapshot_config(self, agent_id: str, profile: Path) -> None:
         path = profile / "config.yaml"
@@ -1986,7 +2018,15 @@ class ChannelsService:
         enabled = bool(self._platform_config(config, platform).get("enabled"))
         env = self.repository.env(profile)
         prefix = self._bot_env_prefix(platform)
-        token_set = self._read_bot_token(profile, platform) is not None
+        token_flags = {
+            field: self._read_bot_token(profile, platform, token_env) is not None
+            for field, token_env, _ in self._bot_tokens(platform)
+        }
+        # ``token_set`` stays the primary bot token; Slack's second write-only
+        # secret has its own flag and a channel needs every one of them.
+        token_set = bool(token_flags.get("bot_token"))
+        app_token_set = bool(token_flags.get("app_token"))
+        all_tokens_set = all(token_flags.values())
         allowed_users = [
             item.strip()
             for item in str(env.get(f"{prefix}_ALLOWED_USERS") or "").split(",")
@@ -1995,7 +2035,7 @@ class ChannelsService:
         home_channel = str(env.get(f"{prefix}_HOME_CHANNEL") or "").strip() or None
         if not enabled:
             status = "disabled"
-        elif not token_set:
+        elif not all_tokens_set:
             status = "needs_token"
         elif gateway.get("pending_restart"):
             status = "pending_restart"
@@ -2019,6 +2059,7 @@ class ChannelsService:
                 else None
             ),
             "token_set": token_set,
+            "app_token_set": app_token_set,
             "plugin_artifact": (
                 builtin_platform_metadata(platform) if platform == "zalo_bot" else None
             ),
@@ -2348,6 +2389,16 @@ class ChannelsService:
     ) -> dict[str, Any]:
         return self._set_bot_enabled(agent_id, enabled, trusted, "telegram")
 
+    def set_discord_enabled(
+        self, agent_id: str, enabled: bool, trusted: Any = None
+    ) -> dict[str, Any]:
+        return self._set_bot_enabled(agent_id, enabled, trusted, "discord")
+
+    def set_slack_enabled(
+        self, agent_id: str, enabled: bool, trusted: Any = None
+    ) -> dict[str, Any]:
+        return self._set_bot_enabled(agent_id, enabled, trusted, "slack")
+
     def _set_bot_enabled(
         self, agent_id: str, enabled: bool, trusted: Any, platform: str
     ) -> dict[str, Any]:
@@ -2383,6 +2434,16 @@ class ChannelsService:
     ) -> dict[str, Any]:
         return self._patch_bot(agent_id, body, trusted, "telegram")
 
+    def patch_discord(
+        self, agent_id: str, body: Mapping[str, Any], trusted: Any = None
+    ) -> dict[str, Any]:
+        return self._patch_bot(agent_id, body, trusted, "discord")
+
+    def patch_slack(
+        self, agent_id: str, body: Mapping[str, Any], trusted: Any = None
+    ) -> dict[str, Any]:
+        return self._patch_bot(agent_id, body, trusted, "slack")
+
     def _patch_bot(
         self,
         agent_id: str,
@@ -2398,28 +2459,29 @@ class ChannelsService:
         prefix = self._bot_env_prefix(platform)
         entry = get_platform(platform)
         label = entry.label if entry is not None else "channel"
-        token_env = self._bot_token_env(platform)
         config_changed = False
-        if "bot_token" in body:
-            value = body.get("bot_token")
+        for field, token_env, pattern in self._bot_tokens(platform):
+            if field not in body:
+                continue
+            value = body.get(field)
             if value is None:
                 env_updates[token_env] = None
-            else:
-                token = str(value).strip()
-                if not _ZALO_BOT_TOKEN.fullmatch(token):
-                    # Never include the submitted value in the error.
-                    raise ServiceError(
-                        "bot_token is invalid",
-                        status=422,
-                        code="invalid_bot_token",
-                    )
-                if self._bot_token_in_use(token, profile, platform):
-                    raise ServiceError(
-                        "bot_token is already used by another agent",
-                        status=409,
-                        code="bot_token_in_use",
-                    )
-                env_updates[token_env] = token
+                continue
+            token = str(value).strip()
+            if not pattern.fullmatch(token):
+                # Never include the submitted value in the error.
+                raise ServiceError(
+                    f"{field} is invalid",
+                    status=422,
+                    code="invalid_bot_token",
+                )
+            if self._bot_token_in_use(token, profile, platform):
+                raise ServiceError(
+                    f"{field} is already used by another agent",
+                    status=409,
+                    code="bot_token_in_use",
+                )
+            env_updates[token_env] = token
         if "allowed_users" in body:
             values = body.get("allowed_users")
             users = (
@@ -2485,6 +2547,12 @@ class ChannelsService:
     def logout_telegram(self, agent_id: str, trusted: Any = None) -> dict[str, Any]:
         return self._logout_bot(agent_id, trusted, "telegram")
 
+    def logout_discord(self, agent_id: str, trusted: Any = None) -> dict[str, Any]:
+        return self._logout_bot(agent_id, trusted, "discord")
+
+    def logout_slack(self, agent_id: str, trusted: Any = None) -> dict[str, Any]:
+        return self._logout_bot(agent_id, trusted, "slack")
+
     def _logout_bot(
         self, agent_id: str, trusted: Any, platform: str
     ) -> dict[str, Any]:
@@ -2494,7 +2562,7 @@ class ChannelsService:
         self._snapshot_config(agent_id, profile)
         self._ensure_platform_config(config, platform)["enabled"] = False
         self.repository.write_config(profile, config)
-        self._write_bot_token(profile, None, platform)
+        self._clear_bot_tokens(profile, platform)
         if platform == "zalo_bot":
             # Disconnecting the channel drops every stored conversation.
             self._delete_bot_history(profile)
