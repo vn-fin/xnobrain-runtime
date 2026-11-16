@@ -2010,7 +2010,11 @@ class ChannelsService:
             "allowed_users": allowed_users,
             "dm_policy": self._bot_dm_policy(config, platform),
             "home_channel": home_channel,
-            "history_retention_days": self._retention_days_from_config(config, platform),
+            "history_retention_days": (
+                self._retention_days_from_config(config, platform)
+                if platform == "zalo_bot"
+                else None
+            ),
             "token_set": token_set,
             "plugin_artifact": (
                 builtin_platform_metadata(platform) if platform == "zalo_bot" else None

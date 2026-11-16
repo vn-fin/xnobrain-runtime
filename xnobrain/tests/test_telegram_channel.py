@@ -161,7 +161,7 @@ class TelegramChannelTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(state["allowed_users"], ["123456789", "987654321"])
         self.assertEqual(state["home_channel"], "-1001234567890")
         self.assertEqual(state["dm_policy"], "allowlist")
-        self.assertEqual(state["history_retention_days"], 30)
+        self.assertIsNone(state["history_retention_days"])
         env = (self.profile / ".env").read_text(encoding="utf-8")
         self.assertIn(f"TELEGRAM_BOT_TOKEN={TOKEN}", env)
         self.assertIn("TELEGRAM_ALLOWED_USERS=123456789,987654321", env)

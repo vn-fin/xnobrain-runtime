@@ -159,7 +159,8 @@ class ChannelState(BaseModel):
     allowed_users: list[str] = Field(default_factory=list)
     dm_policy: DmPolicy = "disabled"
     home_channel: str | None = None
-    history_retention_days: int = Field(default=30, ge=1, le=365)
+    # None for platforms whose history Runtime does not store (Telegram).
+    history_retention_days: int | None = Field(default=30, ge=1, le=365)
     # The bot token itself is write-only and is never part of this contract.
     token_set: bool = False
     plugin_artifact: ChannelPluginArtifact | None = None
