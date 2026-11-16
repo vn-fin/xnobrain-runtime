@@ -1124,9 +1124,9 @@ class ChannelsRepository:
         self.base._sync_dir(path.parent)
         return True
 
-    def social_tools(self, profile: Any) -> bool:
+    def social_tools(self, profile: Any, default: bool = False) -> bool:
         """Return whether this profile may use tools that act on social channels."""
-        return social_tools_enabled(profile)
+        return social_tools_enabled(profile, default)
 
     def write_social_tools(self, profile: Any, enabled: bool) -> bool:
         """Atomically persist the switch beside the owner binding."""
@@ -1514,8 +1514,8 @@ class ChannelsRepository:
         return result
 
 
-def social_tools_enabled(profile: Any) -> bool:
-    """Return the profile's social-tools switch; a missing file means off.
+def social_tools_enabled(profile: Any, default: bool = False) -> bool:
+    """Return the profile's social-tools switch; a missing file means ``default``.
 
     The switch lives beside the channel owner binding so the agent's own file
     tools cannot flip it through ``config.yaml``.
@@ -1523,10 +1523,12 @@ def social_tools_enabled(profile: Any) -> bool:
     try:
         directory = ChannelsRepository._owner_directory(profile)
         if directory is None:
-            return False
+            return default
         path = directory / SOCIAL_TOOLS_FILE
-        if path.is_symlink() or not path.is_file():
+        if path.is_symlink():
             return False
+        if not path.is_file():
+            return default
         value = json.loads(ChannelsRepository._read_text(path))
     except (StoreError, ValueError, TypeError):
         return False

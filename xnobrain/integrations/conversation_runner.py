@@ -68,7 +68,10 @@ def _bind_social_channel_tools(
         return
     from ..repositories.channels import social_tools_enabled
 
-    if not social_tools_enabled(profile_dir):
+    # Big Brother starts with social tools on; every other agent starts off.
+    if not social_tools_enabled(
+        profile_dir, default=str(prepared["name"]) == BIG_BROTHER_AGENT_ID
+    ):
         return
     from .channel_tools import bind_run as bind_channel_run
     from .zalo_bot_tools import bind_run as bind_zalo_bot_run

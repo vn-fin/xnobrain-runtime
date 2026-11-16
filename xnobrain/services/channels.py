@@ -2152,7 +2152,9 @@ class ChannelsService:
         return {
             "channels": states,
             "gateway": gateway,
-            "social_tools": self.repository.social_tools(profile),
+            "social_tools": self.repository.social_tools(
+                profile, default=agent_id == BIG_BROTHER_AGENT_ID
+            ),
         }
 
     def set_social_tools(

@@ -113,6 +113,12 @@ class ChannelSocialToolsStorageTests(unittest.IsolatedAsyncioTestCase):
 
     def test_missing_file_means_off(self):
         self.assertFalse(social_tools_enabled(self.profile))
+
+    def test_missing_file_uses_the_default_but_a_written_switch_wins(self):
+        # Big Brother passes default=True; a stored "off" still turns it off.
+        self.assertTrue(social_tools_enabled(self.profile, default=True))
+        self.service.repository.write_social_tools(self.profile, False)
+        self.assertFalse(social_tools_enabled(self.profile, default=True))
         snapshot = self.service.list_channels("agent-1")
         self.assertFalse(snapshot["social_tools"])
 

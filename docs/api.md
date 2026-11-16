@@ -701,7 +701,7 @@ Brother (the root profile) cannot own a personal channel (`409 protected_agent`)
 The snapshot's `social_tools` flag is the per-agent switch for tools that act
 on social channels beyond replying: the `xnobrain_channels` toolset
 (`send_channel_message`), the personal Zalo tools, and the Zalo Bot tools. It
-defaults to off when no state file exists. `PUT …/channels/social_tools` sets
+defaults to on for `big-brother` and off for every other agent when no state file exists. `PUT …/channels/social_tools` sets
 it and returns the full snapshot. The write requires a Control-verified owner
 principal (`401 trusted_context_required` without one;
 `403 channel_owner_mismatch` or `403 permission_denied` for another owner).
