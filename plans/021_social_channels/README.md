@@ -73,6 +73,9 @@ skill section, connect support and delegation (the Runtime genericity test).
 
 ### R2 — Channel turns use a tool allowlist (done 2026-11-12)
 
+> **Superseded — 2026-11-16:** channel turns use the agent's normal tools;
+> social tools are behind a per-agent switch (default off).
+
 Plan 020 F1, made generic. `run_internal_turn` puts
 `toolsets=CHANNEL_TURN_TOOLSETS` (`xnobrain_channels`, `web`, `vision`, `tts`,
 `todo`) in the run body for every delegated platform. Verification found that
@@ -199,13 +202,14 @@ channel turn can run.
 1. Descriptor in `PLATFORMS` (R1) and in UI `providers.ts` (R5).
 2. Connect flow through `xnobrain_integration_connect`; no token in chat.
 3. Delegation through `gateway_cli` so turns run in Runtime with group
-   approval, pairing and the R2 allowlist.
+   approval, pairing and the agent's normal tools.
 4. Send path through `send_channel_message` (no direct HTTP from Runtime;
    reuse the plugin's standalone sender).
 5. Platform tools module, read tools scoped to the current chat in channel
    runs, sends scoped the same way.
 6. Skill section `platforms/<id>.md`.
-7. Tests: genericity, connect, delegation, allowlist, send scope, tools.
+7. Tests: genericity, connect, delegation, social-tools switch, send scope,
+   tools.
 8. Live test with a dev account, recorded in `plans/VERIFICATION.md`.
 
 ## Delivery order

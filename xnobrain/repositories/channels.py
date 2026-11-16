@@ -35,6 +35,7 @@ BOT_WARN_MAX = 3
 BOT_WARN_EXPIRY_SECONDS = 604800
 RESTART_STATE_FILE = "gateway-restart.json"
 OWNER_FILE = "owner.json"
+SOCIAL_TOOLS_FILE = "social_tools.json"
 OWNER_METADATA_DIR = ".xnobrain"
 OWNER_CHANNEL_DIR = "channels"
 MAX_STATE_BYTES = 2 * 1024 * 1024
@@ -1123,6 +1124,34 @@ class ChannelsRepository:
         self.base._sync_dir(path.parent)
         return True
 
+    def social_tools(self, profile: Any) -> bool:
+        """Return whether this profile may use tools that act on social channels."""
+        return social_tools_enabled(profile)
+
+    def write_social_tools(self, profile: Any, enabled: bool) -> bool:
+        """Atomically persist the switch beside the owner binding."""
+        directory = self._owner_directory(profile, create=True)
+        if directory is None:
+            raise StoreError(
+                "agent channel social tools storage is unavailable",
+                status=500,
+                code="channel_state_unavailable",
+            )
+        path = directory / SOCIAL_TOOLS_FILE
+        if path.is_symlink():
+            raise StoreError(
+                "agent channel social tools state is unsafe",
+                status=400,
+                code="channel_path_unsafe",
+            )
+        value = {"schema_version": 1, "enabled": bool(enabled)}
+        self.base.atomic_write(
+            path,
+            (json.dumps(value, sort_keys=True) + "\n").encode("utf-8"),
+            mode=0o600,
+        )
+        return bool(enabled)
+
     def links(self, profile: Any) -> dict[str, dict[str, Any]]:
         _, directory = self._zalo_dir(profile)
         if directory is None:
@@ -1483,3 +1512,22 @@ class ChannelsRepository:
             if isinstance(entry, dict) and str(entry.get("id") or "").strip():
                 result.append(entry)
         return result
+
+
+def social_tools_enabled(profile: Any) -> bool:
+    """Return the profile's social-tools switch; a missing file means off.
+
+    The switch lives beside the channel owner binding so the agent's own file
+    tools cannot flip it through ``config.yaml``.
+    """
+    try:
+        directory = ChannelsRepository._owner_directory(profile)
+        if directory is None:
+            return False
+        path = directory / SOCIAL_TOOLS_FILE
+        if path.is_symlink() or not path.is_file():
+            return False
+        value = json.loads(ChannelsRepository._read_text(path))
+    except (StoreError, ValueError, TypeError):
+        return False
+    return isinstance(value, dict) and value.get("enabled") is True

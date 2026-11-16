@@ -91,9 +91,6 @@ _PAIRING_REQUEST_ID = re.compile(r"^[0-9a-fA-F]{16}$")
 _DM_POLICIES = {"disabled", "allowlist", "pairing"}
 _SAFE_TURN_DM_POLICIES = {"allowlist", "pairing"}
 _TURN_PLATFORMS = set(platform_ids())
-# A run started from a channel chat may only use these toolsets. Every other
-# built-in toolset, profile MCP server toolset and host tool stays out of it.
-CHANNEL_TURN_TOOLSETS = ("xnobrain_channels", "web", "vision", "tts", "todo")
 _ENABLED_VALUES = {"1", "true", "yes", "on"}
 _MAX_TURN_TEXT = 20000
 _GATEWAY_CONNECT_INSTRUCTION = (
@@ -1079,7 +1076,6 @@ class ChannelsService:
             "input": request["text"],
             "run_mode": "background",
             "idempotency_key": f"{request['platform']}:{request['message_id']}",
-            "toolsets": list(CHANNEL_TURN_TOOLSETS),
         }
         if group_turn:
             await self._consume_group_turn(
@@ -2156,7 +2152,25 @@ class ChannelsService:
         return {
             "channels": states,
             "gateway": gateway,
+            "social_tools": self.repository.social_tools(profile),
         }
+
+    def set_social_tools(
+        self, agent_id: str, enabled: bool, trusted: Any = None
+    ) -> dict[str, Any]:
+        """Persist the per-agent switch for tools that act on social channels."""
+        self._require_feature()
+        profile = self._profile(agent_id)
+        binding = self._check_channel_owner(agent_id, profile, trusted)
+        if binding is None:
+            raise ServiceError(
+                "verified channel owner is required",
+                status=401,
+                code="trusted_context_required",
+            )
+        self.repository.write_social_tools(profile, enabled)
+        self._write_channel_owner(profile, binding)
+        return self.list_channels(agent_id)
 
     def _delete_owner_when_no_channel_enabled(
         self, profile: Path, config: Mapping[str, Any] | None = None

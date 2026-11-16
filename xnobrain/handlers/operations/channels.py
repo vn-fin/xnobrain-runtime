@@ -18,6 +18,13 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
             "channels retrieved successfully",
             200,
         ),
+        "channels_social_tools_set": (
+            lambda: service.set_social_tools(
+                path["agent_id"], bool(body["enabled"]), trusted
+            ),
+            "channel social tools updated successfully",
+            200,
+        ),
         "channels_zalo_update": (
             lambda: service.set_channel_enabled(path["agent_id"], bool(body["enabled"]), trusted),
             "channel updated successfully",

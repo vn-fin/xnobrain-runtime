@@ -25,7 +25,7 @@ from xnobrain.repositories.files import FileRepository
 from xnobrain.routes.definition import API_PREFIX
 from xnobrain.routes.setup import setup_routes
 from xnobrain.services.base import ServiceError
-from xnobrain.services.channels import CHANNEL_TURN_TOOLSETS, ChannelsService
+from xnobrain.services.channels import ChannelsService
 from xnobrain.services.conversation_authority import HostAuthority
 from xnobrain.tests.test_channel_turn import _GrantSource
 from xnobrain.tests.test_channel_turn import _Platform as TurnPlatform
@@ -506,7 +506,7 @@ class DiscordTurnTests(unittest.IsolatedAsyncioTestCase):
         value.update(overrides)
         return value
 
-    async def test_dm_turn_uses_the_channel_toolset_allowlist(self):
+    async def test_dm_turn_uses_the_agent_default_toolsets(self):
         result = await self.service.run_internal_turn(
             self._body(), "channel-turn-test-token"
         )
@@ -514,7 +514,7 @@ class DiscordTurnTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["reply"], "channel reply")
         self.assertEqual(len(self.platform.run_calls), 1)
         _, conversation_id, body = self.platform.run_calls[0]
-        self.assertEqual(body["toolsets"], list(CHANNEL_TURN_TOOLSETS))
+        self.assertNotIn("toolsets", body)
         threads = self.service.repository.threads(self.profile)
         self.assertIn("discord", threads)
         self.assertEqual(

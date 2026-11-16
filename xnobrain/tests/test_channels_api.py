@@ -66,6 +66,10 @@ class ChannelFeatureGateTests(unittest.IsolatedAsyncioTestCase):
             enabled_response = await client.put(
                 f"{API_PREFIX}/agents/agent-1/channels/zalo", json={"enabled": True}
             )
+            social_tools = await client.put(
+                f"{API_PREFIX}/agents/agent-1/channels/social_tools",
+                json={"enabled": True},
+            )
             pairings = await client.get(
                 f"{API_PREFIX}/agents/agent-1/channels/zalo/pairings"
             )
@@ -75,6 +79,7 @@ class ChannelFeatureGateTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(listed.status_code, 404)
         self.assertEqual(enabled_response.status_code, 404)
+        self.assertEqual(social_tools.status_code, 404)
         self.assertEqual(pairings.status_code, 404)
         self.assertEqual(approve.status_code, 404)
 
@@ -87,6 +92,7 @@ class ChannelFeatureGateTests(unittest.IsolatedAsyncioTestCase):
         paths = {(route.path, tuple(sorted(route.methods))) for route in app.routes}
         for path in (
             f"{API_PREFIX}/agents/{{agent_id}}/channels",
+            f"{API_PREFIX}/agents/{{agent_id}}/channels/social_tools",
             f"{API_PREFIX}/agents/{{agent_id}}/channels/zalo",
             f"{API_PREFIX}/agents/{{agent_id}}/channels/zalo/qr",
             f"{API_PREFIX}/agents/{{agent_id}}/channels/zalo/logout",

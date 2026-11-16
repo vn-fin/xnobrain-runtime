@@ -48,54 +48,41 @@ async def _run_goal_call(profile_dir: Path, callback):
     return await asyncio.to_thread(run)
 
 
-def _channel_turn_toolsets(prepared: Mapping[str, Any]) -> tuple[str, ...]:
-    """Return the fixed toolset allowlist for a channel-originated run."""
-    if prepared.get("_channel_host_authority") is None:
-        return ()
-    toolsets = prepared.get("toolsets")
-    if not isinstance(toolsets, (list, tuple)):
-        return ()
-    return tuple(str(item) for item in toolsets if str(item))
+def _bind_social_channel_tools(
+    scope: Any,
+    manager: Any,
+    profile_dir: Path,
+    prepared: Mapping[str, Any],
+    conversation_id: str,
+    run_id: str,
+    approval_notify_callback: Any,
+) -> None:
+    """Bind channel tools only when this profile enables social tools.
 
-
-def _apply_channel_turn_toolsets(agent: Any, prepared: Mapping[str, Any]) -> bool:
-    """Restrict one built channel-turn agent to its allowlist.
-
-    Native conversation runs build their tools from
-    ``platform_toolsets.api_server``; the ``--toolsets`` command assembled for
-    the CLI is not executed on this path. Applying the allowlist to the agent
-    itself replaces that profile selection for the run. Returns ``True`` when
-    this is a channel turn, whose profile MCP tools must also stay out.
+    The per-agent switch defaults to off, so no run of this agent -- web or
+    channel -- receives the ``xnobrain_channels`` toolset, the personal Zalo
+    tools, or the Zalo Bot tools until its owner turns it on.
     """
-    toolsets = _channel_turn_toolsets(prepared)
-    if not toolsets:
-        return False
-    from model_tools import get_tool_definitions
+    channels_service = getattr(manager, "channels_service", None)
+    if channels_service is None:
+        return
+    from ..repositories.channels import social_tools_enabled
 
-    agent.enabled_toolsets = list(toolsets)
-    agent.tools = list(
-        get_tool_definitions(
-            enabled_toolsets=list(toolsets),
-            disabled_toolsets=getattr(agent, "disabled_toolsets", None),
-            quiet_mode=True,
-        )
-        or []
+    if not social_tools_enabled(profile_dir):
+        return
+    from .channel_tools import bind_run as bind_channel_run
+    from .zalo_bot_tools import bind_run as bind_zalo_bot_run
+
+    binding = (
+        channels_service,
+        profile_dir,
+        str(prepared["name"]),
+        conversation_id,
+        run_id,
+        approval_notify_callback,
     )
-    agent.valid_tool_names = {
-        str(tool.get("function", {}).get("name") or "")
-        for tool in agent.tools
-        if isinstance(tool.get("function"), Mapping)
-    } - {""}
-    return True
-
-
-def _profile_mcp_allowed(prepared: Mapping[str, Any]) -> bool:
-    """Return whether a run may receive this profile's MCP server tools.
-
-    A channel turn's fixed allowlist never names an MCP server toolset, and the
-    profile MCP install runs after the registry build, so it must stay out.
-    """
-    return not _channel_turn_toolsets(prepared)
+    scope.enter_context(bind_channel_run(*binding))
+    scope.enter_context(bind_zalo_bot_run(*binding))
 
 
 class ConversationRunnerMixin:
@@ -1021,7 +1008,6 @@ class ConversationRunnerMixin:
 
             def _create_agent(self, *args: Any, **kwargs: Any) -> Any:
                 agent = super()._create_agent(*args, **kwargs)
-                _apply_channel_turn_toolsets(agent, prepared)
                 if max_iterations is not None:
                     agent.max_iterations = max(1, int(max_iterations))
                     try:
@@ -1531,8 +1517,7 @@ class ConversationRunnerMixin:
                 install_zalo_bot_tools(agent, conversation_id, profile_dir)
                 from .managed_mcp import install_tools as install_catalog_mcp_tools
 
-                if _profile_mcp_allowed(prepared):
-                    install_catalog_mcp_tools(agent, profile_dir)
+                install_catalog_mcp_tools(agent, profile_dir)
                 if feature_enabled(FEATURE_AGENT_CUSTOM_PAGE):
                     from .custom_page_tools import install_tools
 
@@ -1623,30 +1608,15 @@ class ConversationRunnerMixin:
             bind_xno_data_run(conversation_id, run_id, prepared.get("_xno_data_grant"))
         )
         page_scope.enter_context(bind_control_mcp_grant(profile_dir, prepared.get("_mcp_grant")))
-        if getattr(manager, "channels_service", None):
-            from .channel_tools import bind_run as bind_channel_run
-            from .zalo_bot_tools import bind_run as bind_zalo_bot_run
-
-            page_scope.enter_context(
-                bind_channel_run(
-                    manager.channels_service,
-                    profile_dir,
-                    str(prepared["name"]),
-                    conversation_id,
-                    run_id,
-                    approval_notify_callback,
-                )
-            )
-            page_scope.enter_context(
-                bind_zalo_bot_run(
-                    manager.channels_service,
-                    profile_dir,
-                    str(prepared["name"]),
-                    conversation_id,
-                    run_id,
-                    approval_notify_callback,
-                )
-            )
+        _bind_social_channel_tools(
+            page_scope,
+            manager,
+            profile_dir,
+            prepared,
+            conversation_id,
+            run_id,
+            approval_notify_callback,
+        )
         if (
             feature_enabled(FEATURE_AGENT_CUSTOM_PAGE)
             and getattr(manager, "custom_page_service", None)

@@ -49,6 +49,7 @@ DmPolicy = Literal["disabled", "allowlist", "pairing"]
 # deliberately exposes only these safe values; "open" is never accepted.
 
 
+
 class ChannelInboundMessage(BaseModel):
     """One inbound personal-channel message forwarded by the gateway."""
 
@@ -188,6 +189,15 @@ class ChannelListResult(BaseModel):
 
     channels: list[ChannelState] = Field(default_factory=list)
     gateway: ChannelGatewayState
+    social_tools: bool = False
+
+
+class ChannelSocialToolsUpdate(BaseModel):
+    """Enable or disable the agent's tools that act on social channels."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
 
 
 class ChannelZaloUpdate(BaseModel):
@@ -223,6 +233,7 @@ class ChannelZaloPatch(BaseModel):
             if item not in result:
                 result.append(item)
         return result
+
 
 
 class ChannelZaloBotUpdate(BaseModel):
@@ -273,6 +284,7 @@ class ChannelZaloBotPatch(BaseModel):
         return result
 
 
+
 class ChannelTelegramUpdate(BaseModel):
     """Enable or disable the Telegram channel for one agent."""
 
@@ -320,6 +332,7 @@ class ChannelTelegramPatch(BaseModel):
         return result
 
 
+
 class ChannelDiscordUpdate(BaseModel):
     """Enable or disable the Discord channel for one agent."""
 
@@ -365,6 +378,7 @@ class ChannelDiscordPatch(BaseModel):
             if item not in result:
                 result.append(item)
         return result
+
 
 
 class ChannelSlackUpdate(BaseModel):
@@ -420,6 +434,7 @@ class ChannelSlackPatch(BaseModel):
         return result
 
 
+
 class ChannelWhatsappUpdate(BaseModel):
     """Enable or disable the WhatsApp channel for one agent."""
 
@@ -454,6 +469,7 @@ class ChannelWhatsappPatch(BaseModel):
             if item not in result:
                 result.append(item)
         return result
+
 
 
 class ChannelPairingPending(BaseModel):

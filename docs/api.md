@@ -681,7 +681,8 @@ selects a resource and never authorizes access. A disabled runtime answers `404`
 
 | Method and path | Body | Result |
 |---|---|---|
-| `GET /xnobrain/api/runtime/v1/agents/{agent_id}/channels` | — | `{channels: [ChannelState], gateway: {running, pid, pending_restart}}` |
+| `GET /xnobrain/api/runtime/v1/agents/{agent_id}/channels` | — | `{channels: [ChannelState], gateway: {running, pid, pending_restart}, social_tools: bool}` |
+| `PUT /xnobrain/api/runtime/v1/agents/{agent_id}/channels/social_tools` | `{enabled: bool}` | `{channels: [ChannelState], gateway: {...}, social_tools: bool}` |
 | `PUT /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo` | `{enabled: bool}` | `ChannelState` |
 | `PATCH /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo` | `{allowed_users?: [id], dm_policy?: "disabled"\|"allowlist"\|"pairing", home_channel?: id\|null, history_retention_days?: int}` | `ChannelState` |
 | `GET /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo/qr` | — | `{status, image_base64}` |
@@ -696,6 +697,21 @@ token_set, app_token_set}`.
 `closed`, `pending_restart`, `gateway_down`. It comes from the loopback bridge
 `GET http://127.0.0.1:<port>/health`; `connecting` maps to `starting`. Big
 Brother (the root profile) cannot own a personal channel (`409 protected_agent`).
+
+The snapshot's `social_tools` flag is the per-agent switch for tools that act
+on social channels beyond replying: the `xnobrain_channels` toolset
+(`send_channel_message`), the personal Zalo tools, and the Zalo Bot tools. It
+defaults to off when no state file exists. `PUT …/channels/social_tools` sets
+it and returns the full snapshot. The write requires a Control-verified owner
+principal (`401 trusted_context_required` without one;
+`403 channel_owner_mismatch` or `403 permission_denied` for another owner).
+The flag is stored at `<profile>/.xnobrain/channels/social_tools.json` (mode
+`0600`, atomic) beside `owner.json`, so the agent's own file tools cannot
+change it through `config.yaml`. When off, no run of that agent — web or
+channel — receives those tools; incoming channel messages are still answered
+because the reply is the run output returned to the gateway, not a tool call.
+When on, the tools are bound exactly as before whenever a channel platform is
+enabled.
 
 Writes snapshot the profile `config.yaml` first, then atomically update
 `platforms.zalo.enabled`, `platforms.zalo.extra.dm_policy`,
@@ -1214,14 +1230,16 @@ catalog APIs, auto-reply, and `custom` are never exposed.
 `POST /xnobrain/api/runtime/v1/internal/channels/turn` runs one
 already-authorized gateway message as a normal conversation turn in the main
 Runtime, so it uses the same run service, admission path, connect tool,
-policies, and run records as web chat. Every channel turn runs with the fixed
-toolset allowlist `xnobrain_channels`, `web`, `vision`, `tts`, `todo`
-(`CHANNEL_TURN_TOOLSETS`): terminal, file, code execution, session search,
-memory, skills, delegation, cron, kanban, browser, computer use, image
-generation, and every MCP server toolset are unavailable to it, for both direct
-messages and approved groups on every platform. The gateway response is
-still text-only: it returns the final reply and usage, not per-tool events,
-attachments, or streamed UI metadata. It requires the same
+policies, and run records as web chat. It builds tools exactly like a web chat
+of that agent: the profile's toolsets, MCP servers, skills, and the rest of
+the agent's normal tool set, for both direct messages and approved groups on
+every platform. The only difference is that the social tools (the
+`xnobrain_channels` toolset, the personal Zalo tools, and the Zalo Bot tools)
+are present only when that agent's `social_tools` switch is on. The gateway
+response is still text-only: it returns the final reply and usage, not per-tool
+events, attachments, or streamed UI metadata. The reply is the run output the
+gateway sends back to the platform, so the bot answers incoming messages even
+when no social tools are bound. It requires the same
 `X-XNOBrain-Internal-Token: RUNTIME_INTERNAL_SERVICE_TOKEN` as private message
 ingestion and is gated by `FT_ENABLE_AGENT_CHANNELS`.
 
