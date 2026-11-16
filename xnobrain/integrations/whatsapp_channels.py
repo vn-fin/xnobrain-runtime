@@ -24,7 +24,7 @@ _QR_SCRIPT = (
     "process.stdin.on('data',(c)=>chunks.push(c));"
     "process.stdin.on('end',()=>{"
     "q.toBuffer(Buffer.concat(chunks).toString('utf8'),"
-    "{type:'png',width:320,margin:1},(e,b)=>{"
+    "{type:'png',width:512,margin:4,errorCorrectionLevel:'L'},(e,b)=>{"
     "if(e)process.exit(1);process.stdout.write(b);});"
     "});"
 )

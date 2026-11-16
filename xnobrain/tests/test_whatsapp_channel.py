@@ -209,6 +209,8 @@ class WhatsAppChannelTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             _configured_profile(config, "whatsapp")["extra"]["dm_policy"], "disabled"
         )
+        # Port 3000 is the Runtime API in the shared gateway network namespace.
+        self.assertEqual(_configured_profile(config, "whatsapp")["extra"]["bridge_port"], 3011)
         env = (self.profile / ".env").read_text(encoding="utf-8")
         self.assertIn("WHATSAPP_ENABLED=true", env)
         self.assertIn("WHATSAPP_MODE=bot", env)

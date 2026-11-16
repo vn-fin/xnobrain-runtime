@@ -86,6 +86,9 @@ _BOT_SECRETS: dict[str, tuple[tuple[str, str, re.Pattern[str]], ...]] = {
         ("app_token", "SLACK_APP_TOKEN", _SLACK_APP_TOKEN),
     ),
 }
+# shortcut: one fixed port, so only one agent per Runtime can run WhatsApp; derive
+# a per-profile port (like the Zalo bridge base 3110) when several agents need it.
+_WHATSAPP_BRIDGE_PORT = 3011
 _SAFE_IDENTITY = re.compile(r"^[^\x00-\x1f/\\]{1,200}$")
 _PAIRING_REQUEST_ID = re.compile(r"^[0-9a-fA-F]{16}$")
 _DM_POLICIES = {"disabled", "allowlist", "pairing"}
@@ -2680,6 +2683,9 @@ class ChannelsService:
                 extra = {}
                 entry["extra"] = extra
             extra.setdefault("dm_policy", "disabled")
+            # The gateway shares the Runtime network namespace, where Hermes's default
+            # bridge port 3000 is the Runtime API (the adapter kills that port's owner).
+            extra.setdefault("bridge_port", _WHATSAPP_BRIDGE_PORT)
         self.repository.write_config(profile, config)
         env_updates: dict[str, str | None] = {
             "WHATSAPP_ENABLED": "true" if enabled else "false"
@@ -2791,8 +2797,17 @@ class ChannelsService:
                     elif event == "connected":
                         record.status = "connected"
                         return
+                    elif event == "disconnected":
+                        # Only the numeric Baileys close code; never QR or creds.
+                        _LOGGER.warning(
+                            "whatsapp pairing disconnected: reason=%s",
+                            str(payload.get("reason"))[:16],
+                        )
                     elif event == "error":
                         record.error = str(payload.get("error") or "")[:200]
+                        _LOGGER.warning(
+                            "whatsapp pairing failed: %s", record.error[:80]
+                        )
                         record.status = "error"
                         return
 
