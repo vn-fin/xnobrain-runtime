@@ -174,6 +174,9 @@ allowlist.
 > share the per-platform daily limit.
 > 2026-11-16: Discord groups are approved per server (guild id), covering
 > every channel and auto-created thread.
+> 2026-11-16: Discord `auto_thread` is exposed as a product switch; the default
+> is off, enabling seeds `DISCORD_AUTO_THREAD=false` only when absent, and a
+> PATCH may set it true or false.
 
 ## Slack (2026-11-16)
 

@@ -690,9 +690,10 @@ selects a resource and never authorizes access. A disabled runtime answers `404`
 
 `ChannelState` is `{platform: "zalo"|"zalo_bot"|"telegram"|"discord"|"slack"|"whatsapp"|"email"|"mattermost"|"irc"|"wecom"|"qqbot"|"yuanbao", enabled,
 status, own_id, allowed_users, dm_policy, dm_policies, home_channel, allowed_roles,
-history_retention_days, token_set, app_token_set, credentials}`.
+auto_thread, history_retention_days, token_set, app_token_set, credentials}`.
 `allowed_roles` is the Discord role allowlist; it defaults to `[]` on every
-other platform. `dm_policies` lists the accepted `dm_policy` values for that
+other platform. `auto_thread` is the Discord auto-thread switch and defaults to
+`false` on every other platform. `dm_policies` lists the accepted `dm_policy` values for that
 platform; every platform accepts all four except Email, which does not support
 `pairing`. `credentials` holds non-secret credential fields by name; write-only
 secrets appear only as `<field>_set` booleans.
@@ -858,11 +859,12 @@ tag, feature gate, and Control-proxied identity as the other channels.
 | Method and path | Body | Result |
 |---|---|---|
 | `PUT /xnobrain/api/runtime/v1/agents/{agent_id}/channels/discord` | `{enabled: bool}` | `ChannelState` |
-| `PATCH /xnobrain/api/runtime/v1/agents/{agent_id}/channels/discord` | `{bot_token?: str\|null, allowed_users?: [id]\|null, allowed_roles?: [id]\|null, dm_policy?: "disabled"\|"allowlist"\|"pairing"\|"open", home_channel?: id\|null}` | `ChannelState` |
+| `PATCH /xnobrain/api/runtime/v1/agents/{agent_id}/channels/discord` | `{bot_token?: str\|null, allowed_users?: [id]\|null, allowed_roles?: [id]\|null, dm_policy?: "disabled"\|"allowlist"\|"pairing"\|"open", auto_thread?: bool\|null, home_channel?: id\|null}` | `ChannelState` |
 | `POST /xnobrain/api/runtime/v1/agents/{agent_id}/channels/discord/logout` | — | `ChannelState` |
 
-For `discord`, `ChannelState` includes `token_set` (never the token itself) and
-`allowed_roles`, and always reports `app_token_set: false`. `status` is one of
+For `discord`, `ChannelState` includes `token_set` (never the token itself),
+`allowed_roles`, and `auto_thread` (the product default is `false`). It always
+reports `app_token_set: false`. `status` is one of
 `disabled`, `needs_token` (enabled without a token), `pending_restart`,
 `gateway_down`, `configured`, or `connected`. `connected` comes from the root
 `gateway_state.json` platform entry, which is keyed by platform rather than by
@@ -883,15 +885,19 @@ Runtime, so the adapter's role allowlist is stored as the owner's direct grant.
 `home_channel` accepts a channel or thread snowflake id matching
 `^[0-9]{1,20}$`. `dm_policy` accepts `disabled`, `allowlist`, `pairing`, and
 `open`; `open` also writes `DISCORD_ALLOW_ALL_USERS=true`, and any other policy
-removes it.
+removes it. `auto_thread` writes `DISCORD_AUTO_THREAD=true` or `false`; the
+product default is off, so enabling Discord for the first time seeds
+`DISCORD_AUTO_THREAD=false` only when the key is absent, never overwriting an
+existing value. State reports `auto_thread` as `true` only when the stored
+value is literally `true`.
 
 Writes snapshot `config.yaml` first, then atomically update
 `platforms.discord.enabled` and `platforms.discord.extra.dm_policy`, and the
 `.env` keys `DISCORD_ALLOWED_USERS`, `DISCORD_ALLOWED_ROLES`,
-`DISCORD_ALLOW_ALL_USERS` (only while the policy is open), and
-`DISCORD_HOME_CHANNEL`, request the same `SIGUSR1` gateway restart, and are
-idempotent. `history_retention_days` is `null`: Runtime stores no Discord
-history.
+`DISCORD_ALLOW_ALL_USERS` (only while the policy is open),
+`DISCORD_AUTO_THREAD`, and `DISCORD_HOME_CHANNEL`, request the same `SIGUSR1`
+gateway restart, and are idempotent. `history_retention_days` is `null`:
+Runtime stores no Discord history.
 
 The gateway wraps the Discord adapter's sender check without editing upstream:
 an adapter rejection becomes an admission only for a DM under

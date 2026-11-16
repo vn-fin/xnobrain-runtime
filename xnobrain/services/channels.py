@@ -2204,6 +2204,9 @@ class ChannelsService:
             state["allowed_roles"] = sorted(
                 self._env_id_set(env.get("DISCORD_ALLOWED_ROLES"))
             )
+            state["auto_thread"] = (
+                str(env.get("DISCORD_AUTO_THREAD") or "").strip().lower() == "true"
+            )
         return state
 
     @staticmethod
@@ -2641,6 +2644,14 @@ class ChannelsService:
                 bot["extra"] = extra
             extra.setdefault("dm_policy", "disabled")
         self.repository.write_config(profile, config)
+        env_updates: dict[str, str | None] = {}
+        if enabled and platform == "discord":
+            # Product default is off. Seed the adapter flag once; an existing
+            # operator value is authoritative and is never overwritten.
+            if "DISCORD_AUTO_THREAD" not in self.repository.env(profile):
+                env_updates["DISCORD_AUTO_THREAD"] = "false"
+        if env_updates:
+            self.repository.update_env(profile, env_updates)
         if enabled:
             self._write_channel_owner(profile, binding)
         else:
@@ -2755,6 +2766,11 @@ class ChannelsService:
                     else self._normalize_discord_ids(values, "allowed_roles")
                 )
                 env_updates["DISCORD_ALLOWED_ROLES"] = ",".join(roles) if roles else None
+            auto_thread = body.get("auto_thread")
+            if "auto_thread" in body and auto_thread is not None:
+                env_updates["DISCORD_AUTO_THREAD"] = (
+                    "true" if bool(auto_thread) else "false"
+                )
         if "home_channel" in body:
             value = body.get("home_channel")
             home_env = entry.home_channel_env if entry is not None else ""

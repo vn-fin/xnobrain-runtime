@@ -196,6 +196,8 @@ class ChannelState(BaseModel):
     home_channel: str | None = None
     # Discord role ids admitted by the adapter; empty on other platforms.
     allowed_roles: list[str] = Field(default_factory=list)
+    # Discord auto-thread flag; always false on other platforms.
+    auto_thread: bool = False
     # None for platforms whose history Runtime does not store (Telegram).
     history_retention_days: int | None = Field(default=30, ge=1, le=365)
     # The bot token itself is write-only and is never part of this contract.
@@ -400,6 +402,10 @@ class ChannelDiscordPatch(BaseModel):
         description="Discord role IDs allowed to trigger the agent",
     )
     dm_policy: DmPolicy | None = None
+    auto_thread: bool | None = Field(
+        default=None,
+        description="Create a Discord thread for each channel @mention",
+    )
     home_channel: str | None = Field(default=None, max_length=20, pattern=_DISCORD_ID)
 
     @field_validator("allowed_users")

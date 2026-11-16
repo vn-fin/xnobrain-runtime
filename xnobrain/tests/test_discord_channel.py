@@ -119,6 +119,9 @@ class DiscordChannelTests(unittest.IsolatedAsyncioTestCase):
         self.kill.start()
         self.addCleanup(self.kill.stop)
 
+    def env_text(self) -> str:
+        return (self.profile / ".env").read_text(encoding="utf-8")
+
     def test_enable_without_token_reports_needs_token(self):
         state = self.service.set_discord_enabled("agent-1", True)
 
@@ -172,6 +175,36 @@ class DiscordChannelTests(unittest.IsolatedAsyncioTestCase):
         config = _read_yaml(self.profile / "config.yaml")
         extra = _configured_profile(config, "discord")["extra"]
         self.assertEqual(extra["dm_policy"], "allowlist")
+
+    def test_auto_thread_defaults_to_false(self):
+        listed = self.service.list_channels("agent-1")
+
+        self.assertFalse(listed["channels"][3]["auto_thread"])
+
+    def test_enable_seeds_auto_thread_false_only_when_absent(self):
+        state = self.service.set_discord_enabled("agent-1", True)
+
+        self.assertFalse(state["auto_thread"])
+        self.assertIn("DISCORD_AUTO_THREAD=false", self.env_text())
+
+        self.service.patch_discord("agent-1", {"auto_thread": True})
+        self.service.set_discord_enabled("agent-1", False)
+        state = self.service.set_discord_enabled("agent-1", True)
+
+        self.assertTrue(state["auto_thread"])
+        self.assertIn("DISCORD_AUTO_THREAD=true", self.env_text())
+        self.assertNotIn("DISCORD_AUTO_THREAD=false", self.env_text())
+
+    def test_auto_thread_patch_writes_true_and_false(self):
+        self.service.set_discord_enabled("agent-1", True)
+
+        state = self.service.patch_discord("agent-1", {"auto_thread": True})
+        self.assertTrue(state["auto_thread"])
+        self.assertIn("DISCORD_AUTO_THREAD=true", self.env_text())
+
+        state = self.service.patch_discord("agent-1", {"auto_thread": False})
+        self.assertFalse(state["auto_thread"])
+        self.assertIn("DISCORD_AUTO_THREAD=false", self.env_text())
 
     def test_status_follows_the_gateway_platform_state(self):
         self.service.set_discord_enabled("agent-1", True)
