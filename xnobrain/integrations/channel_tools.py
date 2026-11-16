@@ -97,7 +97,7 @@ def register_tools(profile_dir) -> None:
                 "the same thread and optional mentions tags group members by user id. "
                 "Before calling, show the user the recipient and the exact text and "
                 "wait for their explicit confirmation in chat. Every group must be "
-                "approved first. This is the only supported way to send on Zalo."
+                "approved first. This is the only supported way to send on a channel."
             ),
             "parameters": {
                 "type": "object",
@@ -172,17 +172,15 @@ def bind_run(
 
     enabled_platforms: list[str] = []
     try:
-        if (
-            zalo_channels.profile_enables_zalo(profile_dir)
-            and zalo_channels.zalo_plugin_registered()
-        ):
-            enabled_platforms.append(zalo_channels.ZALO_PLATFORM)
-        if zalo_channels.profile_enables_platform(
-            profile_dir, zalo_channels.ZALO_BOT_PLATFORM
-        ) and zalo_channels.platform_plugin_registered(
-            zalo_channels.ZALO_BOT_PLATFORM
-        ):
-            enabled_platforms.append(zalo_channels.ZALO_BOT_PLATFORM)
+        for platform_id in platform_ids():
+            if platform_id == zalo_channels.ZALO_PLATFORM:
+                registered = zalo_channels.zalo_plugin_registered()
+            else:
+                registered = zalo_channels.platform_plugin_registered(platform_id)
+            if zalo_channels.profile_enables_platform(
+                profile_dir, platform_id
+            ) and registered:
+                enabled_platforms.append(platform_id)
         enabled = bool(
             feature_enabled(FEATURE_AGENT_CHANNELS)
             and service is not None
@@ -271,7 +269,10 @@ def call(args, **kwargs):
                 resolution = service.resolve_recipient(agent_id, request.recipient)
         else:
             resolution = service.resolve_bot_recipient(
-                agent_id, request.recipient, request.thread_type
+                agent_id,
+                request.recipient,
+                request.thread_type,
+                platform=platform,
             )
     except Exception as error:
         return _error(str(getattr(error, "code", "channel_resolution_failed")))

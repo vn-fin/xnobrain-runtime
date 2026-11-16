@@ -210,7 +210,7 @@ class ChannelPairingCase(_ChannelPairingFixtureMixin, unittest.IsolatedAsyncioTe
         self.assertEqual(raised.exception.code, "feature_disabled")
 
         with self.assertRaises(ServiceError) as raised:
-            await self.service.list_pairings("agent-1", "telegram", self._trusted())
+            await self.service.list_pairings("agent-1", "discord", self._trusted())
         self.assertEqual(raised.exception.status, 422)
         self.assertEqual(raised.exception.code, "invalid_platform")
 

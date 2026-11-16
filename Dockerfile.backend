@@ -101,6 +101,7 @@ RUN --mount=type=cache,target=/root/.npm \
     && test "$(git -C /usr/local/lib/hermes-agent rev-parse HEAD)" = "${HERMES_COMMIT}" \
     && uv pip install --python /usr/local/lib/hermes-agent/venv/bin/python \
       'edge-tts==7.2.7' \
+      'python-telegram-bot[webhooks]==22.8' \
     && rm -f /tmp/hermes-install.sh \
     && rm -rf /opt/hermes-build-home
 

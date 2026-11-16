@@ -20,11 +20,11 @@ BRIDGE_TOKEN_FILE = "bridge.token"
 MAX_KNOWN_NAMES = 20
 _MAX_BRIDGE_RESPONSE_BYTES = 65536
 _THREAD_ID = re.compile(r"^[0-9]{1,32}$")
-_ZALO_BOT_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _BRIDGE_TOKEN = re.compile(r"^[0-9a-fA-F]{64}$")
+# Every registered platform validates its own chat/thread ids identically in
+# the send path and in the tool request models.
 _THREAD_ID_PATTERNS = {
-    ZALO_PLATFORM: _THREAD_ID,
-    ZALO_BOT_PLATFORM: _ZALO_BOT_ID,
+    platform_id: re.compile(entry.id_pattern) for platform_id, entry in PLATFORMS.items()
 }
 _PLATFORM_READY: dict[str, bool] = {}
 BRIDGE_STATUS = {
@@ -489,7 +489,8 @@ async def send_text(
         from gateway.config import Platform, load_gateway_config
         from gateway.platform_registry import platform_registry
 
-        if platform_registry.get(name) is None:
+        entry = platform_registry.get(name)
+        if entry is None:
             raise ChannelDeliveryError("channel_platform_unavailable")
         target = Platform(name)
         config = load_gateway_config()
@@ -500,7 +501,16 @@ async def send_text(
                 break
         if pconfig is None or not getattr(pconfig, "enabled", False):
             raise ChannelDeliveryError("channel_platform_not_configured")
-        result = await _send_to_platform(target, pconfig, str(thread_id), text)
+        if name in {ZALO_PLATFORM, ZALO_BOT_PLATFORM}:
+            result = await _send_to_platform(target, pconfig, str(thread_id), text)
+        else:
+            # Newer platforms deliver through the standalone sender the plugin
+            # registers on the Hermes platform registry; Runtime never speaks
+            # the provider HTTP API itself.
+            sender = getattr(entry, "standalone_sender_fn", None)
+            if not callable(sender):
+                raise ChannelDeliveryError("channel_platform_unavailable")
+            result = await sender(pconfig, str(thread_id), text)
     except ChannelDeliveryError:
         raise
     except Exception as error:

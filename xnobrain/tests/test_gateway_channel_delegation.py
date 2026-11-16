@@ -294,7 +294,7 @@ class GatewayChannelDelegationTests(unittest.IsolatedAsyncioTestCase):
             message="hello",
             context_prompt="",
             history=[],
-            source=_source(platform="telegram"),
+            source=_source(platform="discord"),
             session_id="session-6",
             event_message_id="message-6",
         )

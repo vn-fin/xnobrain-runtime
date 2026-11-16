@@ -270,7 +270,7 @@ class GatewayGroupApprovalTests(unittest.IsolatedAsyncioTestCase):
         for source in (
             _source(platform="zalo", chat_type="dm"),
             _source(platform="zalo_bot", chat_type="dm"),
-            _source(platform="telegram", chat_type="group"),
+            _source(platform="discord", chat_type="group"),
         ):
             with self.subTest(source=source):
                 self.assertEqual(runner._is_user_authorized(source), "original")

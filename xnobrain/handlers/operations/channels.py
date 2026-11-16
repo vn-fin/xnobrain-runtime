@@ -53,6 +53,21 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
             "channel logged out successfully",
             200,
         ),
+        "channels_telegram_update": (
+            lambda: service.set_telegram_enabled(path["agent_id"], bool(body["enabled"]), trusted),
+            "channel updated successfully",
+            200,
+        ),
+        "channels_telegram_patch": (
+            lambda: service.patch_telegram(path["agent_id"], body, trusted),
+            "channel updated successfully",
+            200,
+        ),
+        "channels_telegram_logout": (
+            lambda: service.logout_telegram(path["agent_id"], trusted),
+            "channel logged out successfully",
+            200,
+        ),
         "channels_pairings_list": (
             lambda: service.list_pairings(path["agent_id"], path["platform"], trusted),
             "channel pairings retrieved successfully",

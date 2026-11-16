@@ -383,7 +383,7 @@ class ChannelOwnerBindingTests(_ChannelCase):
                 subject="user-1",
                 tenant_id="personal-user-1",
                 agent_id="agent-1",
-                platform="telegram",
+                platform="discord",
             ),
             HostAuthority(
                 subject="someone-else",

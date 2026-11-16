@@ -1,6 +1,6 @@
 ---
 name: social-channels
-description: "Rules for every messaging channel (Zalo, Zalo Bot): use before sending, reacting, reading chat history or changing channel settings."
+description: "Rules for every messaging channel (Zalo, Zalo Bot, Telegram): use before sending, reacting, reading chat history or changing channel settings."
 ---
 
 # Social Channels

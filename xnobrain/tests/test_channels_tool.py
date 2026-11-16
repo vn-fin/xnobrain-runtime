@@ -50,7 +50,9 @@ class _FakeService:
         self.group_calls.append(recipient)
         return self.group_resolution
 
-    def resolve_bot_recipient(self, agent_id, recipient, thread_type="dm"):
+    def resolve_bot_recipient(
+        self, agent_id, recipient, thread_type="dm", platform="zalo_bot"
+    ):
         self.bot_calls.append((recipient, thread_type))
         return self.bot_resolution
 

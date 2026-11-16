@@ -14,12 +14,18 @@ from pydantic import (
     model_validator,
 )
 
-from ..integrations.channel_platforms import ChannelPlatformId, matches_id_pattern
+from ..integrations.channel_platforms import (
+    PLATFORMS,
+    ChannelPlatformId,
+    matches_id_pattern,
+)
 
 _IDENTITY = r"^[^\x00-\x1f/\\]{1,200}$"
 _ZALO_ID = r"^[0-9]{1,32}$"
 _ZALO_BOT_ID = r"^[A-Za-z0-9_-]{1,64}$"
 _ZALO_BOT_TOKEN = r"^[0-9]{1,20}:[A-Za-z0-9_-]{8,128}$"
+_TELEGRAM_ID = PLATFORMS["telegram"].id_pattern
+_TELEGRAM_USER_ID = r"^[0-9]{1,20}$"
 ChannelStatus = Literal[
     "disabled",
     "starting",
@@ -252,6 +258,53 @@ class ChannelZaloBotPatch(BaseModel):
             item = str(entry or "").strip()
             if not re.fullmatch(_ZALO_BOT_ID, item):
                 raise ValueError("allowed_users entries must be Zalo bot user IDs")
+            if item not in result:
+                result.append(item)
+        return result
+
+
+class ChannelTelegramUpdate(BaseModel):
+    """Enable or disable the Telegram channel for one agent."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
+
+
+class ChannelTelegramPatch(BaseModel):
+    """Partial Telegram access-policy and credential update for one agent.
+
+    ``bot_token`` is write-only. It is never serialized into a response or an
+    error payload; the validation handler redacts the submitted body for this
+    operation family.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    bot_token: str | None = Field(
+        default=None,
+        max_length=200,
+        pattern=_ZALO_BOT_TOKEN,
+        description="Write-only Telegram bot token from @BotFather (numeric_id:secret)",
+    )
+    allowed_users: list[str] | None = Field(
+        default=None,
+        max_length=500,
+        description="Telegram user IDs allowed to trigger the agent",
+    )
+    dm_policy: DmPolicy | None = None
+    home_channel: str | None = Field(default=None, max_length=21, pattern=_TELEGRAM_ID)
+
+    @field_validator("allowed_users")
+    @classmethod
+    def validate_allowed_users(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        result: list[str] = []
+        for entry in value:
+            item = str(entry or "").strip()
+            if not re.fullmatch(_TELEGRAM_USER_ID, item):
+                raise ValueError("allowed_users entries must be Telegram user IDs")
             if item not in result:
                 result.append(item)
         return result

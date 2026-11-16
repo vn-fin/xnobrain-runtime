@@ -56,6 +56,11 @@ _LOGGER = logging.getLogger(__name__)
 _ZALO_ID = re.compile(r"^[0-9]{1,32}$")
 _ZALO_BOT_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _ZALO_BOT_TOKEN = re.compile(r"^[0-9]{1,20}:[A-Za-z0-9_-]{8,128}$")
+_TELEGRAM_USER_ID = re.compile(r"^[0-9]{1,20}$")
+# Bot platforms store one exact chat id per DM or group and share the same
+# token/allowlist/home-channel settings; only the id shapes differ.
+_BOT_USER_ID_PATTERNS = {"zalo_bot": _ZALO_BOT_ID, "telegram": _TELEGRAM_USER_ID}
+_BOT_TOKEN_ENVS = {"zalo_bot": "ZALO_BOT_TOKEN", "telegram": "TELEGRAM_BOT_TOKEN"}
 _SAFE_IDENTITY = re.compile(r"^[^\x00-\x1f/\\]{1,200}$")
 _PAIRING_REQUEST_ID = re.compile(r"^[0-9a-fA-F]{16}$")
 _DM_POLICIES = {"disabled", "allowlist", "pairing"}
@@ -71,9 +76,13 @@ _GATEWAY_CONNECT_INSTRUCTION = (
     "XNOBrain web app and complete the connection form there. Do not send tokens, "
     "QR callback values or other credentials in Zalo."
 )
+_TELEGRAM_CONNECT_INSTRUCTION = (
+    "To finish connecting this channel, open this agent's conversation in the "
+    "XNOBrain web app and complete the connection form there. Do not send tokens "
+    "or other credentials in Telegram."
+)
 _QR_WAIT_SECONDS = 5.0
 _DEFAULT_MEDIA_MAX_MB = 10.0
-_BOT_TOKEN_ENV = "ZALO_BOT_TOKEN"
 # The plugin refreshes its per-profile state file every 30 seconds; a record
 # older than three missed heartbeats means the owning gateway stopped writing.
 _BOT_STATE_HEARTBEAT_SECONDS = 30.0
@@ -573,10 +582,25 @@ class ChannelsService:
             return _DEFAULT_MEDIA_MAX_MB
         return limit if limit >= 0 else _DEFAULT_MEDIA_MAX_MB
 
-    def _bot_approved_user(self, agent_id: str, chat_id: str) -> str | None:
+    @staticmethod
+    def _bot_token_env(platform: str) -> str:
+        try:
+            return _BOT_TOKEN_ENVS[platform]
+        except KeyError as error:
+            raise ServiceError(
+                "unsupported channel platform", status=422, code="invalid_platform"
+            ) from error
+
+    @staticmethod
+    def _bot_env_prefix(platform: str) -> str:
+        return str(platform).upper()
+
+    def _bot_approved_user(
+        self, agent_id: str, chat_id: str, platform: str = "zalo_bot"
+    ) -> str | None:
         """Return the approved pairing display name, or None when not paired."""
         try:
-            approved = self._pairing_store(agent_id).approved("zalo_bot")
+            approved = self._pairing_store(agent_id).approved(platform)
         except Exception:
             return None
         for entry in approved:
@@ -586,27 +610,32 @@ class ChannelsService:
                 return self._pairing_label(entry.get("user_name"))
         return None
 
-    def _bot_allowed_user(self, profile: Path, chat_id: str) -> bool:
+    def _bot_allowed_user(
+        self, profile: Path, chat_id: str, platform: str = "zalo_bot"
+    ) -> bool:
         env = self.repository.env(profile)
+        key = f"{self._bot_env_prefix(platform)}_ALLOWED_USERS"
         allowed = {
-            item.strip()
-            for item in str(env.get("ZALO_BOT_ALLOWED_USERS") or "").split(",")
-            if item.strip()
+            item.strip() for item in str(env.get(key) or "").split(",") if item.strip()
         }
         return chat_id in allowed
 
     def resolve_bot_recipient(
-        self, agent_id: str, recipient: Any, thread_type: str = "dm"
+        self,
+        agent_id: str,
+        recipient: Any,
+        thread_type: str = "dm",
+        platform: str = "zalo_bot",
     ) -> dict[str, Any]:
-        """Resolve an exact Zalo Bot chat id for one approved DM or group."""
+        """Resolve an exact bot chat id for one approved DM or group."""
         profile = self._profile(agent_id)
         chat_id = str(recipient or "").strip()
-        if not _ZALO_BOT_ID.fullmatch(chat_id):
+        if not matches_id_pattern(platform, chat_id):
             return {"status": "invalid", "thread_id": chat_id, "name": ""}
         if thread_type == "group":
-            if not self._group_is_approved(profile, "zalo_bot", chat_id):
+            if not self._group_is_approved(profile, platform, chat_id):
                 return {"status": "group_not_approved", "thread_id": chat_id, "name": ""}
-            _, record = self._group_state(profile, "zalo_bot")
+            _, record = self._group_state(profile, platform)
             entry = record["groups"].get(chat_id) or {}
             return {
                 "status": "ok",
@@ -616,8 +645,8 @@ class ChannelsService:
             }
         if thread_type != "dm":
             return {"status": "invalid", "thread_id": chat_id, "name": ""}
-        name = self._bot_approved_user(agent_id, chat_id)
-        if name is None and not self._bot_allowed_user(profile, chat_id):
+        name = self._bot_approved_user(agent_id, chat_id, platform)
+        if name is None and not self._bot_allowed_user(profile, chat_id, platform):
             return {"status": "not_found", "thread_id": chat_id, "name": ""}
         return {
             "status": "ok",
@@ -824,7 +853,7 @@ class ChannelsService:
         """Refuse turns unless the gateway enforced an allowlist or pairing."""
         config = self.repository.config(profile)
         extra = self._platform_extra(config, platform)
-        prefix = "ZALO" if platform == "zalo" else "ZALO_BOT"
+        prefix = self._bot_env_prefix(platform)
         if self._allows_all_users(extra, self.repository.env(profile), prefix):
             raise ServiceError(
                 "allow-all channel access is not permitted for agent turns",
@@ -841,7 +870,8 @@ class ChannelsService:
 
     @staticmethod
     def _turn_label(platform: str) -> str:
-        return "Zalo" if platform == "zalo" else "Zalo Bot"
+        entry = get_platform(platform)
+        return entry.label if entry is not None else "Channel"
 
     def _thread_conversation(
         self,
@@ -1043,7 +1073,11 @@ class ChannelsService:
         usage = raw_usage if isinstance(raw_usage, Mapping) else {}
         reply = str(record.get("output") or "")
         if connect_requested:
-            reply = _GATEWAY_CONNECT_INSTRUCTION
+            reply = (
+                _TELEGRAM_CONNECT_INSTRUCTION
+                if request["platform"] == "telegram"
+                else _GATEWAY_CONNECT_INSTRUCTION
+            )
         return {
             "conversation_id": conversation_id,
             "run_id": run_id,
@@ -1069,7 +1103,7 @@ class ChannelsService:
     def _pairing_policy(self, config: Mapping[str, Any], platform: str) -> str:
         if platform == "zalo":
             return self._dm_policy(config)
-        return self._bot_dm_policy(config)
+        return self._bot_dm_policy(config, platform)
 
     def _require_pairing_policy(self, profile: Path, platform: str) -> None:
         config = self.repository.config(profile)
@@ -1291,7 +1325,11 @@ class ChannelsService:
         self._require_feature()
         platform = self._pairing_platform(platform)
         user_id = str(user_id or "").strip()
-        pattern = _ZALO_ID if platform == "zalo" else _ZALO_BOT_ID
+        pattern = (
+            _ZALO_ID
+            if platform == "zalo"
+            else _BOT_USER_ID_PATTERNS.get(platform, _ZALO_BOT_ID)
+        )
         if not pattern.fullmatch(user_id):
             raise ServiceError("channel user ID is invalid", status=422, code="invalid_user_id")
         profile = self._profile(agent_id)
@@ -1315,9 +1353,9 @@ class ChannelsService:
         return entry.id
 
     @staticmethod
-    def _group_id(value: Any) -> str:
+    def _group_id(value: Any, platform: str = "zalo_bot") -> str:
         group_id = str(value or "").strip()
-        if not _ZALO_BOT_ID.fullmatch(group_id):
+        if not matches_id_pattern(platform, group_id):
             raise ServiceError(
                 "channel group ID is invalid", status=422, code="invalid_group_id"
             )
@@ -1457,7 +1495,7 @@ class ChannelsService:
         agent_id = str(body.get("agent_id") or "")
         if not _SAFE_IDENTITY.fullmatch(agent_id):
             raise ServiceError("channel turn identifiers are invalid", status=422)
-        group_id = self._group_id(body.get("group_id"))
+        group_id = self._group_id(body.get("group_id"), platform)
         profile = self._profile(agent_id)
         status = self._record_group_seen(
             profile,
@@ -1481,7 +1519,7 @@ class ChannelsService:
         pending: list[dict[str, Any]] = []
         approved: list[dict[str, Any]] = []
         for group_id, entry in record["groups"].items():
-            if not _ZALO_BOT_ID.fullmatch(str(group_id)):
+            if not matches_id_pattern(platform, group_id):
                 continue
             status = str(entry.get("status") or "")
             if status == "pending":
@@ -1519,7 +1557,7 @@ class ChannelsService:
     ) -> dict[str, Any]:
         self._require_feature()
         platform = self._group_platform(platform)
-        group_id = self._group_id(group_id)
+        group_id = self._group_id(group_id, platform)
         profile = self._profile(agent_id)
         self._require_pairing_owner(agent_id, profile, trusted)
         self._require_enabled_channel(profile, platform)
@@ -1546,7 +1584,7 @@ class ChannelsService:
     ) -> dict[str, Any]:
         self._require_feature()
         platform = self._group_platform(platform)
-        group_id = self._group_id(group_id)
+        group_id = self._group_id(group_id, platform)
         profile = self._profile(agent_id)
         self._require_pairing_owner(agent_id, profile, trusted)
         self._require_enabled_channel(profile, platform)
@@ -1571,7 +1609,7 @@ class ChannelsService:
     ) -> dict[str, Any]:
         self._require_feature()
         platform = self._group_platform(platform)
-        group_id = self._group_id(group_id)
+        group_id = self._group_id(group_id, platform)
         profile = self._profile(agent_id)
         self._require_pairing_owner(agent_id, profile, trusted)
         self._require_enabled_channel(profile, platform)
@@ -1637,8 +1675,12 @@ class ChannelsService:
         return value if value in _DM_POLICIES else "disabled"
 
     @classmethod
-    def _bot_dm_policy(cls, config: Mapping[str, Any]) -> str:
-        value = str(cls._platform_extra(config, "zalo_bot").get("dm_policy") or "").strip().lower()
+    def _bot_dm_policy(cls, config: Mapping[str, Any], platform: str = "zalo_bot") -> str:
+        value = (
+            str(cls._platform_extra(config, platform).get("dm_policy") or "")
+            .strip()
+            .lower()
+        )
         return value if value in _DM_POLICIES else "disabled"
 
     @staticmethod
@@ -1696,19 +1738,22 @@ class ChannelsService:
         return result
 
     @staticmethod
-    def _normalize_bot_ids(values: Any) -> list[str]:
+    def _normalize_channel_ids(values: Any, platform: str) -> list[str]:
+        entry = get_platform(platform)
+        label = entry.label if entry is not None else "channel"
         if not isinstance(values, (list, tuple)):
             raise ServiceError(
-                "allowed_users must be a list of Zalo bot user IDs",
+                f"allowed_users must be a list of {label} user IDs",
                 status=422,
                 code="invalid_allowed_users",
             )
+        pattern = _BOT_USER_ID_PATTERNS.get(platform, _ZALO_BOT_ID)
         result: list[str] = []
         for value in values:
             item = str(value or "").strip()
-            if not _ZALO_BOT_ID.fullmatch(item):
+            if not pattern.fullmatch(item):
                 raise ServiceError(
-                    "allowed_users must be Zalo bot user IDs",
+                    f"allowed_users must be {label} user IDs",
                     status=422,
                     code="invalid_allowed_users",
                 )
@@ -1716,12 +1761,17 @@ class ChannelsService:
                 result.append(item)
         return result
 
-    def _read_bot_token(self, profile: Path) -> str | None:
+    def _read_bot_token(self, profile: Path, platform: str = "zalo_bot") -> str | None:
         """Temporary profile-local token storage; a Control proxy replaces it."""
-        value = str(self.repository.env(profile).get(_BOT_TOKEN_ENV) or "").strip()
+        value = (
+            str(self.repository.env(profile).get(self._bot_token_env(platform)) or "")
+            .strip()
+        )
         return value or None
 
-    def _bot_token_in_use(self, token: str, profile: Path) -> bool:
+    def _bot_token_in_use(
+        self, token: str, profile: Path, platform: str = "zalo_bot"
+    ) -> bool:
         """Return whether another profile in this workspace polls this token."""
         root = self._root_profile()
         target = Path(profile).resolve()
@@ -1742,16 +1792,18 @@ class ChannelsService:
                 candidates.append(entry)
         for candidate in candidates:
             try:
-                stored = self._read_bot_token(candidate)
+                stored = self._read_bot_token(candidate, platform)
             except Exception:
                 continue
             if stored and hmac.compare_digest(stored, token):
                 return True
         return False
 
-    def _write_bot_token(self, profile: Path, token: str | None) -> None:
+    def _write_bot_token(
+        self, profile: Path, token: str | None, platform: str = "zalo_bot"
+    ) -> None:
         """Temporary profile-local token storage; a Control proxy replaces it."""
-        self.repository.update_env(profile, {_BOT_TOKEN_ENV: token})
+        self.repository.update_env(profile, {self._bot_token_env(platform): token})
 
     def _snapshot_config(self, agent_id: str, profile: Path) -> None:
         path = profile / "config.yaml"
@@ -1901,7 +1953,7 @@ class ChannelsService:
             "token_set": False,
         }
 
-    def _bot_runtime_connected(self, profile: Path) -> bool:
+    def _bot_runtime_connected(self, profile: Path, platform: str = "zalo_bot") -> bool:
         """Read the owning plugin's per-profile connected heartbeat.
 
         ``gateway_state.json`` keys platforms by name only, so it cannot say
@@ -1910,6 +1962,9 @@ class ChannelsService:
         ``connected`` record so a dead gateway (stale heartbeat) reports as
         configured rather than connected.
         """
+        if platform != "zalo_bot":
+            # Only the bundled Zalo Bot plugin writes this profile state file.
+            return False
         record = self.repository.zalo_bot_state(profile)
         if not record or record.get("state") != "connected":
             return False
@@ -1923,16 +1978,18 @@ class ChannelsService:
         profile: Path,
         config: Mapping[str, Any],
         gateway: Mapping[str, Any],
+        platform: str = "zalo_bot",
     ) -> dict[str, Any]:
-        enabled = bool(self._platform_config(config, "zalo_bot").get("enabled"))
+        enabled = bool(self._platform_config(config, platform).get("enabled"))
         env = self.repository.env(profile)
-        token_set = self._read_bot_token(profile) is not None
+        prefix = self._bot_env_prefix(platform)
+        token_set = self._read_bot_token(profile, platform) is not None
         allowed_users = [
             item.strip()
-            for item in str(env.get("ZALO_BOT_ALLOWED_USERS") or "").split(",")
+            for item in str(env.get(f"{prefix}_ALLOWED_USERS") or "").split(",")
             if item.strip()
         ]
-        home_channel = str(env.get("ZALO_BOT_HOME_CHANNEL") or "").strip() or None
+        home_channel = str(env.get(f"{prefix}_HOME_CHANNEL") or "").strip() or None
         if not enabled:
             status = "disabled"
         elif not token_set:
@@ -1941,21 +1998,23 @@ class ChannelsService:
             status = "pending_restart"
         elif not gateway.get("running"):
             status = "gateway_down"
-        elif self._bot_runtime_connected(profile):
+        elif self._bot_runtime_connected(profile, platform):
             status = "connected"
         else:
             status = "configured"
         return {
-            "platform": "zalo_bot",
+            "platform": platform,
             "enabled": enabled,
             "status": status,
             "own_id": None,
             "allowed_users": allowed_users,
-            "dm_policy": self._bot_dm_policy(config),
+            "dm_policy": self._bot_dm_policy(config, platform),
             "home_channel": home_channel,
-            "history_retention_days": self._retention_days_from_config(config, "zalo_bot"),
+            "history_retention_days": self._retention_days_from_config(config, platform),
             "token_set": token_set,
-            "plugin_artifact": builtin_platform_metadata("zalo_bot"),
+            "plugin_artifact": (
+                builtin_platform_metadata(platform) if platform == "zalo_bot" else None
+            ),
         }
 
     def list_channels(self, agent_id: str) -> dict[str, Any]:
@@ -1963,11 +2022,14 @@ class ChannelsService:
         profile = self._profile(agent_id)
         config = self.repository.config(profile)
         gateway = self._gateway_state()
+        states = [self._channel_state(profile, config, gateway)]
+        states.extend(
+            self._bot_channel_state(profile, config, gateway, platform)
+            for platform in platform_ids()
+            if platform != "zalo"
+        )
         return {
-            "channels": [
-                self._channel_state(profile, config, gateway),
-                self._bot_channel_state(profile, config, gateway),
-            ],
+            "channels": states,
             "gateway": gateway,
         }
 
@@ -2272,12 +2334,22 @@ class ChannelsService:
     def set_zalo_bot_enabled(
         self, agent_id: str, enabled: bool, trusted: Any = None
     ) -> dict[str, Any]:
+        return self._set_bot_enabled(agent_id, enabled, trusted, "zalo_bot")
+
+    def set_telegram_enabled(
+        self, agent_id: str, enabled: bool, trusted: Any = None
+    ) -> dict[str, Any]:
+        return self._set_bot_enabled(agent_id, enabled, trusted, "telegram")
+
+    def _set_bot_enabled(
+        self, agent_id: str, enabled: bool, trusted: Any, platform: str
+    ) -> dict[str, Any]:
         self._require_feature()
         profile = self._profile(agent_id)
         binding = self._check_channel_owner(agent_id, profile, trusted) if enabled else None
         config = self.repository.config(profile)
         self._snapshot_config(agent_id, profile)
-        bot = self._ensure_platform_config(config, "zalo_bot")
+        bot = self._ensure_platform_config(config, platform)
         bot["enabled"] = bool(enabled)
         if enabled:
             extra = bot.get("extra")
@@ -2292,21 +2364,39 @@ class ChannelsService:
             self._delete_owner_when_no_channel_enabled(profile, config)
         self._sync_root_multiplex()
         gateway = self._restart_gateway()
-        return self._bot_channel_state(profile, config, gateway)
+        return self._bot_channel_state(profile, config, gateway, platform)
 
     def patch_zalo_bot(
         self, agent_id: str, body: Mapping[str, Any], trusted: Any = None
+    ) -> dict[str, Any]:
+        return self._patch_bot(agent_id, body, trusted, "zalo_bot")
+
+    def patch_telegram(
+        self, agent_id: str, body: Mapping[str, Any], trusted: Any = None
+    ) -> dict[str, Any]:
+        return self._patch_bot(agent_id, body, trusted, "telegram")
+
+    def _patch_bot(
+        self,
+        agent_id: str,
+        body: Mapping[str, Any],
+        trusted: Any,
+        platform: str,
     ) -> dict[str, Any]:
         self._require_feature()
         profile = self._profile(agent_id)
         binding = self._check_channel_owner(agent_id, profile, trusted)
         config = self.repository.config(profile)
         env_updates: dict[str, str | None] = {}
+        prefix = self._bot_env_prefix(platform)
+        entry = get_platform(platform)
+        label = entry.label if entry is not None else "channel"
+        token_env = self._bot_token_env(platform)
         config_changed = False
         if "bot_token" in body:
             value = body.get("bot_token")
             if value is None:
-                env_updates[_BOT_TOKEN_ENV] = None
+                env_updates[token_env] = None
             else:
                 token = str(value).strip()
                 if not _ZALO_BOT_TOKEN.fullmatch(token):
@@ -2316,30 +2406,34 @@ class ChannelsService:
                         status=422,
                         code="invalid_bot_token",
                     )
-                if self._bot_token_in_use(token, profile):
+                if self._bot_token_in_use(token, profile, platform):
                     raise ServiceError(
                         "bot_token is already used by another agent",
                         status=409,
                         code="bot_token_in_use",
                     )
-                env_updates[_BOT_TOKEN_ENV] = token
+                env_updates[token_env] = token
         if "allowed_users" in body:
             values = body.get("allowed_users")
-            users = [] if values is None else self._normalize_bot_ids(values)
-            env_updates["ZALO_BOT_ALLOWED_USERS"] = ",".join(users) if users else None
+            users = (
+                []
+                if values is None
+                else self._normalize_channel_ids(values, platform)
+            )
+            env_updates[f"{prefix}_ALLOWED_USERS"] = ",".join(users) if users else None
         if "home_channel" in body:
             value = body.get("home_channel")
             if value is None:
-                env_updates["ZALO_BOT_HOME_CHANNEL"] = None
+                env_updates[f"{prefix}_HOME_CHANNEL"] = None
             else:
                 item = str(value).strip()
-                if not _ZALO_BOT_ID.fullmatch(item):
+                if not matches_id_pattern(platform, item):
                     raise ServiceError(
-                        "home_channel must be a Zalo bot user ID",
+                        f"home_channel must be a {label} chat ID",
                         status=422,
                         code="invalid_home_channel",
                     )
-                env_updates["ZALO_BOT_HOME_CHANNEL"] = item
+                env_updates[f"{prefix}_HOME_CHANNEL"] = item
         if "dm_policy" in body:
             policy = str(body.get("dm_policy") or "").strip().lower()
             if policy not in _DM_POLICIES:
@@ -2348,7 +2442,7 @@ class ChannelsService:
                     status=422,
                     code="invalid_dm_policy",
                 )
-            bot = self._ensure_platform_config(config, "zalo_bot")
+            bot = self._ensure_platform_config(config, platform)
             extra = bot.get("extra")
             if not isinstance(extra, dict):
                 extra = {}
@@ -2357,7 +2451,7 @@ class ChannelsService:
             config_changed = True
         if "history_retention_days" in body:
             days = self._retention_days_value(body.get("history_retention_days"))
-            bot = self._ensure_platform_config(config, "zalo_bot")
+            bot = self._ensure_platform_config(config, platform)
             extra = bot.get("extra")
             if not isinstance(extra, dict):
                 extra = {}
@@ -2366,7 +2460,9 @@ class ChannelsService:
             config_changed = True
         if not config_changed and not env_updates:
             self._write_channel_owner(profile, binding)
-            return self._bot_channel_state(profile, config, self._gateway_state())
+            return self._bot_channel_state(
+                profile, config, self._gateway_state(), platform
+            )
         self._snapshot_config(agent_id, profile)
         if config_changed:
             self.repository.write_config(profile, config)
@@ -2374,19 +2470,28 @@ class ChannelsService:
             self.repository.update_env(profile, env_updates)
         self._write_channel_owner(profile, binding)
         gateway = self._restart_gateway()
-        return self._bot_channel_state(profile, config, gateway)
+        return self._bot_channel_state(profile, config, gateway, platform)
 
     def logout_zalo_bot(self, agent_id: str, trusted: Any = None) -> dict[str, Any]:
+        return self._logout_bot(agent_id, trusted, "zalo_bot")
+
+    def logout_telegram(self, agent_id: str, trusted: Any = None) -> dict[str, Any]:
+        return self._logout_bot(agent_id, trusted, "telegram")
+
+    def _logout_bot(
+        self, agent_id: str, trusted: Any, platform: str
+    ) -> dict[str, Any]:
         self._require_feature()
         profile = self._profile(agent_id)
         config = self.repository.config(profile)
         self._snapshot_config(agent_id, profile)
-        self._ensure_platform_config(config, "zalo_bot")["enabled"] = False
+        self._ensure_platform_config(config, platform)["enabled"] = False
         self.repository.write_config(profile, config)
-        self._write_bot_token(profile, None)
-        # Disconnecting the channel drops every stored conversation.
-        self._delete_bot_history(profile)
+        self._write_bot_token(profile, None, platform)
+        if platform == "zalo_bot":
+            # Disconnecting the channel drops every stored conversation.
+            self._delete_bot_history(profile)
         self._delete_owner_when_no_channel_enabled(profile, config)
         self._sync_root_multiplex()
         gateway = self._restart_gateway()
-        return self._bot_channel_state(profile, config, gateway)
+        return self._bot_channel_state(profile, config, gateway, platform)

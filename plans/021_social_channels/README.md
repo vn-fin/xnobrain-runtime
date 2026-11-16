@@ -143,6 +143,15 @@ platform id present in one and missing in the other is a contract bug. When
 the next platform lands, add its descriptor, logo, `channels.<id>.*`
 translations and tests in the UI repository.
 
+## Telegram (2026-11-16)
+
+Parity-only second platform, following the checklist: the R1 descriptor, the
+token channel API, connect card, delegation/group approval, the standalone
+sender path, and the `platforms/telegram.md` skill section are done, with
+focused tests. Checklist item 8 (live test with a dev account, recorded in
+`plans/VERIFICATION.md`) is pending. No Telegram tools module, cron delivery
+target, upstream adapter change, or UI work in this repository.
+
 ## Checklist: adding a platform
 
 1. Descriptor in `PLATFORMS` (R1) and in UI `providers.ts` (R5).

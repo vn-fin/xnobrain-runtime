@@ -58,6 +58,23 @@ PLATFORMS: dict[str, ChannelPlatform] = {
         skill_section="zalo_bot.md",
         token_operation_prefix="channels_zalo_bot_",
     ),
+    "telegram": ChannelPlatform(
+        id="telegram",
+        label="Telegram",
+        auth="token",
+        connect_auth_kind="api_key",
+        # Telegram user ids are positive; group and supergroup chat ids are
+        # negative (for example -1001234567890).
+        id_pattern=r"^-?[0-9]{1,20}$",
+        groups=True,
+        # The platform plugin registers max_message_length=4096.
+        max_message_length=4096,
+        # Hermes already ships the Telegram adapter and its tools; Runtime adds
+        # no Telegram-specific tool module.
+        tools_module=None,
+        skill_section="telegram.md",
+        token_operation_prefix="channels_telegram_",
+    ),
 }
 
 # Pydantic Literal type covering exactly the registered platform ids.

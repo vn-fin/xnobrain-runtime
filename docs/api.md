@@ -687,7 +687,7 @@ selects a resource and never authorizes access. A disabled runtime answers `404`
 | `GET /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo/qr` | — | `{status, image_base64}` |
 | `POST /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo/logout` | — | `ChannelState` |
 
-`ChannelState` is `{platform: "zalo"|"zalo_bot", enabled, status, own_id,
+`ChannelState` is `{platform: "zalo"|"zalo_bot"|"telegram", enabled, status, own_id,
 allowed_users, dm_policy, home_channel, history_retention_days, token_set}`.
 `history_retention_days` is the stored channel history retention in days
 (integer `1..365`, default `30` when absent). For the personal channel
@@ -771,13 +771,60 @@ Writes atomically update `platforms.zalo_bot.enabled`,
 `platforms.zalo_bot.extra.history_retention_days`, and the `.env` keys
 `ZALO_BOT_ALLOWED_USERS` and `ZALO_BOT_HOME_CHANNEL`, snapshot `config.yaml`
 first, request the same `SIGUSR1` gateway restart, and are idempotent. A
-profile is included in `gateway.multiplex_profile_allowlist` when either
-`platforms.zalo.enabled` or `platforms.zalo_bot.enabled` is true; the root
+profile is included in `gateway.multiplex_profile_allowlist` when any
+registered channel platform is enabled; the root
 profile and `default` are never listed.
+
+### Telegram channel
+
+The Hermes `telegram` platform plugin is exposed through the same `Channels`
+tag, feature gate, and Control-proxied identity as the other channels.
+`GET /agents/{agent_id}/channels` returns `zalo`, `zalo_bot`, and `telegram`
+entries in that order.
+
+| Method and path | Body | Result |
+|---|---|---|
+| `PUT /xnobrain/api/runtime/v1/agents/{agent_id}/channels/telegram` | `{enabled: bool}` | `ChannelState` |
+| `PATCH /xnobrain/api/runtime/v1/agents/{agent_id}/channels/telegram` | `{bot_token?: str\|null, allowed_users?: [id]\|null, dm_policy?: "disabled"\|"allowlist"\|"pairing", home_channel?: id\|null}` | `ChannelState` |
+| `POST /xnobrain/api/runtime/v1/agents/{agent_id}/channels/telegram/logout` | — | `ChannelState` |
+
+For `telegram`, `ChannelState` includes `token_set` (never the token itself).
+`status` is one of `disabled`, `needs_token` (enabled without a token),
+`pending_restart`, `gateway_down`, or `configured`. There is no bridge, QR
+flow, or Runtime network probe; the plugin verifies the token when the gateway
+connects, and Runtime reports `configured` while the gateway is running because
+the upstream adapter exposes no per-profile state file like `zalo_bot` writes.
+
+`bot_token` is write-only and must match `^[0-9]{1,20}:[A-Za-z0-9_-]{8,128}$`;
+the route family returns a generic `422` that never echoes the submitted
+value. Until a Control proxy owns the credential, writes store the token in the
+profile `.env` as `TELEGRAM_BOT_TOKEN` (mode `0600`); `null` removes it, and
+logout removes it and disables the channel. A token already stored by another
+agent profile in the workspace returns `409 bot_token_in_use` without echoing
+it.
+
+`allowed_users` entries are Telegram user IDs matching `^[0-9]{1,20}$`.
+`home_channel` accepts a positive user id or a negative group/supergroup chat
+id, matching `^-?[0-9]{1,20}$`. `dm_policy: open` is rejected; only `disabled`,
+`allowlist`, and `pairing` are accepted.
+
+Writes snapshot `config.yaml` first, then atomically update
+`platforms.telegram.enabled` and `platforms.telegram.extra.dm_policy`, and the
+`.env` keys `TELEGRAM_ALLOWED_USERS` and `TELEGRAM_HOME_CHANNEL`, request the
+same `SIGUSR1` gateway restart, and are idempotent. A profile is included in
+`gateway.multiplex_profile_allowlist` when any registered channel platform is
+enabled.
+
+Telegram turns are delegated, group-approved, paired, and allowlisted like the
+other group platforms. There is no Runtime Telegram tools module: the channel
+uses `send_channel_message` through the plugin's registered standalone sender,
+and replies carrying `MEDIA:<path>` are delivered as native media by the Hermes
+gateway. Scheduled delivery targets remain Zalo-only.
 
 ### Channel pairing management
 
-Pairing management is generic for `zalo` and `zalo_bot`, gated by
+Pairing management is generic for every bot-backed platform (`zalo`,
+`zalo_bot`, `telegram`), gated by
 `FT_ENABLE_AGENT_CHANNELS`, and available only for an enabled channel whose
 persisted owner binding matches the verified same-agent Personal principal.
 It reuses the pinned Hermes `gateway.pairing.PairingStore`; Runtime has no
@@ -821,7 +868,8 @@ vendor source is edited.
 
 ### Channel group approval and daily limits
 
-Group approval is available for both `zalo` and `zalo_bot` and is gated by
+Group approval is available for every group platform (`zalo`, `zalo_bot`,
+`telegram`) and is gated by
 the same feature flag, enabled-channel check, and verified same-agent Personal
 owner binding as pairing management. Group approval is always required: a
 sender who is DM-paired with this agent still cannot chat in an unapproved
@@ -839,8 +887,9 @@ platform values return `422 invalid_platform`.
 `group_id` uses `^[A-Za-z0-9_-]{1,64}$`; personal `zalo` group IDs are the
 numeric Zalo group IDs, which match that pattern. Group and sender names are
 collapsed to one line and truncated to 100 characters before they are stored
-or returned. `platform` values other than `zalo` and `zalo_bot` return
-`422 invalid_platform`. `approve` promotes an existing pending entry and
+or returned. Any platform that is not registered in
+`channel_platforms.PLATFORMS` returns `422 invalid_platform`. `approve`
+promotes an existing pending entry and
 returns `404 channel_group_not_found` when the group is not pending; `deny`
 removes only the pending entry with the same missing error; `revoke` removes
 an approved group and is idempotent, returning `status: "revoked"` or
@@ -882,7 +931,7 @@ the platform.
 
 | Tool | Action | Confirmation |
 |---|---|---|
-| `send_channel_message` | text to `zalo` (DM or approved group, optional quote and mentions) or `zalo_bot` | in chat, before every send |
+| `send_channel_message` | text to `zalo` (DM or approved group, optional quote and mentions), `zalo_bot`, or `telegram` | in chat, before every send |
 | `zalo_status`, `zalo_me` | bridge status / own profile | none |
 | `zalo_list_friends`, `zalo_list_groups` | friend and group listings | none |
 | `zalo_list_conversations` | readable DM and approved group conversations | none |
@@ -1030,9 +1079,11 @@ attachments, or streamed UI metadata. It requires the same
 ingestion and is gated by `FT_ENABLE_AGENT_CHANNELS`.
 
 The body is
-`{platform: "zalo"|"zalo_bot", agent_id, thread_id, thread_type: "dm"|"group", sender_id, sender_name, text, message_id, ts}`.
+`{platform: "zalo"|"zalo_bot"|"telegram", agent_id, thread_id, thread_type: "dm"|"group", sender_id, sender_name, text, message_id, ts}`.
 `zalo` thread and sender IDs are numeric (`^[0-9]{1,32}$`); `zalo_bot` IDs use
-`^[A-Za-z0-9_-]{1,64}$`. The endpoint validates that the agent profile exists,
+`^[A-Za-z0-9_-]{1,64}$`; `telegram` user ids are positive and group chat ids
+are negative, both matching `^-?[0-9]{1,20}$`. The endpoint validates that the
+agent profile exists,
 that the selected platform is enabled (`403 channel_disabled`), that a matching
 persisted owner binding exists (`403 channel_owner_unavailable`), and refuses
 with `403 channel_dm_policy_unsafe` unless the profile's
@@ -1057,7 +1108,8 @@ of starting a second turn. A different message while the thread's run is
 active returns `409 channel_turn_running`; a reused message ID with different
 input returns `409 channel_turn_conflict`.
 
-For `zalo` or `zalo_bot` with `thread_type: "group"`, the group must already be
+For any registered group platform (`zalo`, `zalo_bot`, `telegram`) with
+`thread_type: "group"`, the group must already be
 approved for this agent; otherwise the mention is recorded as pending and the
 turn is refused with `403 channel_group_not_approved`. Approval is stored per
 platform, so a group ID approved for `zalo_bot` does not authorize the same ID
@@ -1079,12 +1131,13 @@ not part of the gateway contract.
 
 #### Owner binding and channel MCP grants
 
-Enabling or patching `zalo` or `zalo_bot` through a Control-proxied request that
-carries a verified principal writes `<profile>/.xnobrain/channels/owner.json`
+Enabling or patching `zalo`, `zalo_bot`, or `telegram` through a
+Control-proxied request that carries a verified principal writes
+`<profile>/.xnobrain/channels/owner.json`
 (mode `0600`, atomic, never through a symlink) with only
 `{user_id, tenant_id, organization_id, agent_id, bound_at}`. Owner fields in a
-request body are never read. The file is shared by both channels and is removed
-only when neither `zalo` nor `zalo_bot` remains enabled. A verified principal
+request body are never read. The file is shared by every channel and is removed
+only when no registered platform remains enabled. A verified principal
 that conflicts with the durable
 `.community-profile-owner.json` marker, or with an existing binding for another
 user, is refused (`403 permission_denied` or `403 channel_owner_mismatch`).

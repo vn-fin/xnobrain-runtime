@@ -43,7 +43,7 @@ _SKILL_DIR = (
     / "platforms"
 )
 _VALID_SAMPLES = ("123456789", "chat_123", "user-1", "abc123")
-_UNSUPPORTED_ID = "telegram"
+_UNSUPPORTED_ID = "discord"
 
 
 def _sample_id(entry) -> str:
@@ -93,7 +93,10 @@ class ChannelPlatformRegistryTests(unittest.TestCase):
     def test_every_platform_tools_module_imports_and_installs(self):
         for entry in PLATFORMS.values():
             with self.subTest(platform=entry.id):
-                self.assertTrue(entry.tools_module)
+                if entry.tools_module is None:
+                    # Parity-only platforms reuse the Hermes adapter and add no
+                    # Runtime tool module.
+                    continue
                 module = importlib.import_module(entry.tools_module)
                 self.assertTrue(callable(getattr(module, "install_tools", None)))
 

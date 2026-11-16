@@ -240,7 +240,7 @@ class IntegrationConnectToolTests(unittest.TestCase):
                 "catalog_id": "notion",
             },
             {"kind": "channel", "platform": "zalo", "api_key": "secret"},
-            {"kind": "channel", "platform": "telegram"},
+            {"kind": "channel", "platform": "discord"},
             {"kind": "channel"},
         ):
             with self.subTest(args=args):
