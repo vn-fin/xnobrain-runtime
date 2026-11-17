@@ -17,6 +17,38 @@ ORG = "org_aaaaaaaa11111111"
 
 
 class OrganizationFundingTests(unittest.IsolatedAsyncioTestCase):
+    def test_delegated_token_is_conversation_local_and_never_in_metadata(self):
+        organization_funding.register(
+            "conv-org",
+            "organization",
+            "cc/organization-model",
+            router_token="xno-org-run.synthetic",
+        )
+        with patch.dict(
+            os.environ,
+            {
+                "RUNTIME_LLM_API_KEY": "personal-key",
+                "RUNTIME_LLM_API_KEY_FILE": "/missing/personal/key",
+            },
+            clear=True,
+        ):
+            self.assertEqual(
+                accounting_binding("agent", ORG, "conv-org")["user_key"],
+                "xno-org-run.synthetic",
+            )
+        self.assertNotIn("router_token", organization_funding.funding_for("conv-org"))
+        with patch.dict(os.environ, {"RUNTIME_LLM_API_KEY": "personal-key"}, clear=True):
+            self.assertEqual(accounting_binding("agent")["user_key"], "personal-key")
+            organization_funding.release("conv-org")
+            with self.assertRaises(AccountingUnavailable):
+                accounting_binding("agent", ORG, "conv-org")
+
+    def test_owner_funding_cannot_install_an_organization_token(self):
+        with self.assertRaises(ValueError):
+            organization_funding.register(
+                "conv-owner", "owner", "cc/model", router_token="xno-org-run.synthetic"
+            )
+
     def tearDown(self):
         for conversation in ("conv-org", "conv-owner"):
             organization_funding.release(conversation)

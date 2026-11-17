@@ -1,0 +1,9 @@
+README.md
+LICENSE
+plugin.yaml
+__init__.py
+package-files.txt
+skills/sapo/SKILL.md
+skills/sapo/scripts/sapo.py
+skills/sapo/references/setup.md
+skills/sapo/references/api.md

@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+from ..integrations.bundled_plugins import PROVIDERS
+
 CATALOG_PATH = Path(__file__).resolve().parents[1] / "assets" / "plugin_catalog.json"
 CATALOG_IDS = (
     "aave",
@@ -183,7 +185,22 @@ def _validate_entry(entry: dict[str, Any]) -> None:
         _validate_public_https_url(entry.get(link_name), entry_id, link_name)
     # The UI loads this image directly from the provider, so it gets the same
     # public-HTTPS rule as the other provider links.
-    _validate_public_https_url(entry.get("iconUrl"), entry_id, "icon")
+    if entry.get("kind") != "native" or entry.get("iconUrl") is not None:
+        _validate_public_https_url(entry.get("iconUrl"), entry_id, "icon")
+
+    if entry.get("kind") == "native":
+        if (
+            entry_id not in PROVIDERS
+            or entry.get("package") != entry_id
+            or entry.get("publisher") != "XNOBrain"
+            or entry.get("publisher_kind") != "community"
+            or entry.get("installability") != "installable"
+            or entry.get("reason_code") != "compatible"
+            or entry.get("provides_skills") != [entry_id]
+            or "mcp" in entry
+        ):
+            raise ValueError(f"{entry_id}: native package declaration is invalid")
+        return
 
     mcp = entry.get("mcp")
     if not isinstance(mcp, dict) or mcp.get("transport") not in {"http", "stdio"}:

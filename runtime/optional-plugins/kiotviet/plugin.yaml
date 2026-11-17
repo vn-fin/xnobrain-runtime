@@ -1,0 +1,9 @@
+name: kiotviet
+version: 0.3.0
+description: Manage KiotViet retail data through a managed connection.
+author: XNOBrain
+kind: standalone
+requires_env: []
+provides_tools: [kiotviet_read, kiotviet_write]
+provides_hooks: []
+provides_skills: [kiotviet]

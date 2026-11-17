@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import tempfile
 import unittest
@@ -10,6 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from xnobrain.integrations import extension_engine, extension_policy
+from xnobrain.integrations.hermes_support import AgentAPIError
 from xnobrain.repositories import FileRepository
 from xnobrain.services.base import ServiceError
 from xnobrain.services.extensions import ExtensionsService
@@ -44,7 +46,9 @@ class ExtensionServiceTests(unittest.TestCase):
 
         self.assertEqual(catalog["engine_capabilities"], {"mcp_profile_isolation": False})
         candidates = [
-            entry for entry in catalog["entries"] if entry["installability"] == "installable"
+            entry
+            for entry in catalog["entries"]
+            if entry["installability"] == "installable" and entry.get("kind") != "native"
         ]
         self.assertTrue(candidates)
         self.assertTrue(
@@ -300,3 +304,21 @@ class ExtensionServiceTests(unittest.TestCase):
         with self.assertRaises(ServiceError) as tampered_error:
             self.service.set_plugin_enabled("research", plugin_id, False, self.trusted)
         self.assertEqual(tampered_error.exception.code, "required_plugin_invalid")
+
+    def test_required_plugin_supports_native_image_directory_symlink(self):
+        from xnobrain.integrations.agent_profiles import AgentProfilesMixin
+
+        source = extension_policy.required_plugin_root()
+        alias = Path(self.temporary.name) / "packaged-plugins"
+        alias.symlink_to(source, target_is_directory=True)
+        with patch.dict(os.environ, {"XNOBRAIN_REQUIRED_PLUGINS_DIR": str(alias)}):
+            AgentProfilesMixin._ensure_required_plugin(self.profile)
+            self.assertTrue(
+                extension_policy.trusted_required(self.profile, "xnobrain-runtime-updates")
+            )
+            destination = self.profile / "plugins" / "xnobrain-runtime-updates"
+            shutil.rmtree(destination)
+            destination.symlink_to(source / "xnobrain-runtime-updates", target_is_directory=True)
+            with self.assertRaises(AgentAPIError) as error:
+                extension_policy.trusted_required(self.profile, "xnobrain-runtime-updates")
+            self.assertEqual(error.exception.code, "invalid_path")

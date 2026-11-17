@@ -343,7 +343,9 @@ def tree_digest(path: Path, *, ignore_bytecode: bool = False) -> str:
 def required_plugin_root() -> Path:
     packaged = Path(os.getenv("XNOBRAIN_REQUIRED_PLUGINS_DIR", "/opt/xnobrain/required-plugins"))
     if packaged.is_dir():
-        return packaged
+        # Native images expose this administrator-owned directory through a
+        # compatibility symlink. Profile/plugin paths still reject symlinks.
+        return packaged.resolve()
     return Path(__file__).resolve().parents[2] / "runtime" / "required-plugins"
 
 

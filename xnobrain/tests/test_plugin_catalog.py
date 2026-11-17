@@ -14,7 +14,7 @@ class PluginCatalogTests(unittest.TestCase):
     def test_checked_in_catalog_has_full_coverage_and_safe_installable_subset(self) -> None:
         catalog = load_plugin_catalog()
         entries = catalog["entries"]
-        self.assertEqual(len(entries), 31)
+        self.assertEqual(len(entries), 34)
         by_id = {entry["id"]: entry for entry in entries}
         self.assertEqual(
             {
@@ -23,6 +23,9 @@ class PluginCatalogTests(unittest.TestCase):
                 if entry["installability"] == "installable"
             },
             {
+                "sapo",
+                "sepay",
+                "kiotviet",
                 "aave",
                 "context7",
                 "huggingface",
@@ -66,6 +69,9 @@ class PluginCatalogTests(unittest.TestCase):
                 2
                 if entry["id"]
                 in {
+                    "kiotviet",
+                    "sapo",
+                    "sepay",
                     "notion",
                     "linear",
                     "atlassian",
@@ -89,6 +95,8 @@ class PluginCatalogTests(unittest.TestCase):
                 else 1,
             )
             self.assertIn(entry["publisher_kind"], {"official", "community", "unverified"})
+            if entry.get("kind") == "native":
+                continue
             self.assertEqual(set(entry["examples"]), {"en", "vi", "zh"})
             self.assertTrue(all(len(prompts) == 3 for prompts in entry["examples"].values()))
         self.assertNotEqual(by_id["brave-search"]["publisher_kind"], "official")
@@ -108,6 +116,8 @@ class PluginCatalogTests(unittest.TestCase):
 
     def test_every_entry_has_a_public_https_icon(self) -> None:
         for entry in load_plugin_catalog()["entries"]:
+            if entry.get("kind") == "native":
+                continue
             self.assertTrue(entry["iconUrl"].startswith("https://"), entry["id"])
 
         for icon in (
@@ -126,14 +136,14 @@ class PluginCatalogTests(unittest.TestCase):
     def test_load_returns_a_copy(self) -> None:
         first = load_plugin_catalog()
         first["entries"].clear()
-        self.assertEqual(len(load_plugin_catalog()["entries"]), 31)
+        self.assertEqual(len(load_plugin_catalog()["entries"]), 34)
 
     def test_rejects_missing_coverage_and_unsupported_install_paths(self) -> None:
         catalog = load_plugin_catalog()
         cases = []
 
         missing = copy.deepcopy(catalog)
-        missing["entries"].pop()
+        missing["entries"].pop(0)
         cases.append(missing)
 
         oauth_install = copy.deepcopy(catalog)
@@ -146,7 +156,9 @@ class PluginCatalogTests(unittest.TestCase):
         cases.append(unpinned_stdio_install)
 
         unsafe_composio = copy.deepcopy(catalog)
-        unsafe_composio["entries"][-2]["mcp"]["url_policy"] = "any_https_host"
+        next(e for e in unsafe_composio["entries"] if e["id"] == "composio")["mcp"][
+            "url_policy"
+        ] = "any_https_host"
         cases.append(unsafe_composio)
 
         missing_recipe_revision = copy.deepcopy(catalog)
@@ -164,7 +176,7 @@ class PluginCatalogTests(unittest.TestCase):
 
     def test_additional_entries_are_allowed_only_in_fail_closed_state(self) -> None:
         catalog = load_plugin_catalog()
-        extra = copy.deepcopy(catalog["entries"][-1])
+        extra = copy.deepcopy(next(e for e in catalog["entries"] if e["id"] == "clickup"))
         extra.update(
             id="new-integration",
             publisher_kind="unverified",

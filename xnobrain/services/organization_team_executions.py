@@ -6,6 +6,7 @@ import hmac
 import os
 
 from ..defaults import BIG_BROTHER_AGENT_ID
+from ..integrations.accounting_context import organization_inference
 from ..integrations.organization_team_executions import OrganizationTeamExecutionClient
 from ..repositories import StoreError
 from ..repositories.organization_team_executions import OrganizationTeamExecutionRepository
@@ -56,12 +57,19 @@ class _ExecutionAgents:
         self.local = local
         self.client = client
         self.members = members
+        self.coordinator_tokens = {}
 
     def list_skills(self, agent_id):
         return self.local.list_skills(agent_id) if agent_id == BIG_BROTHER_AGENT_ID else {}
 
     async def chat(self, agent_id, request):
         if agent_id == BIG_BROTHER_AGENT_ID:
+            if self.coordinator_tokens:
+                token = self.coordinator_tokens.get(request.get("model"))
+                if not token:
+                    raise ServiceError("organization model not authorized", status=403)
+                with organization_inference(token):
+                    return await self.local.chat(agent_id, request)
             return await self.local.chat(agent_id, request)
         if agent_id not in self.members:
             raise ServiceError("worker outside organization team", status=403)
@@ -79,6 +87,9 @@ class _ExecutionRun(TeamRunService):
         return record
 
     async def _require_execution_budgets(self, team, workflow):
+        if self.agents.coordinator_tokens:
+            # Router enforces the organization workload quota for these calls.
+            return
         if self.analytics is not None:
             await self.analytics.require_execution_budget(BIG_BROTHER_AGENT_ID)
 
@@ -177,6 +188,20 @@ class OrganizationTeamExecutions:
             raise ServiceError("Control is unavailable", status=503)
         client = self._client(endpoint, organization_id, run_id, body["capability"])
         agents = self._agents(client, team)
+        if isinstance(agents, _ExecutionAgents) and body.get("coordinator_tokens"):
+            tokens = body["coordinator_tokens"]
+            required = {team.get("coordinator_model"), team.get("synthesis_model")}
+            if (
+                not isinstance(tokens, dict)
+                or None in required
+                or any(
+                    not isinstance(tokens.get(model), str)
+                    or not tokens[model].startswith("xno-org-run.")
+                    for model in required
+                )
+            ):
+                raise ServiceError("organization inference authority unavailable", status=503)
+            agents.coordinator_tokens = {model: tokens[model] for model in required}
         engine = self._engine(repo, agents, self._execution_platform(repo, organization_id), run_id)
         self.executions[key] = engine
         try:

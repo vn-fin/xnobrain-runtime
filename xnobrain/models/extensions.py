@@ -44,6 +44,11 @@ class PluginMcpConnection(BaseModel):
             raise ValueError("connection_id must be a UUID") from error
 
 
+class ProviderConnection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    connection_id: UUID
+
+
 class ExtensionApproval(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

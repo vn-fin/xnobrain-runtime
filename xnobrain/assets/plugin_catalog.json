@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "catalog_version": "2026-11-04.1",
+  "catalog_version": "2026-11-16.1",
   "coverage_reference": {
     "repository": "nightly-labs/openbot",
     "commit": "21369e1eec420772a7db9f6bbfeae2ef9b3ab83a",
@@ -1485,6 +1485,111 @@
         }
       },
       "recipe_revision": 2
+    },
+    {
+      "id": "sapo",
+      "name": "Sapo",
+      "kind": "native",
+      "package": "sapo",
+      "publisher": "XNOBrain",
+      "publisher_kind": "community",
+      "summary": {
+        "en": "Read products, variants, orders and locations from your connected Sapo store.",
+        "vi": "Đọc sản phẩm, phiên bản, đơn hàng và chi nhánh từ cửa hàng Sapo đã kết nối.",
+        "zh": "读取已连接 Sapo 店铺的商品、规格、订单和门店。",
+        "es": "Consulta productos, variantes, pedidos y ubicaciones de tu tienda Sapo conectada.",
+        "fr": "Consultez les produits, variantes, commandes et points de vente de votre boutique Sapo.",
+        "de": "Lies Produkte, Varianten, Bestellungen und Standorte aus deinem verbundenen Sapo-Shop.",
+        "ja": "接続した Sapo 店舗の商品、バリエーション、注文、拠点を読み取ります。"
+      },
+      "homepage": "https://www.sapo.vn",
+      "documentation": "https://help.sapo.vn",
+      "category": "commerce",
+      "recipe_revision": 2,
+      "installability": "installable",
+      "reason_code": "compatible",
+      "provides_skills": [
+        "sapo"
+      ],
+      "examples": {
+        "en": [
+          "Show products in my connected Sapo store.",
+          "List recent Sapo orders."
+        ],
+        "vi": [
+          "Xem sản phẩm cửa hàng Sapo của tôi.",
+          "Liệt kê đơn hàng Sapo gần đây."
+        ],
+        "zh": [
+          "查看已连接 Sapo 店铺的商品。",
+          "列出最近的 Sapo 订单。"
+        ]
+      }
+    },
+    {
+      "id": "sepay",
+      "name": "SePay",
+      "kind": "native",
+      "package": "sepay",
+      "publisher": "XNOBrain",
+      "publisher_kind": "community",
+      "summary": {
+        "en": "Read accounts, payment records, virtual accounts, and terminals from your SePay connection.",
+        "vi": "Đọc tài khoản, giao dịch, tài khoản ảo và terminal từ kết nối SePay của bạn.",
+        "zh": "读取 SePay 连接中的账户、付款记录、虚拟账户和终端。",
+        "es": "Consulta cuentas, pagos, cuentas virtuales y terminales de tu conexión SePay.",
+        "fr": "Consultez les comptes, paiements, comptes virtuels et terminaux de votre connexion SePay.",
+        "de": "Lies Konten, Zahlungsdaten, virtuelle Konten und Terminals deiner SePay-Verbindung.",
+        "ja": "SePay 接続の口座、支払記録、仮想口座、端末を読み取ります。"
+      },
+      "homepage": "https://sepay.vn",
+      "documentation": "https://developer.sepay.vn",
+      "category": "finance",
+      "recipe_revision": 2,
+      "installability": "installable",
+      "reason_code": "compatible",
+      "provides_skills": [
+        "sepay"
+      ]
+    },
+    {
+      "id": "kiotviet",
+      "name": "KiotViet",
+      "kind": "native",
+      "package": "kiotviet",
+      "publisher": "XNOBrain",
+      "publisher_kind": "community",
+      "summary": {
+        "en": "Manage KiotViet products, stock, sales and purchases.",
+        "vi": "Quản lý hàng hóa, tồn kho, bán hàng và nhập hàng KiotViet.",
+        "zh": "管理 KiotViet 商品、库存、销售和采购。",
+        "es": "Gestiona productos, existencias, ventas y compras de KiotViet.",
+        "fr": "Gérez les produits, stocks, ventes et achats KiotViet.",
+        "de": "Verwalte KiotViet-Produkte, Bestände, Verkäufe und Einkäufe.",
+        "ja": "KiotViet の商品、在庫、販売、仕入れを管理します。"
+      },
+      "homepage": "https://www.kiotviet.vn/",
+      "documentation": "https://www.kiotviet.vn/huong-dan-su-dung-kiotviet/retail-ket-noi-api/public-api/",
+      "category": "commerce",
+      "recipe_revision": 2,
+      "installability": "installable",
+      "reason_code": "compatible",
+      "provides_skills": [
+        "kiotviet"
+      ],
+      "examples": {
+        "en": [
+          "Show my KiotViet products.",
+          "Create a product in KiotViet."
+        ],
+        "vi": [
+          "Xem sản phẩm KiotViet của tôi.",
+          "Tạo sản phẩm trong KiotViet."
+        ],
+        "zh": [
+          "查看我的 KiotViet 商品。"
+        ]
+      }
     }
   ]
 }

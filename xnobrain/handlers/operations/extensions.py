@@ -14,6 +14,20 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
     path, service = request.path_params, handler.service.extensions
     context = lambda: from_request(request)
     entries = {
+        "extensions_provider_connection_put": (
+            lambda: service.set_provider_connection(
+                path["agent_id"], path["plugin_id"], body, context()
+            ),
+            "provider connection saved",
+            200,
+        ),
+        "extensions_provider_connection_delete": (
+            lambda: service.set_provider_connection(
+                path["agent_id"], path["plugin_id"], None, context()
+            ),
+            "provider connection removed",
+            200,
+        ),
         "extensions_catalog": (service.catalog, "extension catalog retrieved", 200),
         "extensions_marketplaces_list": (
             lambda: service.list_marketplaces(context()),

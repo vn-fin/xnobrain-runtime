@@ -11,6 +11,7 @@ from ..models.extensions import (
     PluginMcpConnection,
     PluginVisibility,
     ProbeCreate,
+    ProviderConnection,
     ToolsetPatch,
 )
 from .definition import route
@@ -23,6 +24,19 @@ class MarketplaceSource(BaseModel):
 
 
 ROUTES = (
+    route(
+        "PUT",
+        "/agents-plugins/{agent_id}/plugins/{plugin_id}/provider-connection",
+        "extensions_provider_connection_put",
+        ProviderConnection,
+        tags=_TAG,
+    ),
+    route(
+        "DELETE",
+        "/agents-plugins/{agent_id}/plugins/{plugin_id}/provider-connection",
+        "extensions_provider_connection_delete",
+        tags=_TAG,
+    ),
     route("GET", "/plugins/catalog", "extensions_catalog", tags=_TAG),
     route("GET", "/plugins/marketplaces", "extensions_marketplaces_list", tags=_TAG),
     route(

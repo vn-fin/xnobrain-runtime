@@ -557,6 +557,39 @@ class FundedCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(link.running, {})
         self.assertIsNone(organization_funding.funding_for("conv-1"))
 
+    async def test_provider_model_uses_private_delegation_only_for_this_conversation(self):
+        self.connector.connect({"organization_id": ORG_A, "enrollment_token": self.token})
+        link = self.connector.link(ORG_A)
+        await link.tick(self.client)
+        command = self.command(
+            "cmd_provider",
+            {
+                "mode": "organization",
+                "model": "cc/organization-model",
+                "router_token": "xno-org-run.synthetic",
+            },
+        )
+        with patch.dict("os.environ", {"RUNTIME_ACCOUNTING_MODE": "router"}):
+            task = asyncio.create_task(link.command(self.client, link.store.state(), command))
+            for _ in range(50):
+                if self.started:
+                    break
+                await asyncio.sleep(0.01)
+            try:
+                conversation, body, funding = self.started[0]
+                self.assertEqual(body["model"], "cc/organization-model")
+                self.assertNotIn("router_token", body)
+                self.assertNotIn("router_token", funding)
+                self.assertEqual(
+                    organization_funding.router_token_for(conversation), "xno-org-run.synthetic"
+                )
+                self.assertNotIn("xno-org-run", link.store.inbox_path.read_text())
+            finally:
+                self.release.set()
+                with self.assertRaises(RuntimeError):
+                    await task
+        self.assertEqual(organization_funding.router_token_for("conv-1"), "")
+
     async def test_workspace_command_keeps_the_agents_model(self):
         self.connector.connect({"organization_id": ORG_A, "enrollment_token": self.token})
         link = self.connector.link(ORG_A)

@@ -8,6 +8,7 @@ import os
 import unittest
 from unittest.mock import AsyncMock, patch
 
+from xnobrain.integrations.accounting_context import accounting_binding
 from xnobrain.integrations.organization_team_executions import OrganizationTeamExecutionClient
 from xnobrain.services.base import ServiceError
 from xnobrain.services.organization_team_executions import OrganizationTeamExecutions
@@ -42,6 +43,13 @@ class OrganizationExecutionTests(_TeamRunBase):
         service = self.composition.service
         path = "/xnobrain/api/runtime/v1/organization-team-executions/org_test/atm_test/atr_test"
         snapshots = []
+        payload = self.payload()
+        payload["team"].update(coordinator_model="cc/org-model", synthesis_model="cc/org-model")
+        payload["coordinator_tokens"] = {"cc/org-model": "xno-org-run.test"}
+
+        async def coordinated(agent_id, request):
+            self.assertEqual(accounting_binding(agent_id)["user_key"], "xno-org-run.test")
+            return {"response": "coordinator output"}
 
         async def record(_client, record):
             snapshots.append(dict(record))
@@ -52,13 +60,14 @@ class OrganizationExecutionTests(_TeamRunBase):
                 {
                     "RUNTIME_INTERNAL_SERVICE_TOKEN": "private-test",
                     "RUNTIME_CONTROL_URL": "http://control",
+                    "RUNTIME_ACCOUNTING_MODE": "router",
                 },
             ),
             patch.object(service.analytics, "require_execution_budget", new=AsyncMock()),
             patch.object(
                 service.agents,
                 "chat",
-                new=AsyncMock(return_value={"response": "coordinator output"}),
+                new=AsyncMock(side_effect=coordinated),
             ) as local,
             patch.object(
                 OrganizationTeamExecutionClient,
@@ -68,19 +77,17 @@ class OrganizationExecutionTests(_TeamRunBase):
             patch.object(OrganizationTeamExecutionClient, "record", new=record),
         ):
             async with self.client() as client:
-                denied = await client.post(path, json=self.payload())
+                denied = await client.post(path, json=payload)
                 self.assertEqual(denied.status_code, 403)
-                tampered = self.signed("POST", path, self.payload())
+                tampered = self.signed("POST", path, payload)
                 tampered["content"] = tampered["content"].replace(
                     b"Synthetic task", b"Modified task"
                 )
                 denied = await client.post(path, **tampered)
                 self.assertEqual(denied.status_code, 403)
-                denied = await client.post(
-                    path + "_other", **self.signed("POST", path, self.payload())
-                )
+                denied = await client.post(path + "_other", **self.signed("POST", path, payload))
                 self.assertEqual(denied.status_code, 403)
-                started = await client.post(path, **self.signed("POST", path, self.payload()))
+                started = await client.post(path, **self.signed("POST", path, payload))
                 self.assertEqual(started.status_code, 200, started.text)
                 for _ in range(100):
                     response = await client.request("GET", path, **self.signed("GET", path))
@@ -95,7 +102,7 @@ class OrganizationExecutionTests(_TeamRunBase):
                 self.assertEqual(remote.call_args.args[0], "member-registration")
                 self.assertNotIn(str(self.data_dir), remote.call_args.args[1]["message"])
                 self.assertEqual(service.repository.list_teams(), [])
-                again = await client.post(path, **self.signed("POST", path, self.payload()))
+                again = await client.post(path, **self.signed("POST", path, payload))
                 self.assertEqual(again.json()["data"]["id"], "atr_test")
                 self.assertEqual(remote.call_count, 1)
                 self.assertEqual(snapshots[-1]["status"], "completed")
@@ -103,6 +110,34 @@ class OrganizationExecutionTests(_TeamRunBase):
                 for file in (self.data_dir / "organization-team-executions").rglob("*"):
                     if file.is_file():
                         self.assertNotIn("a" * 64, file.read_text())
+                        self.assertNotIn("xno-org-run.test", file.read_text())
+
+    async def test_coordinator_funding_is_request_local_and_rejects_foreign_models(self):
+        from xnobrain.integrations.accounting_context import accounting_binding
+        from xnobrain.services.organization_team_executions import _ExecutionAgents
+
+        async def chat(_agent, request):
+            self.assertEqual(request["model"], "cc/org-model")
+            self.assertEqual(accounting_binding("big-brother")["user_key"], "xno-org-run.test")
+            return {"response": "ok"}
+
+        local = AsyncMock()
+        local.chat = chat
+        agents = _ExecutionAgents(local, AsyncMock(), set())
+        agents.coordinator_tokens = {"cc/org-model": "xno-org-run.test"}
+        with patch.dict(
+            os.environ,
+            {
+                "RUNTIME_ACCOUNTING_MODE": "router",
+                "RUNTIME_LLM_API_KEY": "personal",
+                "RUNTIME_LLM_API_KEY_FILE": "",
+            },
+        ):
+            await agents.chat("big-brother", {"model": "cc/org-model"})
+            self.assertEqual(accounting_binding("big-brother")["user_key"], "personal")
+            with self.assertRaises(ServiceError):
+                await agents.chat("big-brother", {"model": "personal/model"})
+            self.assertEqual(accounting_binding("big-brother")["user_key"], "personal")
 
     async def test_cancellation_and_restart_do_not_replay_worker_side_effects(self):
         service = self.composition.service

@@ -2853,3 +2853,34 @@ killed; this is sampled admission, not an atomic filesystem quota.
 ## Agent extensions
 
 See [Agent extensions](agent-extensions.md) for the personal/profile-scoped plugin, hook, native-tool and catalog APIs, operation lifecycle, approval policy and source verification. New catalog MCP installs remain compatibility-gated because the pinned transport has process-global registrations; catalog visibility is not proof of a working connection.
+
+## Optional native provider plugins
+
+The existing `GET /xnobrain/api/runtime/v1/plugins/catalog` now also returns
+Sapo and SePay with `kind: native`, `package`, and `provides_skills`, without
+an `mcp` field. Their installation uses
+`POST /xnobrain/api/runtime/v1/agents-extension-operations/{agent_id}` with
+`kind: install`, the matching `plugin_id`, `source: bundled:<plugin_id>`, and
+an idempotency key. The exact package IDs are allowlisted server-side; paths
+and references are rejected. The existing native plugin scan, approval,
+profile ownership, disabled-first installation and management contracts apply.
+The default Skills catalog no longer projects these packages. See
+[plugin catalog](plugin-catalog.md) for details.
+
+### Managed native provider mapping
+
+`PUT /xnobrain/api/runtime/v1/agents-plugins/{agent_id}/plugins/{plugin_id}/provider-connection`
+accepts exactly `{"connection_id":"<uuid>"}` for installed `sapo`, `sepay`, or
+`kiotviet`. `DELETE` removes that mapping. Both use existing trusted profile
+ownership and lifecycle guards; organization connections are unsupported.
+No provider credentials are accepted or persisted by Runtime. Completed plugin
+removal clears its mapping; disabling preserves it. The Discover uninstall flow
+revokes the Control credential before queueing package removal, so a failed
+removal can leave an installed but disconnected package.
+
+Managed KiotViet plugin 0.3.0 consumes Control's additive internal provider
+`/execute` endpoint with operation/mode and native query/body data. The tool
+captures the approved profile and sends only its connection mapping and scoped
+grant. Legacy resource reads use `/read`. `kiotviet_write` is unavailable to an
+old installed manifest and never automatically retries mutations. An uncertain
+write returns `provider_write_outcome_unknown` for read-back reconciliation.

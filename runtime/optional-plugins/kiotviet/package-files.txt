@@ -1,0 +1,9 @@
+README.md
+LICENSE
+plugin.yaml
+__init__.py
+package-files.txt
+skills/kiotviet/SKILL.md
+skills/kiotviet/scripts/kiotviet.py
+skills/kiotviet/references/setup.md
+skills/kiotviet/references/api.md

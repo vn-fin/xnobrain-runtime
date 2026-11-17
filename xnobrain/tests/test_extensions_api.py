@@ -104,6 +104,35 @@ class ExtensionAPITests(unittest.IsolatedAsyncioTestCase):
             )
         return result
 
+    async def test_managed_provider_mapping_contract(self):
+        path = f"{API_PREFIX}/agents-plugins/research/plugins/kiotviet/provider-connection"
+        payload = {"connection_id": "00000000-0000-4000-8000-000000000001"}
+        denied = await self.client.put(path, json=payload)
+        self.assertEqual(denied.status_code, 401)
+        missing = await self.client.put(path, json=payload, headers=self.headers())
+        self.assertEqual(missing.status_code, 404, missing.text)
+        extension_policy.save_state(
+            self.profile, {"plugins": {"kiotviet": {}}, "hooks": {}, "mcp": {}, "revision": 1}
+        )
+        invalid = await self.client.put(
+            path, json={"connection_id": "invalid"}, headers=self.headers()
+        )
+        self.assertEqual(invalid.status_code, 422)
+        extra = await self.client.put(
+            path, json={**payload, "client_secret": "must-not-persist"}, headers=self.headers()
+        )
+        self.assertEqual(extra.status_code, 422)
+        saved = await self.client.put(path, json=payload, headers=self.headers())
+        self.assertEqual(saved.status_code, 200, saved.text)
+        state = extension_policy.load_state(self.profile)
+        self.assertEqual(state["provider_connections"]["kiotviet"], payload)
+        self.assertNotIn("must-not-persist", json.dumps(state))
+        deleted = await self.client.delete(path, headers=self.headers())
+        self.assertEqual(deleted.status_code, 200, deleted.text)
+        self.assertNotIn(
+            "kiotviet", extension_policy.load_state(self.profile)["provider_connections"]
+        )
+
     async def test_signed_personal_identity_gets_success_envelope_and_202_operation(self):
         path = f"{API_PREFIX}/agents-extension-operations/research"
         denied = await self.client.get(path)
@@ -134,6 +163,39 @@ class ExtensionAPITests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(detail.status_code, 200, detail.text)
         self.assertEqual(detail.json()["data"]["status"], "PENDING")
+
+    async def test_native_provider_catalog_installs_through_plugin_operations(self):
+        catalog = await self.client.get(f"{API_PREFIX}/plugins/catalog", headers=self.headers())
+        self.assertEqual(catalog.status_code, 200)
+        entries = {item["id"]: item for item in catalog.json()["data"]["entries"]}
+        self.assertEqual(entries["sepay"]["kind"], "native")
+        path = f"{API_PREFIX}/agents-extension-operations/research"
+        body = {
+            "kind": "install",
+            "plugin_id": "sepay",
+            "source": "bundled:sepay",
+            "idempotency_key": "native-sepay",
+        }
+        denied = await self.client.post(path, json=body)
+        self.assertEqual(denied.status_code, 401)
+        accepted = await self.client.post(path, headers=self.headers(), json=body)
+        self.assertEqual(accepted.status_code, 202, accepted.text)
+        self.assertTrue(accepted.json()["success"])
+        self.extensions.worker._process(self.extensions.store.claim_next())
+        listed = await self.client.get(
+            f"{API_PREFIX}/agents-plugins/research", headers=self.headers()
+        )
+        self.assertEqual(listed.status_code, 200, listed.text)
+        plugin = next(item for item in listed.json()["data"]["plugins"] if item["id"] == "sepay")
+        self.assertEqual(plugin["source"], "bundled:sepay")
+        self.assertEqual(plugin["provides_skills"], ["sepay"])
+        self.assertFalse(plugin["enabled"])
+        invalid = await self.client.post(
+            path,
+            headers=self.headers(),
+            json={**body, "source": "bundled:unknown", "idempotency_key": "invalid"},
+        )
+        self.assertEqual(invalid.status_code, 422)
 
     async def test_wrong_signature_and_organization_identity_are_rejected(self):
         path = f"{API_PREFIX}/agents-extension-operations/research"

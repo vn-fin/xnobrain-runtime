@@ -25,6 +25,7 @@ from urllib.parse import urlsplit
 import yaml
 
 from ..integrations import (
+    bundled_plugins,
     extension_engine,
     extension_policy,
     extension_recovery,
@@ -250,9 +251,18 @@ class ExtensionsService:
             ) from error
         isolated = extension_engine.mcp_profile_isolation_supported()
         catalog["engine_capabilities"] = {"mcp_profile_isolation": isolated}
+        for entry in catalog.get("entries", []):
+            if entry.get("kind") == "native":
+                try:
+                    bundled_plugins.package_files(entry["id"])
+                except (AgentAPIError, OSError):
+                    entry["capability"] = {
+                        "installable": False,
+                        "reason_code": "plugin_package_unavailable",
+                    }
         if not isolated:
             for entry in catalog.get("entries", []):
-                if entry.get("installability") == "installable":
+                if entry.get("installability") == "installable" and entry.get("kind") != "native":
                     entry["capability"] = {
                         "installable": False,
                         "reason_code": "mcp_profile_isolation_unavailable",
@@ -700,6 +710,31 @@ class ExtensionsService:
                 )
             )
         return rows
+
+    def set_provider_connection(self, agent_id, plugin_id, body, trusted):
+        from uuid import UUID
+
+        from ..integrations.bundled_plugins import PROVIDERS
+
+        profile, _ = self._profile(agent_id, trusted)
+        if trusted.organization_id:
+            raise ServiceError(
+                "Personal workspace required", status=422, code="mcp_workspace_unsupported"
+            )
+        if plugin_id not in PROVIDERS:
+            raise ServiceError("Unknown provider", status=422, code="invalid_provider")
+        with self._lifecycle(agent_id):
+            state = self._state(profile)
+            mappings = state.setdefault("provider_connections", {})
+            if body is None:
+                mappings.pop(plugin_id, None)
+            else:
+                if plugin_id not in state["plugins"]:
+                    raise ServiceError("Install the plugin first", status=404, code="not_found")
+                mappings[plugin_id] = {"connection_id": str(UUID(str(body["connection_id"])))}
+            self._save(profile, state)
+        self._set_mcp_grant(profile, trusted)
+        return {"plugin_id": plugin_id, "configured": body is not None}
 
     def set_plugin_mcp_connection(
         self, agent_id: str, plugin_id: str, server_name: str, body: dict[str, Any], trusted: Any
@@ -1569,13 +1604,30 @@ class ExtensionsService:
         with self._lifecycle(agent_id):
             profile_generation = self._profile_generation(profile, initialize=True)
             if kind in {"install", "update"}:
+                requested_source = str(body.get("source") or "")
+                if kind == "update" and not requested_source:
+                    requested_source = (
+                        self._state(profile)["plugins"].get(plugin_id, {}).get("source", "")
+                    )
                 if kind == "update" and str(body.get("source") or "").startswith("upload:"):
                     raise ServiceError(
                         "Uploaded plugins must be uploaded again to update",
                         status=422,
                         code="upload_update_requires_reupload",
                     )
-                if kind == "install" and str(body.get("source") or "").startswith("upload:"):
+                if requested_source.startswith("bundled:"):
+                    if (
+                        requested_source != f"bundled:{plugin_id}"
+                        or plugin_id not in bundled_plugins.PROVIDERS
+                        or body.get("ref")
+                        or body.get("path")
+                    ):
+                        raise ServiceError(
+                            "Bundled source is invalid", status=422, code="invalid_plugin_source"
+                        )
+                    bundled_plugins.package_files(plugin_id)
+                    source, ref, path = requested_source, "", ""
+                elif kind == "install" and str(body.get("source") or "").startswith("upload:"):
                     if not _upload:
                         raise ServiceError(
                             "Upload sources are not accepted here",
@@ -1867,6 +1919,7 @@ class ExtensionOperationWorker:
                     self.service._sync_plugin_mcp_shadows(profile)
                     state = self.service._state(profile)
                     state["plugins"].pop(plugin_id, None)
+                    state.setdefault("provider_connections", {}).pop(plugin_id, None)
                     state["plugin_mcp"] = {
                         key: value
                         for key, value in (state.get("plugin_mcp") or {}).items()
@@ -1981,7 +2034,18 @@ class ExtensionOperationWorker:
                     else "cloning"
                 },
             )
-            if (inputs.get("source") or "").startswith("upload:"):
+            if (inputs.get("source") or "").startswith("bundled:"):
+                if (
+                    inputs["source"] != f"bundled:{plugin_id}"
+                    or inputs.get("ref")
+                    or inputs.get("path")
+                ):
+                    raise ServiceError(
+                        "Bundled source is invalid", status=422, code="invalid_plugin_source"
+                    )
+                bundled_plugins.stage_package(plugin_id, stage)
+                commit = extension_policy.tree_digest(stage)
+            elif (inputs.get("source") or "").startswith("upload:"):
                 upload_id = inputs["source"].partition(":")[2]
                 if not re.fullmatch(
                     r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", upload_id
