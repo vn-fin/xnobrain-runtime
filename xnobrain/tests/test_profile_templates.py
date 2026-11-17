@@ -68,7 +68,10 @@ class ProfileTemplateInstallerTests(unittest.TestCase):
             update_plugin = root / "plugins" / "xnobrain-runtime-updates"
             self.assertTrue((update_plugin / "plugin.yaml").is_file())
             self.assertTrue((update_plugin / "__init__.py").is_file())
-            self.assertFalse((named / "plugins" / "xnobrain-runtime-updates").exists())
+            for profile in (named, template):
+                packaged_plugin = profile / "plugins" / "xnobrain-runtime-updates"
+                self.assertTrue((packaged_plugin / "plugin.yaml").is_file())
+                self.assertTrue((packaged_plugin / "__init__.py").is_file())
             for retired in ("hermes-agent", "codex", "claude-code", "opencode"):
                 self.assertFalse((root / "skills" / retired).exists())
                 self.assertFalse((named / "skills" / retired).exists())

@@ -170,6 +170,8 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
 
         async with self.app.router.lifespan_context(self.app):
             first = self.composition.service.get_agent(BIG_BROTHER_AGENT_ID)
+        required = self.root / "plugins" / "xnobrain-runtime-updates" / "plugin.yaml"
+        self.assertTrue(required.is_file())
 
         profile_config_path = self.root / "config.yaml"
         migrated_config = yaml.safe_load(profile_config_path.read_text(encoding="utf-8"))
@@ -955,6 +957,8 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(skill.status_code, 201, skill.text)
         self.assertEqual(memory.status_code, 200, memory.text)
         self.assertEqual(mcp.status_code, 200, mcp.text)
+        # A stdio server is never loaded into native chat turns.
+        self.assertEqual(mcp.json()["data"]["chat_status"], {"docs": "rejected"})
 
         self.assertTrue((profile / "skills" / "custom" / "notes" / "SKILL.md").is_file())
         installed_notes = next(item for item in skill.json()["data"] if item["skill_id"] == "notes")

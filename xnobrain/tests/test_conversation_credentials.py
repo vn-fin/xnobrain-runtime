@@ -1,9 +1,10 @@
 """No-network regressions for workspace keys in goal/background profile scopes."""
 
 import os
+import threading
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest import TestCase
+from unittest import IsolatedAsyncioTestCase, TestCase
 from unittest.mock import patch
 
 from agent.secret_scope import (
@@ -164,3 +165,52 @@ class ConversationCredentialsTests(TestCase):
                         self.assertEqual(get_secret(LLM_ROUTER_KEY_ENV), "synthetic-cron-file-key")
         finally:
             set_multiplex_active(previous_mode)
+
+
+class GoalOffloadTests(IsolatedAsyncioTestCase):
+    async def test_goal_call_runs_off_the_event_loop(self):
+        from contextlib import nullcontext
+
+        from xnobrain.integrations import conversation_runner
+
+        loop_thread = threading.get_ident()
+        with TemporaryDirectory() as directory:
+            profile = Path(directory)
+            with patch(
+                "xnobrain.integrations.conversation_credentials.conversation_profile_scope",
+                side_effect=lambda _profile: nullcontext(),
+            ):
+                worker_thread = await conversation_runner._run_goal_call(
+                    profile, threading.get_ident
+                )
+        self.assertNotEqual(worker_thread, loop_thread)
+
+
+class HermesProfileScopeThreadContractTests(TestCase):
+    """The chat path enters conversation_profile_scope via Hermes' _run_agent.
+
+    That scope refreshes MCP sessions over the network, so Hermes must enter it
+    inside the synchronous executor body rather than on the event loop.
+    """
+
+    def test_run_agent_enters_profile_scope_inside_the_executor_body(self):
+        import ast
+        import inspect
+        import textwrap
+
+        from gateway.platforms.api_server import APIServerAdapter
+
+        tree = ast.parse(textwrap.dedent(inspect.getsource(APIServerAdapter._run_agent)))
+        scoped = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef)
+            and any(
+                isinstance(item, ast.Attribute) and item.attr == "_profile_scope"
+                for item in ast.walk(node)
+            )
+        ]
+        self.assertTrue(scoped, "_run_agent no longer enters _profile_scope in a sync helper")
+        source = inspect.getsource(APIServerAdapter._run_agent)
+        self.assertIn("run_in_executor", source)
+        self.assertIn(scoped[0].name, source.split("run_in_executor", 1)[1])

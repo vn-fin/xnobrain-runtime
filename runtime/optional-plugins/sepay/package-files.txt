@@ -1,0 +1,9 @@
+README.md
+LICENSE
+plugin.yaml
+__init__.py
+package-files.txt
+skills/sepay/SKILL.md
+skills/sepay/scripts/sepay.py
+skills/sepay/references/setup.md
+skills/sepay/references/api.md

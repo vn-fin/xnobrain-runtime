@@ -1,0 +1,174 @@
+"""Per-agent extension management API declarations."""
+
+from pydantic import BaseModel
+
+from ..models.extensions import (
+    CatalogInstall,
+    ExtensionApproval,
+    ExtensionOperationCreate,
+    HookApproval,
+    HookCreate,
+    PluginMcpConnection,
+    PluginVisibility,
+    ProbeCreate,
+    ProviderConnection,
+    ToolsetPatch,
+)
+from .definition import route
+
+_TAG = ("Agent extensions",)
+
+
+class MarketplaceSource(BaseModel):
+    source: str
+
+
+ROUTES = (
+    route(
+        "PUT",
+        "/agents-plugins/{agent_id}/plugins/{plugin_id}/provider-connection",
+        "extensions_provider_connection_put",
+        ProviderConnection,
+        tags=_TAG,
+    ),
+    route(
+        "DELETE",
+        "/agents-plugins/{agent_id}/plugins/{plugin_id}/provider-connection",
+        "extensions_provider_connection_delete",
+        tags=_TAG,
+    ),
+    route("GET", "/plugins/catalog", "extensions_catalog", tags=_TAG),
+    route("GET", "/plugins/marketplaces", "extensions_marketplaces_list", tags=_TAG),
+    route(
+        "POST", "/plugins/marketplaces", "extensions_marketplaces_add", MarketplaceSource, tags=_TAG
+    ),
+    route(
+        "POST",
+        "/plugins/marketplaces/{marketplace_id}/refresh",
+        "extensions_marketplaces_refresh",
+        tags=_TAG,
+    ),
+    route(
+        "DELETE",
+        "/plugins/marketplaces/{marketplace_id}",
+        "extensions_marketplaces_delete",
+        tags=_TAG,
+    ),
+    route("GET", "/agents-plugins/{agent_id}", "extensions_plugins_list", tags=_TAG),
+    route(
+        "PUT",
+        "/agents-plugins/{agent_id}/plugins/{plugin_id}/mcp/{server_name}/connection",
+        "extensions_plugin_mcp_connection_put",
+        PluginMcpConnection,
+        tags=_TAG,
+    ),
+    route(
+        "DELETE",
+        "/agents-plugins/{agent_id}/plugins/{plugin_id}/mcp/{server_name}/connection",
+        "extensions_plugin_mcp_connection_delete",
+        tags=_TAG,
+    ),
+    route(
+        "POST",
+        "/agents-plugins/{agent_id}/mcp/reconnect",
+        "extensions_plugin_mcp_reconnect",
+        tags=_TAG,
+    ),
+    route(
+        "POST",
+        "/agents-plugins/{agent_id}/upload",
+        "extensions_plugin_upload",
+        special="plugin_upload",
+        tags=_TAG,
+    ),
+    route(
+        "POST",
+        "/agents-plugins/{agent_id}/install-catalog",
+        "extensions_catalog_install",
+        CatalogInstall,
+        tags=_TAG,
+    ),
+    route(
+        "POST",
+        "/agents-plugins/{agent_id}/{plugin_id}/approval",
+        "extensions_plugin_approval",
+        ExtensionApproval,
+        tags=_TAG,
+    ),
+    route(
+        "POST",
+        "/agents-plugins/{agent_id}/{plugin_id}/enable",
+        "extensions_plugin_enable",
+        tags=_TAG,
+    ),
+    route(
+        "POST",
+        "/agents-plugins/{agent_id}/{plugin_id}/disable",
+        "extensions_plugin_disable",
+        tags=_TAG,
+    ),
+    route(
+        "PATCH",
+        "/agents-plugins/{agent_id}/{plugin_id}/visibility",
+        "extensions_plugin_visibility",
+        PluginVisibility,
+        tags=_TAG,
+    ),
+    route(
+        "POST",
+        "/agents-plugins/{agent_id}/{plugin_id}/probe",
+        "extensions_plugin_probe",
+        ProbeCreate,
+        tags=_TAG,
+    ),
+    route(
+        "POST",
+        "/agents-plugins/{agent_id}/{plugin_id}/disconnect",
+        "extensions_plugin_disconnect",
+        tags=_TAG,
+    ),
+    route(
+        "POST",
+        "/agents-extension-operations/{agent_id}",
+        "extensions_operation_create",
+        ExtensionOperationCreate,
+        tags=_TAG,
+    ),
+    route(
+        "GET", "/agents-extension-operations/{agent_id}", "extensions_operations_list", tags=_TAG
+    ),
+    route(
+        "GET",
+        "/agents-extension-operations/{agent_id}/{operation_id}",
+        "extensions_operation_get",
+        tags=_TAG,
+    ),
+    route(
+        "POST",
+        "/agents-extension-operations/{agent_id}/{operation_id}/cancel",
+        "extensions_operation_cancel",
+        tags=_TAG,
+    ),
+    route("GET", "/agents-tools/{agent_id}", "extensions_tools_list", tags=_TAG),
+    route(
+        "PATCH",
+        "/agents-tools/{agent_id}/{toolset}",
+        "extensions_tools_patch",
+        ToolsetPatch,
+        tags=_TAG,
+    ),
+    route("GET", "/agents-hooks/{agent_id}", "extensions_hooks_list", tags=_TAG),
+    route("POST", "/agents-hooks/{agent_id}", "extensions_hook_create", HookCreate, tags=_TAG),
+    route(
+        "POST",
+        "/agents-hooks/{agent_id}/{hook_id}/approval",
+        "extensions_hook_approval",
+        HookApproval,
+        tags=_TAG,
+    ),
+    route("POST", "/agents-hooks/{agent_id}/{hook_id}/enable", "extensions_hook_enable", tags=_TAG),
+    route(
+        "POST", "/agents-hooks/{agent_id}/{hook_id}/disable", "extensions_hook_disable", tags=_TAG
+    ),
+    route("DELETE", "/agents-hooks/{agent_id}/{hook_id}", "extensions_hook_delete", tags=_TAG),
+)

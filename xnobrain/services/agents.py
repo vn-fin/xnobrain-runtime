@@ -195,21 +195,6 @@ class AgentsServiceMixin:
                 BIG_BROTHER_SKILL_ID,
                 {"enabled": True},
             )
-        from ..feature_flags import enabled
-
-        if enabled("XNO_DATA") and not any(
-            item.get("skill_id") == "xno-data" for item in self.config.list_skills()["skills"]
-        ):
-            content = (
-                Path(__file__).resolve().parent.parent
-                / "assets"
-                / "skills"
-                / "xno-data"
-                / "SKILL.md"
-            ).read_text(encoding="utf-8")
-            await self.config.install_skill(
-                {"skill_id": "xno-data", "category": "data", "content": content, "enable": True}
-            )
         self.agents.update_profile_registry(
             BIG_BROTHER_AGENT_ID,
             display_name=BIG_BROTHER_DISPLAY_NAME,
@@ -322,6 +307,11 @@ class AgentsServiceMixin:
 
         if changed:
             self.config.update_config({"config": config})
+        # Enabling the required plugin by name is not enough: copy the exact
+        # image-owned artifact too, or execution validation refuses the profile.
+        from ..integrations.agent_profiles import AgentProfilesMixin
+
+        AgentProfilesMixin._ensure_required_plugin(profile)
 
     @staticmethod
     def _agent_id_from_display_name(display_name: str) -> str:

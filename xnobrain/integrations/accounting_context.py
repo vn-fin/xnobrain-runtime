@@ -6,10 +6,11 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
 
-from .organization_funding import funding_for, owns_organization_context
+from .organization_funding import funding_for, owns_organization_context, router_token_for
 from .router_accounting import AccountingUnavailable
 
 _CURRENT = ContextVar("xnobrain_accounting", default=None)
+_ORGANIZATION_INFERENCE = ContextVar("xnobrain_organization_inference", default="")
 _OPAQUE = re.compile(r"^[A-Za-z0-9._:/-]{1,128}$")
 
 
@@ -33,9 +34,10 @@ def accounting_binding(agent_id, context_id="personal", conversation_id=""):
     agent_id = str(agent_id or "").strip()
     if not _OPAQUE.fullmatch(agent_id):
         raise AccountingUnavailable("Agent accounting correlation is invalid")
-    token = os.environ.get("RUNTIME_LLM_API_KEY", "").strip()
+    delegated_token = router_token_for(conversation_id) or _ORGANIZATION_INFERENCE.get()
+    token = delegated_token or os.environ.get("RUNTIME_LLM_API_KEY", "").strip()
     token_file = os.environ.get("RUNTIME_LLM_API_KEY_FILE", "").strip()
-    if token_file:
+    if token_file and not delegated_token:
         try:
             path = Path(token_file)
             if path.is_symlink() or path.stat().st_mode & 0o077:
@@ -77,3 +79,15 @@ def inference_accounting(binding, conversation_id="", run_id="", parent_run_id="
         yield
     finally:
         _CURRENT.reset(token)
+
+
+@contextmanager
+def organization_inference(token):
+    """Private signed team execution authority; never accepted from chat input."""
+    if not accounting_enabled() or not str(token).startswith("xno-org-run."):
+        raise AccountingUnavailable("Organization inference authority unavailable")
+    binding = _ORGANIZATION_INFERENCE.set(token)
+    try:
+        yield
+    finally:
+        _ORGANIZATION_INFERENCE.reset(binding)
