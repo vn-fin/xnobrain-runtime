@@ -10,6 +10,7 @@ from fastapi import FastAPI
 
 from xnobrain.feature_flags import (
     FEATURE_AGENT_CUSTOM_PAGE,
+    FEATURE_AGENT_EXTENSIONS,
     FEATURE_AGENT_PORTABILITY,
     FEATURE_ORGANIZATION_TEAM_AGENTS,
     FEATURE_UI_CUSTOMIZATION,
@@ -31,6 +32,12 @@ class FeatureFlagTests(unittest.TestCase):
             environment = {} if value is None else {"FT_ENABLE_ORGANIZATION_TEAM_AGENTS": value}
             with self.subTest(value=value), patch.dict(os.environ, environment, clear=True):
                 self.assertEqual(enabled(FEATURE_ORGANIZATION_TEAM_AGENTS), want)
+
+    def test_agent_extensions_flag_defaults_on_and_fails_closed(self):
+        for value, want in ((None, True), ("true", True), ("false", False), ("invalid", False)):
+            environment = {} if value is None else {"FT_ENABLE_AGENT_EXTENSIONS": value}
+            with self.subTest(value=value), patch.dict(os.environ, environment, clear=True):
+                self.assertEqual(enabled(FEATURE_AGENT_EXTENSIONS), want)
 
     def test_flags_default_off_and_parse_explicit_true(self):
         with patch.dict(os.environ, {}, clear=True):
@@ -62,6 +69,20 @@ class FeatureFlagTests(unittest.TestCase):
         self.assertNotIn("/xnobrain/api/runtime/v1/agents/{agent_id}/custom-page", paths)
         self.assertNotIn("/xnobrain/api/runtime/v1/ui-assistance", paths)
         self.assertIn("/xnobrain/api/runtime/v1/health", paths)
+
+    def test_extensions_routes_are_optional_and_enabled_by_flag(self):
+        with patch.dict(os.environ, {"FT_ENABLE_AGENT_EXTENSIONS": "false"}, clear=True):
+            app = FastAPI()
+            setup_routes(app, HandlerStub())
+        paths = {route.path for route in app.routes}
+        self.assertNotIn("/xnobrain/api/runtime/v1/plugins/catalog", paths)
+
+        with patch.dict(os.environ, {"FT_ENABLE_AGENT_EXTENSIONS": "true"}, clear=True):
+            app = FastAPI()
+            setup_routes(app, HandlerStub())
+        paths = {route.path for route in app.routes}
+        self.assertIn("/xnobrain/api/runtime/v1/plugins/catalog", paths)
+        self.assertIn("/xnobrain/api/runtime/v1/agents-tools/{agent_id}", paths)
 
     def test_enabled_routes_are_registered(self):
         with patch.dict(

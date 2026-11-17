@@ -8,6 +8,8 @@ import os
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
+from .feature_flags import FEATURE_AGENT_EXTENSIONS
+from .feature_flags import enabled as feature_enabled
 from .handlers import APIHandlers
 from .repositories import FileRepository
 from .routes import setup_routes
@@ -131,6 +133,8 @@ class XNOBrainApplication:
                     profile_cron_loop(), name="xnobrain-profile-cron-dispatcher"
                 )
                 await self.service.portability_tasks.worker.start()
+                if feature_enabled(FEATURE_AGENT_EXTENSIONS):
+                    await self.service.extensions.worker.start()
                 try:
                     yield
                 finally:
@@ -148,6 +152,7 @@ class XNOBrainApplication:
                         async with shutdown_stage("run_admission"):
                             await self.service.run_admission.close()
                     async with shutdown_stage("portability"):
+                        await self.service.extensions.worker.shutdown()
                         await self.service.portability_tasks.worker.shutdown()
                     async with shutdown_stage("organization_connector"):
                         await self.service.organization_connector.stop()

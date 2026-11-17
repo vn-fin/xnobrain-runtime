@@ -180,6 +180,7 @@ class AgentProfilesMixin:
                 if dst.exists():
                     shutil.rmtree(dst)
                 shutil.copytree(src, dst)
+        self._ensure_required_plugin(profile_dir)
         if copy_credentials:
             for filename in CREDENTIAL_FILES:
                 src = self.root_profile / filename
@@ -329,6 +330,7 @@ class AgentProfilesMixin:
 
     def _ensure_router_profile(self, profile_dir: Path, model: Any = None) -> None:
         self._apply_default_skills_policy(profile_dir)
+        self._ensure_required_plugin(profile_dir)
         config = self._read_config(profile_dir)
         selected_model = None
         if model is not None:
@@ -376,6 +378,56 @@ class AgentProfilesMixin:
         compression.setdefault("proactive_prune_min_result_chars", 8_000)
         compression.setdefault("proactive_prune_min_reclaim_tokens", 4_096)
         self._write_yaml_atomic(profile_dir / "config.yaml", config)
+
+    @staticmethod
+    def _ensure_required_plugin(profile_dir: Path) -> None:
+        """Install and enable only the exact image-owned required plugin."""
+        from .extension_policy import (
+            REQUIRED_PLUGINS,
+            required_plugin_root,
+            safe_child,
+            tree_digest,
+        )
+
+        source_root = required_plugin_root()
+        plugins = safe_child(profile_dir, "plugins")
+        plugins.mkdir(parents=True, exist_ok=True, mode=0o700)
+        config_path = safe_child(profile_dir, "config.yaml")
+        config = {}
+        if config_path.is_file():
+            config = AgentProfilesMixin._read_yaml_file(config_path)
+        original = json.dumps(config, sort_keys=True)
+        settings = config.setdefault("plugins", {})
+        if not isinstance(settings, dict):
+            settings = config["plugins"] = {}
+        enabled = {item for item in settings.get("enabled", []) if isinstance(item, str)}
+        disabled = {item for item in settings.get("disabled", []) if isinstance(item, str)}
+        for plugin_id in sorted(REQUIRED_PLUGINS):
+            source = safe_child(source_root, plugin_id)
+            destination = safe_child(profile_dir, "plugins", plugin_id)
+            if source.is_dir() and not destination.exists() and not destination.is_symlink():
+                shutil.copytree(source, destination, symlinks=False)
+            if source.is_dir() and destination.is_dir() and not destination.is_symlink():
+                # Interpreter caches are generated runtime state, not packaged
+                # plugin code; discard them before checking the trusted digest.
+                for cache in destination.rglob("__pycache__"):
+                    if cache.is_dir() and not cache.is_symlink():
+                        shutil.rmtree(cache)
+                if tree_digest(source) == tree_digest(destination):
+                    enabled.add(plugin_id)
+                    disabled.discard(plugin_id)
+        settings["enabled"] = sorted(enabled)
+        settings["disabled"] = sorted(disabled)
+        if json.dumps(config, sort_keys=True) != original:
+            AgentProfilesMixin._write_yaml_atomic(config_path, config)
+
+    @staticmethod
+    def _read_yaml_file(path: Path) -> dict[str, Any]:
+        try:
+            value = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except (OSError, yaml.YAMLError):
+            return {}
+        return value if isinstance(value, dict) else {}
 
     def _effective_config(
         self, config: Mapping[str, Any], metadata: Mapping[str, Any]

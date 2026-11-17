@@ -16,6 +16,7 @@ from xnobrain.services.base import ServiceError
 from xnobrain.services.conversation_runs import ConversationRunService
 from xnobrain.services.run_admission import RunAdmissionService
 from xnobrain.tests import test_conversation_runs as fixtures
+from xnobrain.trusted_context import TrustedRequestContext
 
 
 class CapacityQueueTests(unittest.IsolatedAsyncioTestCase):
@@ -116,6 +117,30 @@ class CapacityQueueTests(unittest.IsolatedAsyncioTestCase):
         self.client.observe.return_value = {**self.offer, "state": "offered"}
         await self.capacity._tick(self.capacity.store.pending()[0])
         self.client.claim.assert_awaited_once()
+
+    async def test_mcp_grant_is_kept_in_memory_and_removed_from_queue_payload(self):
+        persisted = {}
+        self.capacity.store.enqueue = lambda _record, payload: persisted.update(payload)
+        self.capacity.store.update = lambda *_args: None
+        self.capacity.files = SimpleNamespace(put_conversation_run=lambda _record: None)
+        self.capacity.runs = SimpleNamespace(_append=lambda record, _event: record)
+        record = {
+            "id": "mcp-grant-run",
+            "agent_id": "agent-one",
+            "conversation_id": "session-one",
+            "capacity": {},
+        }
+        with patch("xnobrain.integrations.run_admission.requires_immediate", return_value=False):
+            self.capacity.enqueue(
+                record,
+                {"_mcp_grant": "private-mcp-grant"},
+                TrustedRequestContext(mcp_grant="private-mcp-grant"),
+            )
+
+        self.assertNotIn("_mcp_grant", persisted)
+        self.assertNotIn("mcp_grant", persisted["principal"])
+        self.assertNotIn("private-mcp-grant", repr(persisted))
+        self.assertEqual(self.capacity.mcp_grants[record["id"]], "private-mcp-grant")
 
     async def test_drain_during_capacity_claim_allows_admitted_task_handoff(self):
         await self.service.start_run("agent-one", "session-one", {"input": "hello"})

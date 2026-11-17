@@ -15,7 +15,6 @@ dist
 vite.config.js
 vite.config.d.ts
 bin
-xnobrain/**/__pycache__
-xnobrain/**/*.pyc
-__pycache__
+**/__pycache__
+**/*.pyc
 *.log

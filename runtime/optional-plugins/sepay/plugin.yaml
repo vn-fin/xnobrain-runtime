@@ -1,0 +1,9 @@
+name: sepay
+version: 0.2.0
+description: Read connected SePay records through managed credentials.
+author: XNOBrain
+kind: standalone
+requires_env: []
+provides_tools: [sepay_read]
+provides_hooks: []
+provides_skills: [sepay]

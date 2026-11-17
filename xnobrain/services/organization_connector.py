@@ -567,7 +567,12 @@ class OrganizationLink:
     async def command(self, client, state, cmd):
         if self.dispatch_paused:
             return
-        canonical = json.dumps(cmd, sort_keys=True, separators=(",", ":")).encode()
+        digest_command = dict(cmd)
+        if "router_token" in (cmd.get("funding") or {}):
+            digest_command["funding"] = {
+                key: value for key, value in cmd["funding"].items() if key != "router_token"
+            }
+        canonical = json.dumps(digest_command, sort_keys=True, separators=(",", ":")).encode()
         digest = hashlib.sha256(canonical).hexdigest()
         cid = cmd["command_id"]
         if self.store.seen(cid):
@@ -621,6 +626,11 @@ class OrganizationLink:
         if not context_id:
             raise ValueError("organization command has no work context")
         funding = dict(cmd.get("funding") or {})
+        if funding.get("router_token"):
+            from ..integrations.accounting_context import accounting_enabled
+
+            if not accounting_enabled():
+                raise ValueError("organization inference requires router accounting")
         mode = str(funding.get("mode") or "")
         model = str(funding.get("model") or "")
         if mode == organization_funding.ORGANIZATION:
@@ -679,7 +689,11 @@ class OrganizationLink:
             ),
         )
         organization_funding.register(
-            conversation["id"], mode, model, workspace=funding.get("workspace") is True
+            conversation["id"],
+            mode,
+            model,
+            workspace=funding.get("workspace") is True,
+            router_token=str(funding.get("router_token") or ""),
         )
         body = self.execution_body(cmd, instruction, deadline)
         if model:

@@ -35,16 +35,30 @@ def owns_organization_context(context_id: str) -> bool:
     )
 
 
-def register(conversation_id: str, mode: str, model: str = "", *, workspace: bool = False) -> None:
+def register(
+    conversation_id: str,
+    mode: str,
+    model: str = "",
+    *,
+    workspace: bool = False,
+    router_token: str = "",
+) -> None:
     if mode not in {ORGANIZATION, OWNER} or not conversation_id:
         raise ValueError("invalid organization funding")
-    # A member Runtime must use a granted ``org/...`` model. The organization
-    # workspace bills the organization through its own key, so it may keep the
-    # agent's model (empty) or use any model of the organization's connections.
-    if mode == ORGANIZATION and not workspace and not model.startswith("org/"):
+    # Borrowed agents use a delegated token for direct provider models. Legacy
+    # ``org/...`` grants remain valid without one. Organization workspaces use
+    # their own key and may retain the agent's model (empty).
+    if router_token and (
+        mode != ORGANIZATION
+        or workspace
+        or not model
+        or not router_token.startswith("xno-org-run.")
+    ):
+        raise ValueError("invalid organization inference token")
+    if mode == ORGANIZATION and not workspace and not router_token and not model.startswith("org/"):
         raise ValueError("organization funding requires an organization model")
     with _LOCK:
-        _FUNDING[conversation_id] = {"mode": mode, "model": model}
+        _FUNDING[conversation_id] = {"mode": mode, "model": model, "router_token": router_token}
 
 
 def release(conversation_id: str) -> None:
@@ -57,4 +71,10 @@ def funding_for(conversation_id: str | None) -> dict[str, Any] | None:
         return None
     with _LOCK:
         value = _FUNDING.get(str(conversation_id))
-    return dict(value) if value else None
+    return {key: item for key, item in value.items() if key != "router_token"} if value else None
+
+
+def router_token_for(conversation_id: str) -> str:
+    """Private credential accessor; funding metadata never exposes the token."""
+    with _LOCK:
+        return _FUNDING.get(str(conversation_id), {}).get("router_token", "")

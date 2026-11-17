@@ -34,9 +34,32 @@ class MCPIntegrationMixin:
         profile_dir = self._require_profile(self._agent_name(raw_name))
         config = self._read_config(profile_dir)
         servers = config.get("mcp_servers")
+        visible = (
+            {
+                name: server
+                for name, server in servers.items()
+                if not (isinstance(server, dict) and server.get("xnobrain_plugin_shadow"))
+            }
+            if isinstance(servers, Mapping)
+            else {}
+        )
         return {
-            "servers": self._safe_mcp_servers(servers) if isinstance(servers, Mapping) else {},
+            "servers": self._safe_mcp_servers(visible),
+            "chat_status": self._native_mcp_status(profile_dir, config),
         }
+
+    @staticmethod
+    def _native_mcp_status(profile_dir: Any, config: Mapping[str, Any]) -> dict[str, str]:
+        """Report how each server behaves in native chat turns, never failing reads."""
+        try:
+            from .extension_engine import _custom_mcp_servers
+            from .extension_policy import load_state
+            from .managed_mcp import native_mcp_status
+
+            custom = _custom_mcp_servers(dict(config), load_state(profile_dir))
+            return native_mcp_status(profile_dir, custom)
+        except Exception:
+            return {}
 
     def update_mcp(self, raw_name: Any, servers: Mapping[str, Any]) -> dict[str, Any]:
         from urllib.parse import urlparse
@@ -59,10 +82,27 @@ class MCPIntegrationMixin:
 
         def validate_mcp_server_entry(name: str, entry: Mapping[str, Any]) -> list[str]:
             issues: list[str] = []
-            allowed = {"command", "args", "env", "url", "headers", "tools"}
+            allowed = {
+                "command",
+                "args",
+                "env",
+                "url",
+                "headers",
+                "tools",
+                "xnobrain_connection_id",
+            }
             for key in entry:
                 if key not in allowed:
                     issues.append(f"{name}.{key} is not supported")
+            if "xnobrain_connection_id" in entry:
+                # Control holds the headers; the entry only names the connection.
+                if not re.fullmatch(
+                    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    str(entry["xnobrain_connection_id"]),
+                ):
+                    issues.append(f"{name}.xnobrain_connection_id must be a UUID")
+                if "headers" in entry or "command" in entry:
+                    issues.append(f"{name}.xnobrain_connection_id requires a url without headers")
 
             command = entry.get("command")
             url = entry.get("url")
@@ -114,6 +154,37 @@ class MCPIntegrationMixin:
             )
 
         config = self._read_config(profile_dir)
+        existing = config.get("mcp_servers") or {}
+        # Plugin shadows are hidden from get_mcp, so keep them and only refuse overwrites.
+        shadows = (
+            {
+                name: server
+                for name, server in existing.items()
+                if isinstance(server, dict) and server.get("xnobrain_plugin_shadow")
+            }
+            if isinstance(existing, Mapping)
+            else {}
+        )
+        if any(name in shadows for name in cleaned):
+            raise AgentAPIError(
+                "Plugin managed MCP entries cannot be edited",
+                status=422,
+                code="mcp_server_managed",
+            )
+        from .extension_policy import load_state
+
+        managed_names = {
+            record.get("server_name")
+            for record in load_state(profile_dir).get("mcp", {}).values()
+            if isinstance(record, dict)
+        }
+        if any(name in managed_names for name in cleaned):
+            raise AgentAPIError(
+                "Managed MCP entries cannot be edited",
+                status=422,
+                code="mcp_server_managed",
+            )
+        cleaned.update(shadows)
         if cleaned:
             config["mcp_servers"] = cleaned
         else:

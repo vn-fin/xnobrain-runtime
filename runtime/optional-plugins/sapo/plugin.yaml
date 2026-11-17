@@ -1,0 +1,9 @@
+name: sapo
+version: 0.2.0
+description: Read connected Sapo records through managed credentials.
+author: XNOBrain
+kind: standalone
+requires_env: []
+provides_tools: [sapo_read]
+provides_hooks: []
+provides_skills: [sapo]

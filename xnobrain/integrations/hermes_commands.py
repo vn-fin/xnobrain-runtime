@@ -103,11 +103,16 @@ class HermesCommandsMixin:
         }
 
     def _command_env(self, hermes_home: Path, engine: str) -> dict[str, str]:
+        from .extension_policy import validate_profile_extensions
+
+        validate_profile_extensions(hermes_home)
         router_api_key = self._ensure_router_api_key()
         env = os.environ.copy()
         env["HERMES_HOME"] = str(hermes_home)
         env.setdefault("HOME", str(Path.home()))
-        env.setdefault("HERMES_ACCEPT_HOOKS", "1")
+        env["HERMES_ACCEPT_HOOKS"] = "0"
+        env["HERMES_ENABLE_PROJECT_PLUGINS"] = "0"
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
         self._load_agent_credentials(env)
         if router_api_key:
             # Legacy credential files cannot replace the canonical mounted key.
