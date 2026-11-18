@@ -278,3 +278,17 @@ verification policy; actual loss remains visible as `data_loss_accepted=true`,
 `data_verification.accepted_removed`, and the unchanged `changes.removed` count.
 A restored file must still match its original entry. Any additional loss fails.
 Normal resume remains mandatory; source restoration verification stays strict.
+
+## Recovering a legacy extension lock verification
+
+A Gateway retry for the affected legacy container can invoke
+`verify-extension-locks` from a separately verified Runtime package.
+The service stays in maintenance. The helper locks the operation and checkpoint,
+checks the installed source receipt and the original failed scan, then rescans
+the same v3 checkpoint. Only the exact validated queue lock additions qualify.
+The current manifest digest must match the digest from the legacy scan.
+
+On success the operation records the earlier failure under
+`post_verify_before_lock_recovery` and the measured proof under `post_verify`
+with method `extension_locks_v1`. The Gateway still runs the normal resume and
+soak phases. A failed proof leaves maintenance in place.
