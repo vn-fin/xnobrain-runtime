@@ -175,12 +175,16 @@ class ExtensionAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(detail.status_code, 200, detail.text)
         self.assertEqual(detail.json()["data"]["status"], "PENDING")
 
-    async def test_native_provider_catalog_installs_through_plugin_operations(self):
+    async def test_native_provider_catalog_requires_control_intent(self):
         capabilities = await self.client.get(
             f"{API_PREFIX}/plugins/capabilities", headers=self.headers()
         )
         self.assertEqual(capabilities.status_code, 200)
-        self.assertTrue(capabilities.json()["data"]["native_packages"]["sepay"])
+        self.assertEqual(
+            capabilities.json()["data"]["managed_provider_packages"],
+            {"schema_versions": [1]},
+        )
+        self.assertNotIn("native_packages", capabilities.json()["data"])
         path = f"{API_PREFIX}/agents-extension-operations/research"
         body = {
             "kind": "install",
@@ -190,18 +194,9 @@ class ExtensionAPITests(unittest.IsolatedAsyncioTestCase):
         }
         denied = await self.client.post(path, json=body)
         self.assertEqual(denied.status_code, 401)
-        accepted = await self.client.post(path, headers=self.headers(), json=body)
-        self.assertEqual(accepted.status_code, 202, accepted.text)
-        self.assertTrue(accepted.json()["success"])
-        self.extensions.worker._process(self.extensions.store.claim_next())
-        listed = await self.client.get(
-            f"{API_PREFIX}/agents-plugins/research", headers=self.headers()
-        )
-        self.assertEqual(listed.status_code, 200, listed.text)
-        plugin = next(item for item in listed.json()["data"]["plugins"] if item["id"] == "sepay")
-        self.assertEqual(plugin["source"], "bundled:sepay")
-        self.assertEqual(plugin["provides_skills"], ["sepay"])
-        self.assertFalse(plugin["enabled"])
+        without_intent = await self.client.post(path, headers=self.headers(), json=body)
+        self.assertEqual(without_intent.status_code, 403)
+        self.assertEqual(without_intent.json()["error"]["code"], "native_provider_intent_required")
         invalid = await self.client.post(
             path,
             headers=self.headers(),

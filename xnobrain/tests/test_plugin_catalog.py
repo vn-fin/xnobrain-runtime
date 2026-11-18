@@ -9,7 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from xnobrain.integrations import bundled_plugins, extension_engine
+from xnobrain.integrations import extension_engine
 from xnobrain.repositories import FileRepository
 from xnobrain.services.base import ServiceError
 from xnobrain.services.extensions import ExtensionsService
@@ -124,12 +124,10 @@ class PluginCatalogTests(unittest.TestCase):
         self.assertTrue(result["configured"])
         self.assertEqual(result["catalog_id"], "context7")
 
-    def test_capabilities_report_native_package_availability(self):
+    def test_capabilities_report_managed_provider_packages(self):
         capabilities = self.service.capabilities()
-        self.assertEqual(set(capabilities["native_packages"]), set(bundled_plugins.PROVIDERS))
-        with patch.object(bundled_plugins, "package_root", return_value=Path(self.temporary.name)):
-            unavailable = self.service.capabilities()
-        self.assertFalse(unavailable["native_packages"]["sapo"])
+        self.assertEqual(capabilities["managed_provider_packages"], {"schema_versions": [1]})
+        self.assertNotIn("native_packages", capabilities)
 
 
 if __name__ == "__main__":

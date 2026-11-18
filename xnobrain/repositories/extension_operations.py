@@ -118,9 +118,11 @@ class ExtensionOperationStore:
         kind: str,
         inputs: dict[str, Any],
         idempotency_key: str,
+        idempotency_inputs: dict[str, Any] | None = None,
     ) -> tuple[dict[str, Any], bool]:
         if not owner or not idempotency_key or len(idempotency_key) > 128:
             raise StoreError("Invalid operation identity", status=422, code="invalid_request")
+        identity = idempotency_inputs if idempotency_inputs is not None else inputs
         digest = hashlib.sha256(idempotency_key.encode()).hexdigest()
         now = time.time()
         with self._locked():
@@ -128,7 +130,8 @@ class ExtensionOperationStore:
             self._prune(rows, now)
             for row in rows:
                 if row.get("idempotency_digest") == digest and row.get("owner") == owner:
-                    if row.get("inputs") != inputs or row.get("kind") != kind:
+                    stored = row.get("idempotency_inputs", row.get("inputs"))
+                    if stored != identity or row.get("kind") != kind:
                         raise StoreError(
                             "Idempotency key conflicts with an earlier operation",
                             status=409,
@@ -158,9 +161,57 @@ class ExtensionOperationStore:
                 "error": None,
                 "cancel_requested": False,
             }
+            if identity != inputs:
+                operation["idempotency_inputs"] = identity
             rows.append(operation)
             self._write(agent_id, rows)
             return self.public(operation), True
+
+    def find_idempotent(
+        self,
+        *,
+        agent_id: str,
+        owner: str,
+        kind: str,
+        idempotency_key: str,
+        idempotency_inputs: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        """Return a previously accepted operation without re-pinning its package."""
+        if not owner or not idempotency_key or len(idempotency_key) > 128:
+            return None
+        digest = hashlib.sha256(idempotency_key.encode()).hexdigest()
+        with self._locked():
+            rows = self._read(agent_id)
+            self._prune(rows, time.time())
+            for row in rows:
+                if row.get("idempotency_digest") != digest or row.get("owner") != owner:
+                    continue
+                identity = (
+                    idempotency_inputs
+                    if idempotency_inputs is not None
+                    else row.get("idempotency_inputs", row.get("inputs"))
+                )
+                stored = row.get("idempotency_inputs", row.get("inputs"))
+                if row.get("kind") != kind or stored != identity:
+                    return None
+                return self.public(row)
+        return None
+
+    def native_package_digests(self) -> set[str]:
+        """Return package digests still needed by active operations."""
+        digests: set[str] = set()
+        with self._locked():
+            for path in sorted(self.root.glob("*.json")):
+                agent_id = self._agent_from_path(path)
+                for row in self._read(agent_id):
+                    if row.get("status") in TERMINAL:
+                        continue
+                    inputs = row.get("inputs")
+                    pin = inputs.get("native_package") if isinstance(inputs, dict) else None
+                    digest = pin.get("package_sha256") if isinstance(pin, dict) else None
+                    if isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest):
+                        digests.add(digest)
+        return digests
 
     def list(self, agent_id: str, owner: str) -> list[dict[str, Any]]:
         with self._locked():

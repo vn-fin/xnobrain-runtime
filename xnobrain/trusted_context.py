@@ -7,6 +7,8 @@ import hashlib
 import hmac
 import json
 import os
+import re
+import time
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
@@ -24,6 +26,10 @@ TRUSTED_CONVERSATION_CONTEXT_SIGNATURE_HEADER = "x-xnobrain-conversation-context
 TRUSTED_CATALOG_RECIPE_HEADER = "x-xnobrain-verified-catalog-recipe"
 TRUSTED_CATALOG_RECIPE_SIGNATURE_HEADER = "x-xnobrain-catalog-recipe-signature"
 TRUSTED_MCP_GRANT_HEADER = "x-xnobrain-mcp-grant"
+TRUSTED_NATIVE_PROVIDER_INTENT_HEADER = "x-xnobrain-native-provider-intent"
+TRUSTED_NATIVE_PROVIDER_SIGNATURE_HEADER = "x-xnobrain-native-provider-signature"
+NATIVE_PROVIDER_INTENT_DOMAIN = "native-provider-package-v1"
+NATIVE_PROVIDER_INTENT_PREFIX = "/xnobrain/api/runtime/v1/agents-extension-operations/"
 
 TRUSTED_IDENTITY_HEADERS = frozenset(
     {
@@ -35,9 +41,22 @@ TRUSTED_IDENTITY_HEADERS = frozenset(
         TRUSTED_CONVERSATION_CONTEXT_SIGNATURE_HEADER,
         TRUSTED_CATALOG_RECIPE_HEADER,
         TRUSTED_CATALOG_RECIPE_SIGNATURE_HEADER,
+        TRUSTED_NATIVE_PROVIDER_INTENT_HEADER,
+        TRUSTED_NATIVE_PROVIDER_SIGNATURE_HEADER,
     }
 )
 _MAX_CONTEXT_HEADER_BYTES = 8 * 1024
+_MAX_NATIVE_PROVIDER_INTENT_BYTES = 16 * 1024
+_NATIVE_PROVIDER_ROUTE = re.compile(
+    r"^/xnobrain/api/runtime/v1/agents-extension-operations/"
+    r"([A-Za-z0-9][A-Za-z0-9._-]{0,127})$"
+)
+_NATIVE_PROVIDER_ID = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+_NATIVE_PACKAGE_VERSION = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$")
+_NATIVE_PACKAGE_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_NATIVE_AGENT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+_NATIVE_PROVIDER_INTENT_MAX_LIFETIME = 300
+_NATIVE_PROVIDER_CLOCK_SKEW = 30
 
 
 @dataclass(frozen=True)
@@ -51,6 +70,7 @@ class TrustedRequestContext:
     xno_data_grant: str = field(default="", repr=False, compare=False)
     mcp_grant: str = field(default="", repr=False, compare=False)
     catalog_recipe: Mapping[str, Any] | None = None
+    native_provider_intent: Mapping[str, Any] | None = None
 
 
 def _principal_material(
@@ -284,6 +304,164 @@ def decode_verified_catalog_recipe(
     )
 
 
+def native_provider_intent_agent_id(path: str) -> str:
+    """Return the agent bound by the exact package-intent route, or ``""``."""
+    match = _NATIVE_PROVIDER_ROUTE.fullmatch(str(path or ""))
+    return match.group(1) if match else ""
+
+
+def native_provider_intent_signature(
+    token: str,
+    method: str,
+    path: str,
+    subject: str,
+    tenant_id: str,
+    organization_id: str,
+    encoded_intent: str,
+) -> str:
+    """Bind exact Control-owned package claims to the private Runtime token."""
+    material = "\x00".join(
+        (
+            NATIVE_PROVIDER_INTENT_DOMAIN,
+            method,
+            path,
+            subject,
+            tenant_id,
+            organization_id,
+            encoded_intent,
+        )
+    ).encode("utf-8")
+    return hmac.new(token.encode("utf-8"), material, hashlib.sha256).hexdigest()
+
+
+def _valid_native_provider_intent(
+    value: Any,
+    *,
+    path: str,
+    subject: str,
+    tenant_id: str,
+    organization_id: str,
+    now: int,
+) -> bool:
+    if not isinstance(value, dict) or value.get("schema_version") != 1:
+        return False
+    provider = value.get("provider")
+    package_version = value.get("package_version")
+    revision = value.get("definition_revision")
+    digest = value.get("package_sha256")
+    if (
+        not isinstance(provider, str)
+        or not _NATIVE_PROVIDER_ID.fullmatch(provider)
+        or not isinstance(package_version, str)
+        or not _NATIVE_PACKAGE_VERSION.fullmatch(package_version)
+        or isinstance(revision, bool)
+        or not isinstance(revision, int)
+        or not 1 <= revision <= 1_000_000
+        or not isinstance(digest, str)
+        or not _NATIVE_PACKAGE_SHA256.fullmatch(digest)
+    ):
+        return False
+    agent_id = native_provider_intent_agent_id(path)
+    user_id = value.get("user_id")
+    tenant_id_value = value.get("tenant_id", "")
+    organization_value = value.get("organization_id", "")
+    if (
+        not agent_id
+        or not _NATIVE_AGENT_ID.fullmatch(agent_id)
+        or value.get("agent_id") != agent_id
+        or value.get("kind") not in {"install", "update"}
+        or value.get("path") != path
+        or not isinstance(user_id, str)
+        or not user_id
+        or len(user_id) > 512
+        or user_id != subject
+        or not isinstance(tenant_id_value, str)
+        or not tenant_id_value
+        or len(tenant_id_value) > 256
+        or tenant_id_value != tenant_id
+        or organization_value != ""
+        or organization_id != ""
+    ):
+        return False
+    issued_at = value.get("issued_at")
+    expires_at = value.get("expires_at")
+    if (
+        isinstance(issued_at, bool)
+        or isinstance(expires_at, bool)
+        or not isinstance(issued_at, int)
+        or not isinstance(expires_at, int)
+        or issued_at <= 0
+        or expires_at <= issued_at
+        or expires_at - issued_at > _NATIVE_PROVIDER_INTENT_MAX_LIFETIME
+        or issued_at > now + _NATIVE_PROVIDER_CLOCK_SKEW
+        or expires_at < now - _NATIVE_PROVIDER_CLOCK_SKEW
+    ):
+        return False
+    return True
+
+
+def decode_verified_native_provider_intent(
+    token: str,
+    method: str,
+    path: str,
+    subject: str,
+    tenant_id: str,
+    organization_id: str,
+    encoded_intent: str,
+    supplied_signature: str,
+) -> dict[str, Any] | None:
+    """Return package intent only for the exact signed install/update route."""
+    if not all((token, subject, method == "POST", encoded_intent, supplied_signature)):
+        return None
+    if not native_provider_intent_agent_id(path):
+        return None
+    if len(encoded_intent) > _MAX_NATIVE_PROVIDER_INTENT_BYTES * 2:
+        return None
+    if len(supplied_signature) != 64 or not _NATIVE_PACKAGE_SHA256.fullmatch(supplied_signature):
+        return None
+    try:
+        expected = native_provider_intent_signature(
+            token,
+            method,
+            path,
+            subject,
+            tenant_id,
+            organization_id,
+            encoded_intent,
+        )
+        if not hmac.compare_digest(supplied_signature, expected):
+            return None
+        padded = encoded_intent + "=" * (-len(encoded_intent) % 4)
+        payload = base64.urlsafe_b64decode(padded.encode("ascii"))
+        if len(payload) > _MAX_NATIVE_PROVIDER_INTENT_BYTES:
+            return None
+        value = json.loads(payload.decode("utf-8"))
+    except (UnicodeError, ValueError, json.JSONDecodeError):
+        return None
+    if not _valid_native_provider_intent(
+        value,
+        path=path,
+        subject=subject,
+        tenant_id=tenant_id,
+        organization_id=organization_id,
+        now=int(time.time()),
+    ):
+        return None
+    return value
+
+
+def _single_header(headers: Any, name: str) -> str:
+    """Return one value, or ``""`` for missing or duplicated private headers."""
+    try:
+        values = headers.getlist(name)
+    except AttributeError:
+        value = headers.get(name)
+        return str(value).strip() if value else ""
+    if len(values) != 1:
+        return ""
+    return str(values[0]).strip()
+
+
 def from_request(request: Any) -> TrustedRequestContext:
     """Verify facade identity without logging or retaining request headers."""
     headers = request.headers
@@ -317,6 +495,18 @@ def from_request(request: Any) -> TrustedRequestContext:
         str(headers.get(TRUSTED_CATALOG_RECIPE_HEADER) or "").strip(),
         str(headers.get(TRUSTED_CATALOG_RECIPE_SIGNATURE_HEADER) or "").strip(),
     )
+    intent = None
+    if native_provider_intent_agent_id(request.url.path):
+        intent = decode_verified_native_provider_intent(
+            token,
+            request.method,
+            request.url.path,
+            subject,
+            tenant_id,
+            organization_id,
+            _single_header(headers, TRUSTED_NATIVE_PROVIDER_INTENT_HEADER),
+            _single_header(headers, TRUSTED_NATIVE_PROVIDER_SIGNATURE_HEADER),
+        )
     return TrustedRequestContext(
         subject,
         tenant_id,
@@ -325,4 +515,5 @@ def from_request(request: Any) -> TrustedRequestContext:
         str(headers.get("x-xnobrain-data-grant") or ""),
         str(headers.get(TRUSTED_MCP_GRANT_HEADER) or ""),
         recipe,
+        intent,
     )

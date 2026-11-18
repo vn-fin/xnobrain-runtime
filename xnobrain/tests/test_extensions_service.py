@@ -45,10 +45,8 @@ class ExtensionServiceTests(unittest.TestCase):
             capabilities = self.service.capabilities()
 
         self.assertEqual(capabilities["engine_capabilities"], {"mcp_profile_isolation": False})
-        self.assertEqual(
-            set(capabilities["native_packages"]),
-            {"sapo", "sepay", "kiotviet"},
-        )
+        self.assertEqual(capabilities["managed_provider_packages"], {"schema_versions": [1]})
+        self.assertNotIn("native_packages", capabilities)
 
     def test_catalog_install_requires_trusted_recipe_before_writing_config(self):
         with self.assertRaises(ServiceError) as missing:

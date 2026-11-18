@@ -298,7 +298,11 @@ def _scan_plugin(path: Path) -> dict[str, Any]:
             file.read_text(encoding="utf-8")
         except (UnicodeError, OSError):
             complete = False
-        if suffix not in skills_guard.SCANNABLE_EXTENSIONS:
+        scannable = suffix in skills_guard.SCANNABLE_EXTENSIONS
+        # Control-owned provider.json is reviewed data and must never escape
+        # normal text scanning just because a scanner build omits JSON.
+        normalize_text = suffix == ".json" and not scannable
+        if not scannable and not normalize_text:
             # Documentation/license dotfiles have no executable semantics.
             if file.name not in {
                 "LICENSE",
@@ -309,15 +313,20 @@ def _scan_plugin(path: Path) -> dict[str, Any]:
                 ".clawhubignore",
             }:
                 complete = False
-        if suffix in skills_guard.SCANNABLE_EXTENSIONS or file.name in {
-            "LICENSE",
-            "LICENSE.md",
-            "NOTICE",
-            ".gitignore",
-            ".skillignore",
-            ".clawhubignore",
-        }:
-            if suffix in skills_guard.SCANNABLE_EXTENSIONS:
+        if (
+            scannable
+            or normalize_text
+            or file.name
+            in {
+                "LICENSE",
+                "LICENSE.md",
+                "NOTICE",
+                ".gitignore",
+                ".skillignore",
+                ".clawhubignore",
+            }
+        ):
+            if scannable:
                 native_findings = skills_guard.scan_file(file, relative.as_posix())
             else:
                 # The native scanner dispatches by extension. Normalize only
