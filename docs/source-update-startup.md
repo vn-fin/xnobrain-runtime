@@ -127,6 +127,12 @@ outside maintenance still persist their state and back off normally. Connector
 state remains part of the exact durable-data proof; it is not excluded from
 verification.
 
+Extension queue startup creates `extension-operations/.lock` and
+`extension-operations/.worker.lock`. Manifest v3 verification accepts their appearance after
+a checkpoint only as empty, single-link regular files with mode 0600 under the
+Runtime data directory. Locks already in the checkpoint must still be present.
+Extension operation records remain part of the durable data comparison.
+
 Post-verification now distinguishes HTTP 409 `runtime_update_data_not_preserved`
 from `runtime_update_identity_mismatch`. Data mismatch takes precedence when both
 checks fail; the persisted receipt retains both booleans. The structured event

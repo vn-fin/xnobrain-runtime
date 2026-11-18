@@ -26,6 +26,7 @@ EXCLUDED_DATA_DIRECTORIES = ("runtime-updates", MEMORY_ACTIVITY_DIRECTORY)
 # and modification time, so a checkpoint never rereads every durable byte.
 MANIFEST_VERSION = 3
 CONTENT_DIGEST_MAX_BYTES = 1024 * 1024
+EXTENSION_LOCK_PATHS = ("extension-operations/.lock", "extension-operations/.worker.lock")
 
 
 class RuntimeUpdateStorageError(RuntimeError):
@@ -41,6 +42,7 @@ class RuntimeUpdateStorage:
     def __init__(self, data_dir: Path, profiles_root: Path, root_profile: Path):
         self.storage_mount = StorageMountGuard(data_dir)
         self.data_dir = data_dir.resolve()
+        self.extension_locks = {self.data_dir / name for name in EXTENSION_LOCK_PATHS}
         self.profiles_root = profiles_root.resolve()
         self.root_profile = root_profile.resolve()
         self.data_anchor = Path(os.getenv("RUNTIME_UPDATE_DATA_PATH", "/opt/data")).resolve()
@@ -211,7 +213,7 @@ class RuntimeUpdateStorage:
         for label, root in self.durable_roots():
             if not root.exists():
                 continue
-            paths = list(self._walk_files(root))
+            paths = list(self._walk_files(root, check_extension_locks=version == 3))
             databases = set()
             if version >= 2:
                 for path in paths:
@@ -252,6 +254,14 @@ class RuntimeUpdateStorage:
                 if version == 1 and path.is_symlink() and self._profile_alias(path):
                     continue
                 stat = path.stat(follow_symlinks=False)
+                if version == 3 and path in self.extension_locks:
+                    if (
+                        not file_stat.S_ISREG(stat.st_mode)
+                        or file_stat.S_IMODE(stat.st_mode) != 0o600
+                        or stat.st_size != 0
+                        or stat.st_nlink != 1
+                    ):
+                        raise self._unsafe_data(path, "extension_lock", "invalid extension lock")
                 total += stat.st_size
                 if len(entries) >= self.max_files or total > self.max_bytes:
                     raise RuntimeUpdateStorageError(
@@ -351,8 +361,13 @@ class RuntimeUpdateStorage:
             }
         before = {entry["path"]: entry for entry in baseline["entries"]}
         after = {entry["path"]: entry for entry in current["entries"]}
+        added = after.keys() - before.keys()
+        # V3 validates these exact Runtime-owned files while scanning. Preserve
+        # the real addition count and digest, including for existing checkpoints.
+        lock_additions = added.intersection(f"data/{name}" for name in EXTENSION_LOCK_PATHS)
+        accepted_added = len(lock_additions) if version == 3 else 0
         counts = {
-            "added": len(after.keys() - before.keys()),
+            "added": len(added),
             "removed": len(before.keys() - after.keys()),
             "changed": 0,
             "log_appends": 0,
@@ -383,11 +398,14 @@ class RuntimeUpdateStorage:
             counts["changed"] += 1
         return {
             "preserved": (
-                counts["added"] == counts["changed"] == 0 and counts["removed"] == accepted_removed
+                counts["added"] == accepted_added
+                and counts["changed"] == 0
+                and counts["removed"] == accepted_removed
             ),
             "manifest_digest": current["digest"],
             "manifest_version": version,
             "changes": counts,
+            **({"extension_locks_added": accepted_added} if accepted_added else {}),
             **({"accepted_removed": accepted_removed} if accepted else {}),
         }
 
@@ -461,7 +479,7 @@ class RuntimeUpdateStorage:
     def _profile_alias(self, path: Path) -> bool:
         return path == self.root_profile / "profiles" and path.resolve() == self.profiles_root
 
-    def _walk_files(self, root: Path) -> Iterable[Path]:
+    def _walk_files(self, root: Path, *, check_extension_locks: bool = False) -> Iterable[Path]:
         def fail_walk(error):
             raise error
 
@@ -470,6 +488,8 @@ class RuntimeUpdateStorage:
             safe_directories = []
             for name in sorted(directories):
                 path = current_path / name
+                if check_extension_locks and path in self.extension_locks:
+                    raise self._unsafe_data(path, "extension_lock", "invalid extension lock")
                 if self._excluded(path):
                     continue
                 # Symlinked directories are recorded as links, never descended.
