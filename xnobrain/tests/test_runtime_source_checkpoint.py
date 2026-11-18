@@ -17,6 +17,7 @@ from xnobrain.integrations.runtime_source_checkpoint import (
     checkpoint,
     require_stopped,
     restore_ready,
+    verify_extension_locks,
 )
 from xnobrain.integrations.runtime_update_storage import RuntimeUpdateStorage
 from xnobrain.repositories.base import RepositoryBase
@@ -88,6 +89,49 @@ class SourceCheckpointTest(unittest.TestCase):
 
     def run_checkpoint(self, request=None):
         return checkpoint(request or self.request, data_anchor=self.anchor)
+
+    def test_live_lock_recovery_requires_the_same_failed_scan_and_fence(self):
+        identity = self.run_checkpoint()
+        original = self.journal.checkpoint(identity)
+        request = {**self.request, "checkpoint_id": identity}
+        directory = self.paths[0] / "extension-operations"
+        directory.mkdir()
+        for name in (".lock", ".worker.lock"):
+            (directory / name).touch(mode=0o600)
+        digest = RuntimeUpdateStorage(*self.paths).manifest()["digest"]
+        operation = self.journal.operation(self.binding["operation_id"])
+        evidence = {
+            "installed": self.binding["target"],
+            "operation_id": self.binding["operation_id"],
+            "generation": self.binding["generation"],
+        }
+        failure = {
+            **evidence,
+            "manifest_digest": digest,
+            "installed_identity_matches": True,
+            "data_preserved": False,
+            "verified": False,
+        }
+        operation["steps"].update(readiness={**evidence, "ready": True}, post_verify=failure)
+        self.journal.save_operation(operation)
+        with patch(
+            "xnobrain.integrations.runtime_source_checkpoint.source_installed_identity",
+            return_value=self.binding["target"],
+        ):
+            with self.assertRaises(ValueError):
+                verify_extension_locks({**request, "generation": 8}, data_anchor=self.anchor)
+            self.state.write_text("altered")
+            with self.assertRaises(ValueError):
+                verify_extension_locks(request, data_anchor=self.anchor)
+            self.state.write_text('{"status":"ready"}')
+            result = verify_extension_locks(request, data_anchor=self.anchor)
+        steps = self.journal.operation(self.binding["operation_id"])["steps"]
+        self.assertEqual(steps["post_verify_before_lock_recovery"], failure)
+        self.assertEqual(steps["post_verify"], result)
+        self.assertEqual(result["data_verification"]["extension_locks_added"], 2)
+        self.assertTrue(result["verified"])
+        self.assertEqual(self.journal.checkpoint(identity), original)
+        self.assertTrue(self.journal.maintenance()["dispatch_paused"])
 
     def test_managed_volume_failure_precedes_repository_writes(self):
         for failure in ("missing marker", "wrong marker", "missing mount", "read only", "no id"):

@@ -18,6 +18,7 @@ from ..repositories.base import RepositoryBase
 from ..repositories.runtime_update_gate import checkpoint_gate, update_operation
 from ..repositories.runtime_updates import RuntimeUpdateRepository
 from ..services.base import iso
+from .runtime_build_identity import source_installed_identity
 from .runtime_data_volume import verify_volume
 from .runtime_update_storage import RuntimeUpdateStorage, RuntimeUpdateStorageError
 
@@ -41,11 +42,12 @@ def require_stopped(unit: str = "xnobrain-api.service") -> None:
         raise ValueError("Runtime must be stopped before checkpoint")
 
 
-def _context(request: dict, data_anchor: Path):
+def _context(request: dict, data_anchor: Path, *, stopped: bool = True):
     unit = (
         "xnobrain-runtime.service" if data_anchor == Path("/opt/data") else "xnobrain-api.service"
     )
-    require_stopped(unit)
+    if stopped:
+        require_stopped(unit)
     binding = RuntimeRolloutRequest.model_validate(
         {key: request[key] for key in ("operation_id", "generation", "target")}
     ).model_dump()
@@ -143,34 +145,39 @@ def checkpoint(request: dict, *, data_anchor: Path = Path("/srv/xnobrain-data"))
         return checkpoint_id
 
 
+def _fenced_checkpoint(journal, binding: dict, checkpoint_id: str):
+    maintenance = journal.maintenance()
+    operation = journal.operation(binding["operation_id"])
+    steps = dict(operation.get("steps") or {})
+    if (
+        maintenance.get("kind") != "runtime_source"
+        or maintenance.get("phase") != "checkpointed"
+        or not maintenance.get("dispatch_paused")
+        or not checkpoint_id
+        or maintenance.get("checkpoint_id") != checkpoint_id
+        or any(maintenance.get(key) != value for key, value in binding.items())
+        or any(operation.get(key) != value for key, value in binding.items())
+        or steps.get("resume")
+        or steps.get("abort_unchanged")
+    ):
+        raise ValueError("source restore ownership mismatch")
+    existing = journal.checkpoint(checkpoint_id)
+    if (
+        not existing
+        or existing.get("checkpoint_id") != checkpoint_id
+        or any(existing.get(key) != value for key, value in binding.items())
+        or steps.get("checkpoint") != existing
+    ):
+        raise ValueError("source restore checkpoint mismatch")
+    return operation, steps, existing
+
+
 def restore_ready(request: dict, *, data_anchor: Path = Path("/srv/xnobrain-data")) -> dict:
     """Prove unchanged data while stopped, without refreshing the checkpoint."""
     paths, binding, journal = _context(request, data_anchor)
     with update_operation(paths[0]), checkpoint_gate(paths[0]):
-        maintenance = journal.maintenance()
-        operation = journal.operation(binding["operation_id"])
         checkpoint_id = request.get("checkpoint_id")
-        steps = dict(operation.get("steps") or {})
-        if (
-            maintenance.get("kind") != "runtime_source"
-            or maintenance.get("phase") != "checkpointed"
-            or not maintenance.get("dispatch_paused")
-            or not checkpoint_id
-            or maintenance.get("checkpoint_id") != checkpoint_id
-            or any(maintenance.get(key) != value for key, value in binding.items())
-            or any(operation.get(key) != value for key, value in binding.items())
-            or steps.get("resume")
-            or steps.get("abort_unchanged")
-        ):
-            raise ValueError("source restore ownership mismatch")
-        existing = journal.checkpoint(checkpoint_id)
-        if (
-            not existing
-            or existing.get("checkpoint_id") != checkpoint_id
-            or any(existing.get(key) != value for key, value in binding.items())
-            or steps.get("checkpoint") != existing
-        ):
-            raise ValueError("source restore checkpoint mismatch")
+        operation, steps, existing = _fenced_checkpoint(journal, binding, checkpoint_id)
         # Do not flush SQLite or regenerate evidence: failure is not permission
         # to accept target-startup mutations as a new baseline.
         verification = RuntimeUpdateStorage(*paths).verify(existing["manifest"])
@@ -183,6 +190,62 @@ def restore_ready(request: dict, *, data_anchor: Path = Path("/srv/xnobrain-data
             "checked_at": iso(),
         }
         steps["restore_ready"] = result
+        journal.save_operation({**operation, "steps": steps, "updated_at": iso()})
+        return result
+
+
+def verify_extension_locks(request: dict, *, data_anchor: Path) -> dict:
+    """Recheck the original v3 checkpoint under the running service's durable gates."""
+    paths, binding, journal = _context(request, data_anchor, stopped=False)
+    checkpoint_id = request["checkpoint_id"]
+    with update_operation(paths[0]), checkpoint_gate(paths[0]):
+        operation, steps, existing = _fenced_checkpoint(journal, binding, checkpoint_id)
+        failed = steps.get("post_verify") or {}
+        ready = steps.get("readiness") or {}
+        installed = source_installed_identity()
+        if (
+            journal.maintenance().get("recovery_target")
+            or existing["manifest"].get("version") != 3
+            or ready.get("ready") is not True
+            or ready.get("installed") != binding["target"]
+            or installed != binding["target"]
+            or failed.get("installed") != installed
+            or failed.get("installed_identity_matches") is not True
+            or failed.get("data_preserved") is not False
+            or failed.get("verified") is not False
+            or any(
+                receipt.get(key) != binding[key]
+                for key in ("operation_id", "generation")
+                for receipt in (ready, failed)
+            )
+        ):
+            raise ValueError("missing fenced legacy verification evidence")
+        verification = RuntimeUpdateStorage(*paths).verify(existing["manifest"])
+        count = verification.get("extension_locks_added", 0)
+        changes = verification.get("changes", {})
+        if (
+            not verification["preserved"]
+            or count not in (1, 2)
+            or changes.get("added") != count
+            or changes.get("removed") != 0
+            or changes.get("changed") != 0
+            or failed.get("manifest_digest") != verification["manifest_digest"]
+        ):
+            raise ValueError("original checkpoint failed extension lock verification")
+        result = {
+            **binding,
+            "checkpoint_id": checkpoint_id,
+            "installed": installed,
+            "installed_identity_matches": True,
+            "verified": True,
+            "data_preserved": True,
+            "manifest_digest": verification["manifest_digest"],
+            "data_verification": verification,
+            "verification_method": "extension_locks_v1",
+            "verified_at": iso(),
+        }
+        steps["post_verify_before_lock_recovery"] = failed
+        steps["post_verify"] = result
         journal.save_operation({**operation, "steps": steps, "updated_at": iso()})
         return result
 
@@ -202,6 +265,8 @@ def main() -> None:
             print(checkpoint(request, data_anchor=data_anchor))
         elif action == "restore-ready":
             print(json.dumps(restore_ready(request, data_anchor=data_anchor)))
+        elif action == "verify-extension-locks":
+            print(json.dumps(verify_extension_locks(request, data_anchor=data_anchor)))
         else:
             raise ValueError("unsupported offline action")
     except (
