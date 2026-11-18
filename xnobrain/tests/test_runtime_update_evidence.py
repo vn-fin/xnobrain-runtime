@@ -46,6 +46,53 @@ class EvidenceTests(unittest.TestCase):
         connection.commit()
         return path, connection
 
+    def test_extension_lock_additions_across_checkpoint_versions(self):
+        directory = self.data / "extension-operations"
+        directory.mkdir()
+        locks = [directory / name for name in (".lock", ".worker.lock")]
+        for version in (1, 2, 3):
+            with self.subTest(version=version):
+                before = self.storage.manifest(version=version)
+                for lock in locks:
+                    lock.touch(mode=0o600)
+                result = self.storage.verify(before)
+                self.assertEqual(result["preserved"], version == 3)
+                if version == 3:
+                    self.assertEqual(result["changes"]["added"], 2)
+                    self.assertEqual(result["extension_locks_added"], 2)
+                recorded = self.storage.manifest(version=version)
+                operation = directory / "operation.json"
+                operation.write_text("{}")
+                self.assertFalse(self.storage.verify(before)["preserved"])
+                operation.unlink()
+                for lock in locks:
+                    lock.unlink()
+                self.assertFalse(self.storage.verify(recorded)["preserved"])
+
+    def test_extension_lock_shape_is_checked(self):
+        directory = self.data / "extension-operations"
+        directory.mkdir()
+        before = self.storage.manifest()
+        lock = directory / ".worker.lock"
+        target = self.root / "empty"
+        target.touch(mode=0o600)
+        for make_lock in (
+            lambda: lock.write_bytes(b"unexpected"),
+            lambda: lock.touch(mode=0o644),
+            lambda: lock.symlink_to(target),
+            lambda: os.link(target, lock),
+            lock.mkdir,
+        ):
+            make_lock()
+            if lock.is_file() and lock.stat().st_size:
+                lock.chmod(0o600)
+            with self.assertRaises(RuntimeUpdateStorageError):
+                self.storage.verify(before)
+            if lock.is_dir():
+                lock.rmdir()
+            else:
+                lock.unlink()
+
     def test_wal_commit_is_verified_not_ignored(self):
         _, connection = self.database()
         before = self.storage.manifest()
