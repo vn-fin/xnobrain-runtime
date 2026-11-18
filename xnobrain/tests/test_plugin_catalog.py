@@ -1,235 +1,135 @@
-"""Regression checks for the independently authored integration catalog."""
+"""Trusted catalog recipe contract for Control-owned plugin installs."""
 
 from __future__ import annotations
 
-import copy
+import os
+import tempfile
 import unittest
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
-from xnobrain.repositories.plugin_catalog import load_plugin_catalog, validate_plugin_catalog
+from xnobrain.integrations import bundled_plugins, extension_engine
+from xnobrain.repositories import FileRepository
+from xnobrain.services.base import ServiceError
+from xnobrain.services.extensions import ExtensionsService
+from xnobrain.trusted_context import (
+    TRUSTED_CATALOG_RECIPE_HEADER,
+    TRUSTED_CATALOG_RECIPE_SIGNATURE_HEADER,
+    TRUSTED_ORGANIZATION_HEADER,
+    TRUSTED_SIGNATURE_HEADER,
+    TRUSTED_SUBJECT_HEADER,
+    TRUSTED_TENANT_HEADER,
+    TrustedRequestContext,
+    catalog_recipe_signature,
+    encode_catalog_recipe,
+    from_request,
+    principal_signature,
+)
 
-SUMMARY_LOCALES = {"en", "vi", "es", "fr", "de", "ja", "zh"}
+TOKEN = "plugin-catalog-test-token"
+RECIPE = {
+    "id": "context7",
+    "kind": "mcp",
+    "recipe_revision": 1,
+    "installability": "installable",
+    "mcp": {
+        "transport": "http",
+        "endpoint_mode": "static",
+        "url": "https://mcp.context7.com/mcp",
+        "url_policy": "",
+        "auth": {"kind": "api_key", "field": "token", "delivery": "header"},
+    },
+}
+CONNECTION_ID = "8b1a8e93-748b-46b0-8d97-d4d2c7a6b221"
+
+
+class FakeAgents:
+    def __init__(self, profile: Path):
+        self.profile = profile
+
+    def profile_path(self, _agent_id: str) -> Path:
+        return self.profile
 
 
 class PluginCatalogTests(unittest.TestCase):
-    def test_checked_in_catalog_has_full_coverage_and_safe_installable_subset(self) -> None:
-        catalog = load_plugin_catalog()
-        entries = catalog["entries"]
-        self.assertEqual(len(entries), 34)
-        by_id = {entry["id"]: entry for entry in entries}
-        self.assertEqual(
-            {
-                entry_id
-                for entry_id, entry in by_id.items()
-                if entry["installability"] == "installable"
-            },
-            {
-                "sapo",
-                "sepay",
-                "kiotviet",
-                "aave",
-                "context7",
-                "huggingface",
-                "render",
-                "posthog",
-                "composio",
-                "notion",
-                "linear",
-                "atlassian",
-                "sentry",
-                "canva",
-                "vercel",
-                "cloudflare",
-                "supabase",
-                "neon",
-                "stripe",
-                "todoist",
-                "clickup",
-                "netlify",
-                "prisma",
-                "railway",
-                "trello",
-                "airtable",
-                "resend",
-                "firecrawl",
-            },
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        data = Path(self.temporary.name) / "data"
+        profiles = data / "profiles"
+        self.profile = profiles / "research"
+        self.profile.mkdir(parents=True)
+        self.repository = FileRepository(data, profiles)
+        self.service = ExtensionsService(self.repository, FakeAgents(self.profile))
+        self.trusted = TrustedRequestContext(subject="person-1", tenant_id="tenant-1")
+
+    def tearDown(self):
+        self.temporary.cleanup()
+
+    def test_runtime_accepts_only_a_signed_control_recipe(self):
+        encoded = encode_catalog_recipe(RECIPE)
+        signature = catalog_recipe_signature(TOKEN, "person-1", "tenant-1", "", encoded)
+        request = SimpleNamespace(
+            headers={
+                TRUSTED_SUBJECT_HEADER: "person-1",
+                TRUSTED_TENANT_HEADER: "tenant-1",
+                TRUSTED_ORGANIZATION_HEADER: "",
+                TRUSTED_SIGNATURE_HEADER: principal_signature(TOKEN, "person-1", "tenant-1", ""),
+                TRUSTED_CATALOG_RECIPE_HEADER: encoded,
+                TRUSTED_CATALOG_RECIPE_SIGNATURE_HEADER: signature,
+            }
         )
-        self.assertEqual(
-            {
-                entry_id
-                for entry_id, entry in by_id.items()
-                if entry["installability"] == "needs_review"
-            },
-            {"brave-search"},
-        )
-        for entry in entries:
-            self.assertEqual(set(entry["summary"]), SUMMARY_LOCALES)
-            self.assertTrue(all(value.strip() for value in entry["summary"].values()))
-            self.assertEqual(
-                entry["recipe_revision"],
-                2
-                if entry["id"]
-                in {
-                    "kiotviet",
-                    "sapo",
-                    "sepay",
-                    "notion",
-                    "linear",
-                    "atlassian",
-                    "sentry",
-                    "canva",
-                    "vercel",
-                    "cloudflare",
-                    "supabase",
-                    "neon",
-                    "stripe",
-                    "todoist",
-                    "clickup",
-                    "netlify",
-                    "prisma",
-                    "railway",
-                    "trello",
-                    "airtable",
-                    "resend",
-                    "firecrawl",
-                }
-                else 1,
-            )
-            self.assertIn(entry["publisher_kind"], {"official", "community", "unverified"})
-            if entry.get("kind") == "native":
-                continue
-            self.assertEqual(set(entry["examples"]), {"en", "vi", "zh"})
-            self.assertTrue(all(len(prompts) == 3 for prompts in entry["examples"].values()))
-        self.assertNotEqual(by_id["brave-search"]["publisher_kind"], "official")
-        validate_plugin_catalog(catalog)
+        with patch.dict(os.environ, {"RUNTIME_INTERNAL_SERVICE_TOKEN": TOKEN}, clear=True):
+            trusted = from_request(request)
+            self.assertEqual(trusted.catalog_recipe, RECIPE)
 
-    def test_rejects_invalid_example_prompts(self) -> None:
-        for examples in (
-            {"en": ["Ask"], "vi": ["Hỏi"]},
-            {"en": [""], "vi": ["Hỏi"], "zh": ["问"]},
-            {"en": ["Ask"] * 4, "vi": ["Hỏi"], "zh": ["问"]},
-            {"en": ["x" * 161], "vi": ["Hỏi"], "zh": ["问"]},
-        ):
-            catalog = load_plugin_catalog()
-            catalog["entries"][0]["examples"] = examples
-            with self.assertRaisesRegex(ValueError, "example"):
-                validate_plugin_catalog(catalog)
+            request.headers[TRUSTED_CATALOG_RECIPE_SIGNATURE_HEADER] = "0" * 64
+            self.assertIsNone(from_request(request).catalog_recipe)
 
-    def test_every_entry_has_a_public_https_icon(self) -> None:
-        for entry in load_plugin_catalog()["entries"]:
-            if entry.get("kind") == "native":
-                continue
-            self.assertTrue(entry["iconUrl"].startswith("https://"), entry["id"])
-
-        for icon in (
-            None,
-            "http://aave.com/icon.png",
-            "https://localhost/icon.png",
-            "https://10.0.0.1/icon.png",
-            "https://aave.com/icon.png?v=1",
-            "https://user:secret@aave.com/icon.png",
-        ):
-            catalog = load_plugin_catalog()
-            catalog["entries"][0]["iconUrl"] = icon
-            with self.assertRaisesRegex(ValueError, "icon"):
-                validate_plugin_catalog(catalog)
-
-    def test_load_returns_a_copy(self) -> None:
-        first = load_plugin_catalog()
-        first["entries"].clear()
-        self.assertEqual(len(load_plugin_catalog()["entries"]), 34)
-
-    def test_rejects_missing_coverage_and_unsupported_install_paths(self) -> None:
-        catalog = load_plugin_catalog()
-        cases = []
-
-        missing = copy.deepcopy(catalog)
-        missing["entries"].pop(0)
-        cases.append(missing)
-
-        oauth_install = copy.deepcopy(catalog)
-        oauth_install["entries"][1]["installability"] = "installable"
-        oauth_install["entries"][1]["mcp"].pop("url", None)
-        cases.append(oauth_install)
-
-        unpinned_stdio_install = copy.deepcopy(catalog)
-        unpinned_stdio_install["entries"][27]["installability"] = "installable"
-        cases.append(unpinned_stdio_install)
-
-        unsafe_composio = copy.deepcopy(catalog)
-        next(e for e in unsafe_composio["entries"] if e["id"] == "composio")["mcp"][
-            "url_policy"
-        ] = "any_https_host"
-        cases.append(unsafe_composio)
-
-        missing_recipe_revision = copy.deepcopy(catalog)
-        missing_recipe_revision["entries"][0].pop("recipe_revision")
-        cases.append(missing_recipe_revision)
-
-        missing_locale = copy.deepcopy(catalog)
-        missing_locale["entries"][0]["summary"].pop("ja")
-        cases.append(missing_locale)
-
-        for invalid in cases:
-            with self.subTest(catalog=invalid):
-                with self.assertRaises(ValueError):
-                    validate_plugin_catalog(invalid)
-
-    def test_additional_entries_are_allowed_only_in_fail_closed_state(self) -> None:
-        catalog = load_plugin_catalog()
-        extra = copy.deepcopy(next(e for e in catalog["entries"] if e["id"] == "clickup"))
-        extra.update(
-            id="new-integration",
-            publisher_kind="unverified",
-            installability="unsupported",
-            reason_code="not_reviewed",
-        )
-        catalog["entries"].append(extra)
-        validate_plugin_catalog(catalog)
-
-        catalog["entries"][-1]["installability"] = "installable"
-        with self.assertRaises(ValueError):
-            validate_plugin_catalog(catalog)
-
-    def test_oauth_catalog_entries_have_public_static_endpoints(self) -> None:
-        catalog = load_plugin_catalog()
-        ids = {
-            "notion",
-            "linear",
-            "atlassian",
-            "sentry",
-            "canva",
-            "vercel",
-            "cloudflare",
-            "supabase",
-            "neon",
-            "stripe",
-            "todoist",
-            "clickup",
-            "netlify",
-            "prisma",
-            "railway",
-            "trello",
-            "airtable",
-            "resend",
+    def test_install_catalog_never_reads_a_runtime_catalog_file(self):
+        body = {
+            "catalog_id": "context7",
+            "recipe_revision": 1,
+            "connection_id": CONNECTION_ID,
+            "fields": {},
         }
-        by_id = {entry["id"]: entry for entry in catalog["entries"]}
-        for entry_id in ids:
-            entry = by_id[entry_id]
-            self.assertEqual(entry["installability"], "installable")
-            self.assertEqual(entry["recipe_revision"], 2)
-            self.assertEqual(entry["mcp"]["auth"]["kind"], "oauth")
-            self.assertTrue(entry["mcp"]["url"].startswith("https://"))
-        self.assertEqual(by_id["cobrain"]["installability"], "unsupported")
+        with self.assertRaises(ServiceError) as missing:
+            self.service.install_catalog("research", body, self.trusted)
+        self.assertEqual(missing.exception.code, "catalog_recipe_unavailable")
 
-    def test_unreviewed_stdio_package_publishers_cannot_be_official(self) -> None:
-        catalog = load_plugin_catalog()
-        by_id = {entry["id"]: entry for entry in catalog["entries"]}
-        for entry_id in {"brave-search"}:
-            with self.subTest(entry=entry_id):
-                by_id[entry_id]["publisher_kind"] = "official"
-                with self.assertRaises(ValueError):
-                    validate_plugin_catalog(catalog)
-                by_id[entry_id]["publisher_kind"] = "unverified"
+        mismatched = TrustedRequestContext(
+            subject="person-1", tenant_id="tenant-1", catalog_recipe={**RECIPE, "id": "linear"}
+        )
+        with self.assertRaises(ServiceError) as invalid:
+            self.service.install_catalog("research", body, mismatched)
+        self.assertEqual(invalid.exception.code, "invalid_catalog_recipe")
+
+        with (
+            patch.object(extension_engine, "mcp_profile_isolation_supported", return_value=True),
+            patch.dict(
+                os.environ,
+                {"RUNTIME_CONTROL_URL": "http://control.internal/"},
+                clear=True,
+            ),
+        ):
+            result = self.service.install_catalog(
+                "research",
+                body,
+                TrustedRequestContext(
+                    subject="person-1",
+                    tenant_id="tenant-1",
+                    catalog_recipe=RECIPE,
+                ),
+            )
+        self.assertTrue(result["configured"])
+        self.assertEqual(result["catalog_id"], "context7")
+
+    def test_capabilities_report_native_package_availability(self):
+        capabilities = self.service.capabilities()
+        self.assertEqual(set(capabilities["native_packages"]), set(bundled_plugins.PROVIDERS))
+        with patch.object(bundled_plugins, "package_root", return_value=Path(self.temporary.name)):
+            unavailable = self.service.capabilities()
+        self.assertFalse(unavailable["native_packages"]["sapo"])
 
 
 if __name__ == "__main__":

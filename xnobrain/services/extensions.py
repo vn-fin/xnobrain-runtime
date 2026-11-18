@@ -35,7 +35,6 @@ from ..integrations.hermes_support import AgentAPIError
 from ..repositories.base import StoreError
 from ..repositories.custom_page_locks import lifecycle_gate
 from ..repositories.extension_operations import ExtensionOperationStore
-from ..repositories.plugin_catalog import load_plugin_catalog
 from .base import ServiceError
 
 _PLUGIN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
@@ -235,33 +234,22 @@ class ExtensionsService:
                 extra={"error_code": "extension_recovery_required"},
             )
 
-    def catalog(self) -> dict[str, Any]:
+    def capabilities(self) -> dict[str, Any]:
+        """Report Runtime-owned capability facts for the Control-owned catalog."""
         self._require_feature()
-        try:
-            catalog = load_plugin_catalog()
-        except (ValueError, OSError) as error:
-            raise ServiceError(
-                "Extension catalog is unavailable", status=503, code="catalog_unavailable"
-            ) from error
-        isolated = extension_engine.mcp_profile_isolation_supported()
-        catalog["engine_capabilities"] = {"mcp_profile_isolation": isolated}
-        for entry in catalog.get("entries", []):
-            if entry.get("kind") == "native":
-                try:
-                    bundled_plugins.package_files(entry["id"])
-                except (AgentAPIError, OSError):
-                    entry["capability"] = {
-                        "installable": False,
-                        "reason_code": "plugin_package_unavailable",
-                    }
-        if not isolated:
-            for entry in catalog.get("entries", []):
-                if entry.get("installability") == "installable" and entry.get("kind") != "native":
-                    entry["capability"] = {
-                        "installable": False,
-                        "reason_code": "mcp_profile_isolation_unavailable",
-                    }
-        return catalog
+        packages = {}
+        for plugin_id in sorted(bundled_plugins.PROVIDERS):
+            try:
+                bundled_plugins.package_files(plugin_id)
+                packages[plugin_id] = True
+            except (AgentAPIError, OSError):
+                packages[plugin_id] = False
+        return {
+            "engine_capabilities": {
+                "mcp_profile_isolation": extension_engine.mcp_profile_isolation_supported()
+            },
+            "native_packages": packages,
+        }
 
     def _marketplaces_path(self) -> Path:
         root = self.repository.data_dir / "extensions"
@@ -905,15 +893,20 @@ class ExtensionsService:
 
     def _catalog_entry(self, body: dict[str, Any], trusted: Any) -> dict[str, Any]:
         self._personal_identity(trusted)
-        entry = next(
-            (item for item in self.catalog()["entries"] if item["id"] == body["catalog_id"]),
-            None,
-        )
-        if entry is None:
+        entry = getattr(trusted, "catalog_recipe", None)
+        if not isinstance(entry, dict) or not entry:
             raise ServiceError(
-                "Catalog entry not found", status=404, code="catalog_entry_not_found"
+                "Catalog recipe is unavailable",
+                status=403,
+                code="catalog_recipe_unavailable",
             )
-        if body["recipe_revision"] != entry["recipe_revision"]:
+        if entry.get("id") != body.get("catalog_id"):
+            raise ServiceError(
+                "Catalog recipe does not match the request",
+                status=422,
+                code="invalid_catalog_recipe",
+            )
+        if body["recipe_revision"] != entry.get("recipe_revision"):
             raise ServiceError(
                 "Catalog recipe changed; refresh and retry",
                 status=409,
@@ -929,7 +922,8 @@ class ExtensionsService:
                 status=503,
                 code="plugins_unavailable",
             )
-        if entry.get("mcp", {}).get("transport") != "http":
+        mcp = entry.get("mcp")
+        if not isinstance(mcp, dict) or mcp.get("transport") != "http":
             raise ServiceError(
                 "Only remote HTTP integrations are supported",
                 status=422,

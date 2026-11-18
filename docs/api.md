@@ -1864,9 +1864,11 @@ See [Agent extensions](agent-extensions.md) for the personal/profile-scoped plug
 
 ## Optional native provider plugins
 
-The existing `GET /xnobrain/api/runtime/v1/plugins/catalog` now also returns
-Sapo and SePay with `kind: native`, `package`, and `provides_skills`, without
-an `mcp` field. Their installation uses
+The plugin catalog is owned and served by Control at
+`GET /xnobrain/api/control/v1/plugins/catalog`; Runtime exposes only
+`GET /xnobrain/api/runtime/v1/plugins/capabilities`. Sapo and SePay remain
+`kind: native` entries with `package` and `provides_skills`, without an `mcp`
+field. Their installation uses
 `POST /xnobrain/api/runtime/v1/agents-extension-operations/{agent_id}` with
 `kind: install`, the matching `plugin_id`, `source: bundled:<plugin_id>`, and
 an idempotency key. The exact package IDs are allowlisted server-side; paths

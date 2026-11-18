@@ -21,10 +21,17 @@ references. Updates resolve the current shipped package and require fresh
 artifact approval. The packages are independently authored by XNOBrain, not
 official provider-maintained integrations.
 
-`xnobrain/assets/plugin_catalog.json` is XNOBrain-authored metadata. Names,
-summaries, publisher labels, compatibility decisions, and URLs were written for
-XNOBrain from the linked provider documentation and homepages; no OpenBot
-descriptions, manifests, code, or assets are included.
+The catalog itself is owned by Control at
+`xnobrain-control/internal/services/mcpconnection/assets/plugin_catalog.json`
+and served from `GET /xnobrain/api/control/v1/plugins/catalog`. Runtime does
+not hold or read the catalog file. It reports only machine facts at
+`GET /xnobrain/api/runtime/v1/plugins/capabilities` (`mcp_profile_isolation` and
+native package availability), and the UI merges both responses. Changing
+catalog metadata requires only a Control change and deploy.
+
+Names, summaries, publisher labels, compatibility decisions, and URLs were
+written for XNOBrain from the linked provider documentation and homepages; no
+OpenBot descriptions, manifests, code, or assets are included.
 
 Each entry may also carry `examples`: up to three example prompts each for
 `en`, `vi` and `zh`, at most 160 characters each. The plugin page in the UI
@@ -59,6 +66,15 @@ are marked `installable`; the unpinned Brave Search stdio package remains
 reviewed. Integrations requiring a desktop application and the Cobrain OAuth
 integration are listed for coverage but are unsupported by the current
 installer. Runtime validates every install request and its server endpoint.
+
+`POST /agents-plugins/{agent_id}/install-catalog` never reads a catalog file or
+trusts recipe fields from the browser. Control resolves the catalog ID against
+its own catalog, discards browser-supplied recipe data, and forwards the
+resolved `id`, `kind`, `package`, `mcp`, `installability`, and
+`recipe_revision` in a principal-bound HMAC header signed with the private
+service token. Runtime rejects a missing or invalid recipe with
+`403 catalog_recipe_unavailable` and a mismatched ID with
+`422 invalid_catalog_recipe`.
 
 ## Managed provider connections
 

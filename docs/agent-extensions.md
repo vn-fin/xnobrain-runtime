@@ -226,9 +226,9 @@ envelope and stable error mapping apply. FastAPI generates OpenAPI at runtime.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| GET | `/plugins/catalog` | Static recipe catalog plus engine capabilities |
+| GET | `/plugins/capabilities` | Runtime engine capabilities and native package availability |
 | GET | `/agents-plugins/{agent_id}` | Plugin and managed MCP inventory |
-| POST | `/agents-plugins/{agent_id}/install-catalog` | Recipe configuration; compatibility-gated |
+| POST | `/agents-plugins/{agent_id}/install-catalog` | Control-resolved trusted recipe configuration; compatibility-gated |
 | POST | `/agents-plugins/{agent_id}/{plugin_id}/approval` | Digest/revision-bound decision |
 | POST | `/agents-plugins/{agent_id}/{plugin_id}/enable` | Enable reviewed artifact |
 | POST | `/agents-plugins/{agent_id}/{plugin_id}/disable` | Disable on subsequent turns |
@@ -247,6 +247,13 @@ envelope and stable error mapping apply. FastAPI generates OpenAPI at runtime.
 | POST | `/agents-hooks/{agent_id}/{hook_id}/enable` | Enable approved hook |
 | POST | `/agents-hooks/{agent_id}/{hook_id}/disable` | Disable hook |
 | DELETE | `/agents-hooks/{agent_id}/{hook_id}` | Remove hook and revoke approval |
+
+The catalog is owned by Control and served at
+`GET /xnobrain/api/control/v1/plugins/catalog`; Runtime exposes only
+`/plugins/capabilities`. For `install-catalog`, Control resolves `catalog_id`
+and forwards the recipe through the signed trusted channel. Runtime rejects a
+missing or forged recipe with `403 catalog_recipe_unavailable` and a recipe
+whose ID does not match the body with `422 invalid_catalog_recipe`.
 
 Operation creation accepts `kind`, `plugin_id`, optional public `source` and
 `ref`, and a client-generated `idempotency_key`. Reusing a key with a different

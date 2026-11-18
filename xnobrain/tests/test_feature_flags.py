@@ -75,13 +75,13 @@ class FeatureFlagTests(unittest.TestCase):
             app = FastAPI()
             setup_routes(app, HandlerStub())
         paths = {route.path for route in app.routes}
-        self.assertNotIn("/xnobrain/api/runtime/v1/plugins/catalog", paths)
+        self.assertNotIn("/xnobrain/api/runtime/v1/plugins/capabilities", paths)
 
         with patch.dict(os.environ, {"FT_ENABLE_AGENT_EXTENSIONS": "true"}, clear=True):
             app = FastAPI()
             setup_routes(app, HandlerStub())
         paths = {route.path for route in app.routes}
-        self.assertIn("/xnobrain/api/runtime/v1/plugins/catalog", paths)
+        self.assertIn("/xnobrain/api/runtime/v1/plugins/capabilities", paths)
         self.assertIn("/xnobrain/api/runtime/v1/agents-tools/{agent_id}", paths)
 
     def test_enabled_routes_are_registered(self):

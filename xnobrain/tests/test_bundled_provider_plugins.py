@@ -8,7 +8,6 @@ from unittest.mock import patch
 from xnobrain.integrations import bundled_plugins, extension_engine, extension_policy
 from xnobrain.integrations.hermes_support import AgentAPIError
 from xnobrain.repositories import FileRepository
-from xnobrain.repositories.plugin_catalog import load_plugin_catalog, validate_plugin_catalog
 from xnobrain.services.agents import AgentsServiceMixin
 from xnobrain.services.base import ServiceError
 from xnobrain.services.extensions import ExtensionsService
@@ -40,11 +39,10 @@ class BundledProviderTests(unittest.TestCase):
 
     def test_discover_native_providers_without_mcp_or_default_skills(self):
         with patch.object(extension_engine, "mcp_profile_isolation_supported", return_value=False):
-            entries = {entry["id"]: entry for entry in self.service.catalog()["entries"]}
+            capabilities = self.service.capabilities()
         for provider in bundled_plugins.PROVIDERS:
-            self.assertEqual(entries[provider]["kind"], "native")
-            self.assertNotIn("mcp", entries[provider])
-            self.assertNotEqual(entries[provider].get("capability", {}).get("installable"), False)
+            self.assertIn(provider, capabilities["native_packages"])
+        self.assertEqual(capabilities["engine_capabilities"], {"mcp_profile_isolation": False})
         self.assertEqual(AgentsServiceMixin._default_skills([]), [])
 
     def test_real_install_approve_enable_update_remove_keeps_skills_inside_plugin(self):
@@ -141,16 +139,8 @@ class BundledProviderTests(unittest.TestCase):
 
     def test_unavailable_and_symlinked_package_fails_closed(self):
         with patch.object(bundled_plugins, "package_root", return_value=Path(self.temp.name)):
-            entries = {entry["id"]: entry for entry in self.service.catalog()["entries"]}
-            self.assertFalse(entries["sepay"]["capability"]["installable"])
+            capabilities = self.service.capabilities()
+            self.assertFalse(capabilities["native_packages"]["sepay"])
             (Path(self.temp.name) / "sepay").symlink_to(self.profile, target_is_directory=True)
             with self.assertRaises(AgentAPIError):
                 bundled_plugins.package_files("sepay")
-
-    def test_native_catalog_rejects_arbitrary_package_and_mcp_fields(self):
-        for field, value in [("package", "../../secret"), ("mcp", {}), ("id", "unknown")]:
-            catalog = load_plugin_catalog()
-            row = next(entry for entry in catalog["entries"] if entry["id"] == "sepay")
-            row[field] = value
-            with self.assertRaises(ValueError):
-                validate_plugin_catalog(catalog)

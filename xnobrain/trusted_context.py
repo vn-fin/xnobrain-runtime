@@ -21,6 +21,8 @@ SNAPSHOT_SIGNATURE_HEADER = "x-xnobrain-community-snapshot-signature"
 SNAPSHOT_PREFIX = "/xnobrain/api/runtime/v1/community/snapshots/"
 TRUSTED_CONVERSATION_CONTEXT_HEADER = "x-xnobrain-verified-conversation-context"
 TRUSTED_CONVERSATION_CONTEXT_SIGNATURE_HEADER = "x-xnobrain-conversation-context-signature"
+TRUSTED_CATALOG_RECIPE_HEADER = "x-xnobrain-verified-catalog-recipe"
+TRUSTED_CATALOG_RECIPE_SIGNATURE_HEADER = "x-xnobrain-catalog-recipe-signature"
 TRUSTED_MCP_GRANT_HEADER = "x-xnobrain-mcp-grant"
 
 TRUSTED_IDENTITY_HEADERS = frozenset(
@@ -31,6 +33,8 @@ TRUSTED_IDENTITY_HEADERS = frozenset(
         TRUSTED_SIGNATURE_HEADER,
         TRUSTED_CONVERSATION_CONTEXT_HEADER,
         TRUSTED_CONVERSATION_CONTEXT_SIGNATURE_HEADER,
+        TRUSTED_CATALOG_RECIPE_HEADER,
+        TRUSTED_CATALOG_RECIPE_SIGNATURE_HEADER,
     }
 )
 _MAX_CONTEXT_HEADER_BYTES = 8 * 1024
@@ -46,6 +50,7 @@ class TrustedRequestContext:
     ownership_context: Mapping[str, Any] | None = None
     xno_data_grant: str = field(default="", repr=False, compare=False)
     mcp_grant: str = field(default="", repr=False, compare=False)
+    catalog_recipe: Mapping[str, Any] | None = None
 
 
 def _principal_material(
@@ -238,6 +243,47 @@ def decode_verified_conversation_context(
     return value if isinstance(value, dict) else None
 
 
+def encode_catalog_recipe(recipe: Mapping[str, Any]) -> str:
+    """Encode a bounded Control-owned install recipe for a private header."""
+    return encode_conversation_context(recipe)
+
+
+def catalog_recipe_signature(
+    token: str,
+    subject: str,
+    tenant_id: str,
+    organization_id: str,
+    encoded_recipe: str,
+) -> str:
+    """Bind the exact recipe transport to the verified principal."""
+    return conversation_context_signature(
+        token,
+        subject,
+        tenant_id,
+        organization_id,
+        encoded_recipe,
+    )
+
+
+def decode_verified_catalog_recipe(
+    token: str,
+    subject: str,
+    tenant_id: str,
+    organization_id: str,
+    encoded_recipe: str,
+    supplied_signature: str,
+) -> dict[str, Any] | None:
+    """Return a recipe only when its canonical transport signature is valid."""
+    return decode_verified_conversation_context(
+        token,
+        subject,
+        tenant_id,
+        organization_id,
+        encoded_recipe,
+        supplied_signature,
+    )
+
+
 def from_request(request: Any) -> TrustedRequestContext:
     """Verify facade identity without logging or retaining request headers."""
     headers = request.headers
@@ -263,6 +309,14 @@ def from_request(request: Any) -> TrustedRequestContext:
         encoded_context,
         context_signature,
     )
+    recipe = decode_verified_catalog_recipe(
+        token,
+        subject,
+        tenant_id,
+        organization_id,
+        str(headers.get(TRUSTED_CATALOG_RECIPE_HEADER) or "").strip(),
+        str(headers.get(TRUSTED_CATALOG_RECIPE_SIGNATURE_HEADER) or "").strip(),
+    )
     return TrustedRequestContext(
         subject,
         tenant_id,
@@ -270,4 +324,5 @@ def from_request(request: Any) -> TrustedRequestContext:
         ownership_context,
         str(headers.get("x-xnobrain-data-grant") or ""),
         str(headers.get(TRUSTED_MCP_GRANT_HEADER) or ""),
+        recipe,
     )
