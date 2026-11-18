@@ -56,7 +56,7 @@ OpenBot descriptions, manifests, code, or assets are included.
 Each entry may also carry `examples`: up to three example prompts each for
 `en`, `vi` and `zh`, at most 160 characters each. The plugin page in the UI
 shows them. They describe only what the entry's summary says the service can
-do. All 31 MCP entries have three prompts per language.
+do. Control maintains and validates the current entries and their examples.
 
 The OpenBot catalog at commit
 `21369e1eec420772a7db9f6bbfeae2ef9b3ab83a` is recorded solely as a coverage
@@ -80,8 +80,8 @@ query string, like the other links. The UI shows it on a white tile and falls
 back to the name's first letter when the image fails to load. Logos remain
 the trademarks of their owners.
 
-Catalog availability is advisory metadata. Twenty-five remote HTTP integrations
-are marked `installable`; the unpinned Brave Search stdio package remains
+Catalog availability is advisory metadata maintained by Control. Supported remote
+HTTP integrations are marked `installable`; the unpinned Brave Search stdio package remains
 `needs_review` until its version and package provenance can be pinned and
 reviewed. Integrations requiring a desktop application and the Cobrain OAuth
 integration are listed for coverage but are unsupported by the current
