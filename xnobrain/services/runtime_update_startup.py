@@ -7,6 +7,8 @@ import logging
 
 import yaml
 
+from ..feature_flags import FEATURE_AGENT_EXTENSIONS
+from ..feature_flags import enabled as feature_enabled
 from ..repositories.base import StoreError
 from ..repositories.runtime_update_gate import WorkspaceActivity
 
@@ -105,4 +107,8 @@ async def finish_startup(platform, *, deferred: bool = False) -> None:
                 platform.config.ensure_write_approval_defaults()
                 platform._ensure_existing_write_approval_defaults()
             await platform.ensure_default_agent()
+            # Worker startup reconciles the queue and prunes the package cache.
+            # Both can write to the data covered by the rollout checkpoint.
+            if feature_enabled(FEATURE_AGENT_EXTENSIONS):
+                await platform.extensions.worker.start()
         return

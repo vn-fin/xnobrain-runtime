@@ -12,7 +12,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
+from xnobrain.integrations.native_provider_packages import prune_cached_packages
 from xnobrain.integrations.runtime_update_storage import (
+    NATIVE_PACKAGE_CACHE_LOCK,
     RuntimeUpdateStorage,
     RuntimeUpdateStorageError,
 )
@@ -50,48 +52,70 @@ class EvidenceTests(unittest.TestCase):
         directory = self.data / "extension-operations"
         directory.mkdir()
         locks = [directory / name for name in (".lock", ".worker.lock")]
+        cache_lock = self.data / NATIVE_PACKAGE_CACHE_LOCK
         for version in (1, 2, 3):
             with self.subTest(version=version):
                 before = self.storage.manifest(version=version)
                 for lock in locks:
                     lock.touch(mode=0o600)
+                prune_cached_packages(self.data, referenced=set())
                 result = self.storage.verify(before)
                 self.assertEqual(result["preserved"], version == 3)
                 if version == 3:
-                    self.assertEqual(result["changes"]["added"], 2)
-                    self.assertEqual(result["extension_locks_added"], 2)
+                    self.assertEqual(result["changes"]["added"], 3)
+                    self.assertEqual(result["extension_locks_added"], 3)
+                    self.assertTrue(result["native_package_cache_lock_added"])
                 recorded = self.storage.manifest(version=version)
-                operation = directory / "operation.json"
+                operation = cache_lock.parent / ".worker.lock"
                 operation.write_text("{}")
                 self.assertFalse(self.storage.verify(before)["preserved"])
                 operation.unlink()
-                for lock in locks:
+                for lock in [*locks, cache_lock]:
                     lock.unlink()
                 self.assertFalse(self.storage.verify(recorded)["preserved"])
 
     def test_extension_lock_shape_is_checked(self):
-        directory = self.data / "extension-operations"
-        directory.mkdir()
-        before = self.storage.manifest()
-        lock = directory / ".worker.lock"
         target = self.root / "empty"
         target.touch(mode=0o600)
-        for make_lock in (
-            lambda: lock.write_bytes(b"unexpected"),
-            lambda: lock.touch(mode=0o644),
-            lambda: lock.symlink_to(target),
-            lambda: os.link(target, lock),
-            lock.mkdir,
-        ):
-            make_lock()
-            if lock.is_file() and lock.stat().st_size:
-                lock.chmod(0o600)
+        before = self.storage.manifest()
+        for name in ("extension-operations/.worker.lock", NATIVE_PACKAGE_CACHE_LOCK):
+            lock = self.data / name
+            lock.parent.mkdir(parents=True)
+            for shape, make_lock in (
+                ("nonempty", lambda: lock.write_bytes(b"unexpected")),
+                ("permissions", lambda: lock.touch(mode=0o644)),
+                ("symlink", lambda: lock.symlink_to(target)),
+                ("hardlink", lambda: os.link(target, lock)),
+                ("directory", lock.mkdir),
+                ("fifo", lambda: os.mkfifo(lock, 0o600)),
+            ):
+                with self.subTest(path=name, shape=shape):
+                    make_lock()
+                    if shape == "nonempty":
+                        lock.chmod(0o600)
+                    with self.assertRaises(RuntimeUpdateStorageError):
+                        self.storage.verify(before)
+                    if lock.is_dir():
+                        lock.rmdir()
+                    else:
+                        lock.unlink()
+
+    def test_native_cache_lock_requires_runtime_owner(self):
+        before = self.storage.manifest()
+        prune_cached_packages(self.data, referenced=set())
+        with patch("os.geteuid", return_value=os.geteuid() + 1):
             with self.assertRaises(RuntimeUpdateStorageError):
                 self.storage.verify(before)
-            if lock.is_dir():
-                lock.rmdir()
-            else:
-                lock.unlink()
+
+    def test_native_cache_lock_in_data_nested_under_root_profile(self):
+        data = self.root / "xnobrain"
+        data.mkdir()
+        storage = RuntimeUpdateStorage(data, self.profiles, self.root)
+        before = storage.manifest()
+        prune_cached_packages(data)
+        self.assertTrue(storage.verify(before)["native_package_cache_lock_added"])
+        prune_cached_packages(self.root)
+        self.assertFalse(storage.verify(before)["preserved"])
 
     def test_wal_commit_is_verified_not_ignored(self):
         _, connection = self.database()
@@ -371,16 +395,19 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
                 repository=SimpleNamespace(data_dir=root),
                 runtime_updates=SimpleNamespace(dispatch_paused=False),
                 ensure_default_agent=repair,
+                extensions=SimpleNamespace(worker=AsyncMock()),
             )
-            task = asyncio.create_task(finish_startup(platform))
-            try:
-                await asyncio.wait_for(entered.wait(), 1)
-                self.assertTrue(activity_present(root))
-                release.set()
-                await asyncio.wait_for(task, 1)
-                self.assertFalse(activity_present(root))
-            finally:
-                task.cancel()
+            with patch.dict(os.environ, FT_ENABLE_AGENT_EXTENSIONS="false"):
+                task = asyncio.create_task(finish_startup(platform))
+                try:
+                    await asyncio.wait_for(entered.wait(), 1)
+                    self.assertTrue(activity_present(root))
+                    release.set()
+                    await asyncio.wait_for(task, 1)
+                    self.assertFalse(activity_present(root))
+                    platform.extensions.worker.start.assert_not_awaited()
+                finally:
+                    task.cancel()
 
     async def test_shutdown_observer_reports_stage_without_cancelling_data_work(self):
         with self.assertLogs("xnobrain.services.runtime_shutdown", level="WARNING") as logs:
@@ -392,6 +419,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
             any(task.get_name() == "xnobrain-shutdown-observer" for task in asyncio.all_tasks())
         )
 
+    @patch.dict(os.environ, FT_ENABLE_AGENT_EXTENSIONS="true")
     async def test_bootstrap_waits_for_verified_release_and_is_cancellable(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -402,15 +430,18 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
             config=SimpleNamespace(ensure_write_approval_defaults=Mock()),
             _ensure_existing_write_approval_defaults=Mock(),
             ensure_default_agent=AsyncMock(),
+            extensions=SimpleNamespace(worker=AsyncMock()),
         )
         task = asyncio.create_task(finish_startup(platform, deferred=True))
         await asyncio.sleep(0.01)
         platform.ensure_default_agent.assert_not_awaited()
+        platform.extensions.worker.start.assert_not_awaited()
         platform.config.ensure_write_approval_defaults.assert_not_called()
         platform.portability._cleanup_transfers.assert_not_called()
         platform.runtime_updates.dispatch_paused = False
         await asyncio.wait_for(task, timeout=1)
         platform.ensure_default_agent.assert_awaited_once()
+        platform.extensions.worker.start.assert_awaited_once()
         platform.config.ensure_write_approval_defaults.assert_called_once()
         platform.portability._cleanup_transfers.assert_called_once()
         platform.runtime_updates.dispatch_paused = True
@@ -420,3 +451,4 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(asyncio.CancelledError):
             await task
         platform.ensure_default_agent.assert_awaited_once()
+        platform.extensions.worker.start.assert_awaited_once()

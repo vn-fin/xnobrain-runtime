@@ -23,6 +23,8 @@ from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
 
 from xnobrain.handlers.operations.runtime_updates import operations
+from xnobrain.integrations.native_provider_packages import prune_cached_packages
+from xnobrain.integrations.runtime_update_storage import NATIVE_PACKAGE_CACHE_LOCK
 from xnobrain.models.runtime_updates import ReleaseSelector, RuntimeUpdatePreflight
 from xnobrain.repositories.base import RepositoryBase
 from xnobrain.services.base import ServiceError
@@ -336,6 +338,7 @@ class RuntimeUpdateLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(caught.exception.code, 2)
         repository.assert_not_called()
 
+    @patch.dict(os.environ, FT_ENABLE_AGENT_EXTENSIONS="true")
     async def test_restart_preserves_expired_transfers_until_verified_resume(self):
         portability = PortabilityService(self.platform.repository, self.big_brother)
         expired = []
@@ -358,10 +361,14 @@ class RuntimeUpdateLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.platform.config.ensure_write_approval_defaults = Mock()
         self.platform._ensure_existing_write_approval_defaults = Mock()
         self.platform.ensure_default_agent = AsyncMock()
+        start_worker = AsyncMock(side_effect=lambda: prune_cached_packages(self.data))
+        self.platform.extensions = SimpleNamespace(worker=SimpleNamespace(start=start_worker))
+        cache_lock = self.data / NATIVE_PACKAGE_CACHE_LOCK
         startup = asyncio.create_task(finish_startup(self.platform, deferred=True))
         try:
             await asyncio.sleep(0)
             self.assertFalse(startup.done())
+            self.assertFalse(cache_lock.exists())
             for directory in expired:
                 self.assertTrue((directory / "bundle.zip").is_file())
                 self.assertTrue((directory / "metadata.json").is_file())
@@ -370,9 +377,12 @@ class RuntimeUpdateLifecycleTests(unittest.IsolatedAsyncioTestCase):
                 "post_verify", request(checkpoint_id=checkpoint["checkpoint_id"])
             )
             self.assertTrue(verified["verified"])
+            self.assertFalse(cache_lock.exists())
             self.assertEqual(verified["data_verification"]["changes"]["removed"], 0)
             await self.call("resume", request())
             await asyncio.wait_for(startup, timeout=2)
+            start_worker.assert_awaited_once()
+            self.assertTrue(cache_lock.is_file())
             self.assertTrue(all(not directory.exists() for directory in expired))
             self.assertTrue((fresh / "bundle.zip").is_file())
         finally:
