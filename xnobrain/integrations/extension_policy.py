@@ -312,6 +312,109 @@ def prune_plugin_artifact(path: Path) -> list[str]:
     return removed
 
 
+_CPYTHON_CACHE_FILE = re.compile(
+    r"^(?P<module>[^./\\][^/\\]*)\.cpython-[0-9]{2,3}[a-z]?(?:\.opt-[12])?\.pyc$"
+)
+_BYTECODE_SUFFIXES = frozenset({".pyc", ".pyo"})
+_MAX_TREE_NODES = 2000
+
+
+def _source_for_cache_entry(cache: Path, name: str) -> Path | None:
+    """Return the regular non-symlink source file behind one cache entry."""
+    match = _CPYTHON_CACHE_FILE.fullmatch(name)
+    if match is None:
+        return None
+    source = cache.parent / f"{match.group('module')}.py"
+    try:
+        info = source.lstat()
+    except OSError:
+        return None
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+        return None
+    return source
+
+
+def _validate_bytecode_cache(cache: Path) -> int:
+    """Validate one cache directory and return its entry count."""
+    try:
+        entries = sorted(cache.iterdir(), key=lambda entry: entry.name)
+    except FileNotFoundError:
+        return 0
+    if len(entries) > _MAX_TREE_NODES:
+        fail("Plugin exceeds scan limits", "plugin_scan_incomplete")
+    for item in entries:
+        try:
+            info = item.lstat()
+        except FileNotFoundError:
+            continue
+        if stat.S_ISLNK(info.st_mode):
+            fail("Plugin symlinks are not supported", "plugin_unsafe")
+        if not stat.S_ISREG(info.st_mode) or _source_for_cache_entry(cache, item.name) is None:
+            fail("Plugin bytecode cache layout is not supported", "plugin_unsafe")
+    return len(entries)
+
+
+def normalize_plugin_bytecode(path: Path) -> None:
+    """Drop generated CPython caches so only reviewed plugin source can run.
+
+    Only ``__pycache__`` directories containing source-backed
+    ``*.cpython-*.pyc`` files are removed. Symlinks, special files, bare or
+    source-less bytecode and any other cache layout fail closed, so arbitrary
+    files cannot hide inside ``__pycache__`` and an approved artifact never
+    carries executable bytecode. Managed scan, approval, enable, execution,
+    backup and recovery boundaries call this before computing a digest; it is
+    not applied by every read-only inventory or import.
+    """
+    if not path.is_dir() or path.is_symlink():
+        fail("Plugin artifact is unavailable", "plugin_not_found", 404)
+    caches: list[Path] = []
+    files = 0
+    total = 0
+    nodes = 0
+    pending = [path]
+    while pending:
+        directory = pending.pop()
+        try:
+            entries = sorted(directory.iterdir(), key=lambda entry: entry.name)
+        except FileNotFoundError:
+            continue
+        for item in entries:
+            nodes += 1
+            if nodes > _MAX_TREE_NODES:
+                fail("Plugin exceeds scan limits", "plugin_scan_incomplete")
+            try:
+                info = item.lstat()
+            except FileNotFoundError:
+                continue
+            relative = item.relative_to(path)
+            if ".git" in relative.parts:
+                continue
+            if stat.S_ISLNK(info.st_mode):
+                fail("Plugin symlinks are not supported", "plugin_unsafe")
+            if stat.S_ISDIR(info.st_mode):
+                if item.name == "__pycache__":
+                    nodes += _validate_bytecode_cache(item)
+                    if nodes > _MAX_TREE_NODES:
+                        fail("Plugin exceeds scan limits", "plugin_scan_incomplete")
+                    caches.append(item)
+                    continue
+                pending.append(item)
+                continue
+            if not stat.S_ISREG(info.st_mode):
+                fail("Plugin special files are not supported", "plugin_unsafe")
+            files += 1
+            total += info.st_size
+            if files > 500 or total > 8 * 1024 * 1024 or info.st_size > 1024 * 1024:
+                fail("Plugin exceeds scan limits", "plugin_scan_incomplete")
+            if item.suffix.lower() in _BYTECODE_SUFFIXES:
+                fail("Plugin bytecode cache layout is not supported", "plugin_unsafe")
+    for cache in caches:
+        try:
+            shutil.rmtree(cache)
+        except FileNotFoundError:
+            continue
+
+
 def tree_digest(path: Path, *, ignore_bytecode: bool = False) -> str:
     if not path.is_dir() or path.is_symlink():
         fail("Plugin artifact is unavailable", "plugin_not_found", 404)
@@ -358,9 +461,7 @@ def trusted_required(profile: Path, name: str) -> bool:
         return False
     # Interpreter caches are generated runtime state. Drop them so Python
     # recompiles from the verified source instead of trusting stale bytecode.
-    for cache in list(actual.rglob("__pycache__")):
-        if cache.is_dir() and not cache.is_symlink():
-            shutil.rmtree(cache)
+    normalize_plugin_bytecode(actual)
     # The packaged copy is read-only and may carry build-time caches.
     return tree_digest(actual) == tree_digest(expected, ignore_bytecode=True)
 
@@ -418,18 +519,22 @@ def validate_profile_extensions(profile: Path) -> None:
             if name in REQUIRED_PLUGINS:
                 continue
             fail("Enabled plugin artifact is unavailable", "plugin_not_found")
+        normalize_plugin_bytecode(artifact)
         if trusted_required(profile, name):
             continue
         record = state["plugins"].get(name, {})
         scan = record.get("scan") or {}
         approval = record.get("approval") or {}
         if scan.get("status") != "COMPLETED" or scan.get("verdict") == "dangerous":
-            fail("Plugin must pass a complete scan before execution", "plugin_scan_required")
+            fail(
+                f"Plugin '{name}' must pass a complete scan before execution",
+                "plugin_scan_required",
+            )
         current = tree_digest(artifact)
         if current != record.get("artifact_digest") or current != approval.get("artifact_digest"):
-            fail("Plugin changed since review; scan again", "plugin_scan_stale")
+            fail(f"Plugin '{name}' changed since review; scan again", "plugin_scan_stale")
         if not approval.get("approved"):
-            fail("Plugin requires explicit approval")
+            fail(f"Plugin '{name}' requires explicit approval")
         entry = (plugins.get("entries") or {}).get(name, {})
         if isinstance(entry, dict) and (
             entry.get("allow_tool_override")

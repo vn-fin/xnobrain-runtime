@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from . import extension_engine, extension_policy
+from .hermes_support import AgentAPIError
 
 _PLUGIN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
 _OPERATION_ID = re.compile(r"^[a-f0-9]{32}$")
@@ -83,6 +84,16 @@ def recover_publication(profile: Path, *, staging_root: Path | None = None) -> b
         raise ExtensionRecoveryError("Plugin rollback artifact is unsafe")
     if target_exists and (target.is_symlink() or not target.is_dir()):
         raise ExtensionRecoveryError("Plugin publication target is unsafe")
+    if rollback_exists:
+        try:
+            extension_policy.normalize_plugin_bytecode(rollback)
+        except AgentAPIError as error:
+            raise ExtensionRecoveryError("Plugin rollback bytecode cache is unsafe") from error
+    if target_exists:
+        try:
+            extension_policy.normalize_plugin_bytecode(target)
+        except AgentAPIError as error:
+            raise ExtensionRecoveryError("Plugin target bytecode cache is unsafe") from error
 
     rollback_digest = extension_policy.tree_digest(rollback) if rollback_exists else ""
     if rollback_exists and rollback_digest != old_digest:
