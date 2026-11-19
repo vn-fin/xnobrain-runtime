@@ -6,8 +6,9 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import patch
+
+import httpx
 
 from xnobrain.integrations import extension_engine
 from xnobrain.repositories import FileRepository
@@ -69,7 +70,9 @@ class PluginCatalogTests(unittest.TestCase):
     def test_runtime_accepts_only_a_signed_control_recipe(self):
         encoded = encode_catalog_recipe(RECIPE)
         signature = catalog_recipe_signature(TOKEN, "person-1", "tenant-1", "", encoded)
-        request = SimpleNamespace(
+        request = httpx.Request(
+            "POST",
+            "http://runtime/xnobrain/api/runtime/v1/agents-plugins/research/install-catalog",
             headers={
                 TRUSTED_SUBJECT_HEADER: "person-1",
                 TRUSTED_TENANT_HEADER: "tenant-1",
@@ -77,7 +80,7 @@ class PluginCatalogTests(unittest.TestCase):
                 TRUSTED_SIGNATURE_HEADER: principal_signature(TOKEN, "person-1", "tenant-1", ""),
                 TRUSTED_CATALOG_RECIPE_HEADER: encoded,
                 TRUSTED_CATALOG_RECIPE_SIGNATURE_HEADER: signature,
-            }
+            },
         )
         with patch.dict(os.environ, {"RUNTIME_INTERNAL_SERVICE_TOKEN": TOKEN}, clear=True):
             trusted = from_request(request)
