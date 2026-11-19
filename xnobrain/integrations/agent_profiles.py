@@ -384,7 +384,6 @@ class AgentProfilesMixin:
         """Install and enable only the exact image-owned required plugin."""
         from .extension_policy import (
             REQUIRED_PLUGINS,
-            normalize_plugin_bytecode,
             required_plugin_root,
             safe_child,
             tree_digest,
@@ -411,7 +410,9 @@ class AgentProfilesMixin:
             if source.is_dir() and destination.is_dir() and not destination.is_symlink():
                 # Interpreter caches are generated runtime state, not packaged
                 # plugin code; discard them before checking the trusted digest.
-                normalize_plugin_bytecode(destination)
+                for cache in destination.rglob("__pycache__"):
+                    if cache.is_dir() and not cache.is_symlink():
+                        shutil.rmtree(cache)
                 if tree_digest(source) == tree_digest(destination):
                     enabled.add(plugin_id)
                     disabled.discard(plugin_id)

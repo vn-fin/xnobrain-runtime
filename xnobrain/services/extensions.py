@@ -1241,13 +1241,10 @@ class ExtensionsService:
                     code="required_plugin_invalid",
                 )
             artifact = profile / "plugins" / plugin_id
-            extension_policy.normalize_plugin_bytecode(artifact)
             digest = extension_policy.tree_digest(artifact)
             if digest != body["artifact_digest"]:
                 raise ServiceError(
-                    f"Plugin '{plugin_id}' changed since scan",
-                    status=409,
-                    code="plugin_scan_stale",
+                    "Plugin changed since scan", status=409, code="plugin_scan_stale"
                 )
             state = self._state(profile)
             record = state["plugins"].get(plugin_id)
@@ -1290,7 +1287,6 @@ class ExtensionsService:
                 state = self._state(profile)
                 record = state["plugins"].get(plugin_id, {})
                 artifact = profile / "plugins" / plugin_id
-                extension_policy.normalize_plugin_bytecode(artifact)
                 digest = extension_policy.tree_digest(artifact)
                 scan = record.get("scan") or {}
                 approval = record.get("approval") or {}
@@ -2118,7 +2114,6 @@ class ExtensionOperationWorker:
                     raise ServiceError("Plugin not found", status=404, code="plugin_not_found")
                 self.service._snapshot_config(agent_id, profile)
                 extension_engine.plugin_set_enabled(profile, plugin_id, False)
-                extension_policy.normalize_plugin_bytecode(artifact)
                 expected_digest = extension_policy.tree_digest(artifact)
             self.service.store.update(
                 operation, status="PROCESSING", progress={"phase": "scanning"}
@@ -2132,12 +2127,9 @@ class ExtensionOperationWorker:
                 return
             with self.service._lifecycle(agent_id):
                 self.service._require_profile_generation(profile, inputs.get("profile_generation"))
-                extension_policy.normalize_plugin_bytecode(artifact)
                 if extension_policy.tree_digest(artifact) != expected_digest:
                     raise ServiceError(
-                        f"Plugin '{plugin_id}' changed during scan",
-                        status=409,
-                        code="plugin_scan_stale",
+                        "Plugin changed during scan", status=409, code="plugin_scan_stale"
                     )
                 state = self.service._state(profile)
                 prior = state["plugins"].get(plugin_id, {})
@@ -2342,8 +2334,6 @@ class ExtensionOperationWorker:
                     )
                 self.service._snapshot_config(operation["agent_id"], profile)
                 had_old = target.exists()
-                if had_old:
-                    extension_policy.normalize_plugin_bytecode(target)
                 old_digest = extension_policy.tree_digest(target) if had_old else ""
                 if had_old:
                     self._backup_plugin(profile, plugin_id, target)
@@ -2504,7 +2494,6 @@ class ExtensionOperationWorker:
 
         root = extension_policy.safe_child(profile, ".xnobrain", "extensions", "backups", plugin_id)
         root.mkdir(parents=True, exist_ok=True, mode=0o700)
-        extension_policy.normalize_plugin_bytecode(target)
         digest = extension_policy.tree_digest(target)
         backup = root / f"{digest}.zip"
         if backup.exists():
