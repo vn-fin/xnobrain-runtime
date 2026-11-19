@@ -1864,31 +1864,63 @@ See [Agent extensions](agent-extensions.md) for the personal/profile-scoped plug
 
 ## Optional native provider plugins
 
-The existing `GET /xnobrain/api/runtime/v1/plugins/catalog` now also returns
-Sapo and SePay with `kind: native`, `package`, and `provides_skills`, without
-an `mcp` field. Their installation uses
+The plugin catalog is owned and served by Control at
+`GET /xnobrain/api/control/v1/plugins/catalog`; Runtime exposes only
+`GET /xnobrain/api/runtime/v1/plugins/capabilities`. Capabilities contain
+`engine_capabilities` and
+`managed_provider_packages: {"schema_versions": [1]}`; Runtime does not report
+`native_packages` or ship local provider packages. The UI requires schema 1 for
+Sapo, SePay and KiotViet.
+
+Every `kind: native` catalog entry carries `native_package` with
+`schema_version`, `definition_revision`, `package_version`, `package_sha256`
+and declarative `connection_fields`. Installation uses
 `POST /xnobrain/api/runtime/v1/agents-extension-operations/{agent_id}` with
-`kind: install`, the matching `plugin_id`, `source: bundled:<plugin_id>`, and
-an idempotency key. The exact package IDs are allowlisted server-side; paths
-and references are rejected. The existing native plugin scan, approval,
-profile ownership, disabled-first installation and management contracts apply.
-The default Skills catalog no longer projects these packages. See
-[plugin catalog](plugin-catalog.md) for details.
+`kind: install`, `plugin_id: <provider>`, `source: bundled:<provider>`, and an
+idempotency key. Control downloads are not initiated by the browser. Control
+attaches a signed package intent for exactly this route; Runtime rejects a
+missing, malformed, expired, cross-provider, cross-agent or cross-route intent
+with `403 native_provider_intent_required` or
+`403 native_provider_intent_invalid`.
+
+Runtime downloads the exact package bytes before enqueueing, using the request's
+scoped MCP grant against
+`GET /xnobrain/api/control/internal/v1/provider-packages/{provider}?agent_id=<agent>`.
+It verifies the SHA-256, schema version, provider, package version and definition
+revision, caches the verified bytes under `DATA_DIR/extension-staging/native-packages/`,
+and the worker builds a native plugin from only the Runtime-owned bootstrap,
+`plugin.yaml`, `provider.json` and allowlisted skill/reference Markdown. The
+worker never resolves another Control package. Download, digest or schema
+failure rejects the operation before it is queued and never installs another
+revision.
+
+Idempotency compares the stable provider/source/profile-generation identity, not
+the expiring intent or package pin. Repeating an accepted request returns the
+existing operation even if Control has since published another package. Installed
+plugin status adds
+`native_package: {schema_version, definition_revision, package_sha256}`. The
+existing scan, approval, disabled-first install, update, removal, snapshot,
+rollback and cancellation contracts apply. A source-less update whose persisted
+source is `bundled:<provider>` also requires a valid intent; the UI should send
+an explicit bundled source.
 
 ### Managed native provider mapping
 
 `PUT /xnobrain/api/runtime/v1/agents-plugins/{agent_id}/plugins/{plugin_id}/provider-connection`
-accepts exactly `{"connection_id":"<uuid>"}` for installed `sapo`, `sepay`, or
-`kiotviet`. `DELETE` removes that mapping. Both use existing trusted profile
-ownership and lifecycle guards; organization connections are unsupported.
-No provider credentials are accepted or persisted by Runtime. Completed plugin
-removal clears its mapping; disabling preserves it. The Discover uninstall flow
-revokes the Control credential before queueing package removal, so a failed
-removal can leave an installed but disconnected package.
+accepts exactly `{"connection_id":"<uuid>"}` for an installed Control-defined
+native provider. Runtime requires a matching installed `provider.json` and its
+recorded `native_package` metadata; there is no hard-coded provider allowlist.
+`DELETE` removes that mapping. Both use existing trusted profile ownership and
+lifecycle guards; organization connections are unsupported. No provider
+credentials are accepted or persisted by Runtime. Completed plugin removal clears
+its mapping; disabling preserves it. The Discover uninstall flow revokes the
+Control credential before queueing package removal, so a failed removal can leave
+an installed but disconnected package.
 
-Managed KiotViet plugin 0.3.0 consumes Control's additive internal provider
-`/execute` endpoint with operation/mode and native query/body data. The tool
-captures the approved profile and sends only its connection mapping and scoped
-grant. Legacy resource reads use `/read`. `kiotviet_write` is unavailable to an
-old installed manifest and never automatically retries mutations. An uncertain
-write returns `provider_write_outcome_unknown` for read-back reconciliation.
+Managed provider tools register from the installed definition. Read and write
+dispatch, endpoint selection, argument allowlisting and resource/operation enums
+all come from that installed schema. KiotViet operation calls use Control's
+internal `/execute` endpoint and legacy resource reads use `/read`;
+`kiotviet_write` is unavailable unless the installed package declares it. An
+uncertain write returns `provider_write_outcome_unknown` for read-back
+reconciliation.

@@ -37,7 +37,7 @@ ROUTES = (
         "extensions_provider_connection_delete",
         tags=_TAG,
     ),
-    route("GET", "/plugins/catalog", "extensions_catalog", tags=_TAG),
+    route("GET", "/plugins/capabilities", "extensions_capabilities", tags=_TAG),
     route("GET", "/plugins/marketplaces", "extensions_marketplaces_list", tags=_TAG),
     route(
         "POST", "/plugins/marketplaces", "extensions_marketplaces_add", MarketplaceSource, tags=_TAG

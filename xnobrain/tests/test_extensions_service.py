@@ -40,35 +40,49 @@ class ExtensionServiceTests(unittest.TestCase):
     def tearDown(self):
         self.temporary.cleanup()
 
-    def test_catalog_fails_closed_on_unscoped_mcp_registry(self):
+    def test_capabilities_fail_closed_on_unscoped_mcp_registry(self):
         with patch.object(extension_engine, "mcp_profile_isolation_supported", return_value=False):
-            catalog = self.service.catalog()
+            capabilities = self.service.capabilities()
 
-        self.assertEqual(catalog["engine_capabilities"], {"mcp_profile_isolation": False})
-        candidates = [
-            entry
-            for entry in catalog["entries"]
-            if entry["installability"] == "installable" and entry.get("kind") != "native"
-        ]
-        self.assertTrue(candidates)
-        self.assertTrue(
-            all(
-                entry["capability"]
-                == {
-                    "installable": False,
-                    "reason_code": "mcp_profile_isolation_unavailable",
-                }
-                for entry in candidates
+        self.assertEqual(capabilities["engine_capabilities"], {"mcp_profile_isolation": False})
+        self.assertEqual(capabilities["managed_provider_packages"], {"schema_versions": [1]})
+        self.assertNotIn("native_packages", capabilities)
+
+    def test_catalog_install_requires_trusted_recipe_before_writing_config(self):
+        with self.assertRaises(ServiceError) as missing:
+            self.service.install_catalog(
+                "research",
+                {"catalog_id": "context7", "recipe_revision": 1, "fields": {}},
+                self.trusted,
             )
-        )
+
+        self.assertEqual(missing.exception.status, 403)
+        self.assertEqual(missing.exception.code, "catalog_recipe_unavailable")
+        self.assertFalse((self.profile / "config.yaml").exists())
+        self.assertFalse((self.profile / "mcp.json").exists())
 
     def test_catalog_install_rejects_before_writing_config(self):
+        trusted = TrustedRequestContext(
+            subject="person-1",
+            tenant_id="tenant-1",
+            catalog_recipe={
+                "id": "context7",
+                "recipe_revision": 1,
+                "installability": "installable",
+                "mcp": {
+                    "transport": "http",
+                    "endpoint_mode": "static",
+                    "url": "https://mcp.context7.com/mcp",
+                    "auth": {"kind": "none"},
+                },
+            },
+        )
         with patch.object(extension_engine, "mcp_profile_isolation_supported", return_value=False):
             with self.assertRaises(ServiceError) as context:
                 self.service.install_catalog(
                     "research",
                     {"catalog_id": "context7", "recipe_revision": 1, "fields": {}},
-                    self.trusted,
+                    trusted,
                 )
 
         self.assertEqual(context.exception.status, 503)

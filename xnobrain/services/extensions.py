@@ -25,17 +25,16 @@ from urllib.parse import urlsplit
 import yaml
 
 from ..integrations import (
-    bundled_plugins,
     extension_engine,
     extension_policy,
     extension_recovery,
+    native_provider_packages,
     plugin_formats,
 )
 from ..integrations.hermes_support import AgentAPIError
 from ..repositories.base import StoreError
 from ..repositories.custom_page_locks import lifecycle_gate
 from ..repositories.extension_operations import ExtensionOperationStore
-from ..repositories.plugin_catalog import load_plugin_catalog
 from .base import ServiceError
 
 _PLUGIN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
@@ -235,33 +234,17 @@ class ExtensionsService:
                 extra={"error_code": "extension_recovery_required"},
             )
 
-    def catalog(self) -> dict[str, Any]:
+    def capabilities(self) -> dict[str, Any]:
+        """Report Runtime-owned capability facts for the Control-owned catalog."""
         self._require_feature()
-        try:
-            catalog = load_plugin_catalog()
-        except (ValueError, OSError) as error:
-            raise ServiceError(
-                "Extension catalog is unavailable", status=503, code="catalog_unavailable"
-            ) from error
-        isolated = extension_engine.mcp_profile_isolation_supported()
-        catalog["engine_capabilities"] = {"mcp_profile_isolation": isolated}
-        for entry in catalog.get("entries", []):
-            if entry.get("kind") == "native":
-                try:
-                    bundled_plugins.package_files(entry["id"])
-                except (AgentAPIError, OSError):
-                    entry["capability"] = {
-                        "installable": False,
-                        "reason_code": "plugin_package_unavailable",
-                    }
-        if not isolated:
-            for entry in catalog.get("entries", []):
-                if entry.get("installability") == "installable" and entry.get("kind") != "native":
-                    entry["capability"] = {
-                        "installable": False,
-                        "reason_code": "mcp_profile_isolation_unavailable",
-                    }
-        return catalog
+        return {
+            "engine_capabilities": {
+                "mcp_profile_isolation": extension_engine.mcp_profile_isolation_supported()
+            },
+            "managed_provider_packages": {
+                "schema_versions": [native_provider_packages.SCHEMA_VERSION]
+            },
+        }
 
     def _marketplaces_path(self) -> Path:
         root = self.repository.data_dir / "extensions"
@@ -622,6 +605,7 @@ class ExtensionsService:
                         ),
                         "artifact_digest": digest if required else approval.get("artifact_digest"),
                     },
+                    "native_package": self._public_native_package(record.get("native_package")),
                 }
             )
         mcp_rows = []
@@ -706,14 +690,15 @@ class ExtensionsService:
     def set_provider_connection(self, agent_id, plugin_id, body, trusted):
         from uuid import UUID
 
-        from ..integrations.bundled_plugins import PROVIDERS
-
         profile, _ = self._profile(agent_id, trusted)
         if trusted.organization_id:
             raise ServiceError(
                 "Personal workspace required", status=422, code="mcp_workspace_unsupported"
             )
-        if plugin_id not in PROVIDERS:
+        if (
+            not _PLUGIN_ID.fullmatch(str(plugin_id or ""))
+            or self._installed_native_definition(profile, plugin_id) is None
+        ):
             raise ServiceError("Unknown provider", status=422, code="invalid_provider")
         with self._lifecycle(agent_id):
             state = self._state(profile)
@@ -727,6 +712,21 @@ class ExtensionsService:
             self._save(profile, state)
         self._set_mcp_grant(profile, trusted)
         return {"plugin_id": plugin_id, "configured": body is not None}
+
+    def _installed_native_definition(self, profile: Path, plugin_id: str) -> dict[str, Any] | None:
+        """Accept a Control-defined provider only from its installed package."""
+        record = self._state(profile)["plugins"].get(plugin_id)
+        if not isinstance(record, dict):
+            return None
+        if self._public_native_package(record.get("native_package")) is None:
+            return None
+        try:
+            definition = native_provider_packages.load_installed_definition(
+                profile / "plugins" / plugin_id / "provider.json"
+            )
+        except native_provider_packages.NativePackageError:
+            return None
+        return definition if definition["id"] == plugin_id else None
 
     def set_plugin_mcp_connection(
         self, agent_id: str, plugin_id: str, server_name: str, body: dict[str, Any], trusted: Any
@@ -819,6 +819,27 @@ class ExtensionsService:
             ],
         }
 
+    @staticmethod
+    def _public_native_package(value: Any) -> dict[str, Any] | None:
+        if not isinstance(value, dict):
+            return None
+        revision = value.get("definition_revision")
+        digest = value.get("package_sha256")
+        if (
+            value.get("schema_version") != native_provider_packages.SCHEMA_VERSION
+            or isinstance(revision, bool)
+            or not isinstance(revision, int)
+            or not 1 <= revision <= 1_000_000
+            or not isinstance(digest, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", digest)
+        ):
+            return None
+        return {
+            "schema_version": native_provider_packages.SCHEMA_VERSION,
+            "definition_revision": revision,
+            "package_sha256": digest,
+        }
+
     def install_catalog(self, agent_id: str, body: dict[str, Any], trusted: Any) -> dict[str, Any]:
         profile, _owner = self._profile(agent_id, trusted)
         self._set_mcp_grant(profile, trusted)
@@ -905,15 +926,20 @@ class ExtensionsService:
 
     def _catalog_entry(self, body: dict[str, Any], trusted: Any) -> dict[str, Any]:
         self._personal_identity(trusted)
-        entry = next(
-            (item for item in self.catalog()["entries"] if item["id"] == body["catalog_id"]),
-            None,
-        )
-        if entry is None:
+        entry = getattr(trusted, "catalog_recipe", None)
+        if not isinstance(entry, dict) or not entry:
             raise ServiceError(
-                "Catalog entry not found", status=404, code="catalog_entry_not_found"
+                "Catalog recipe is unavailable",
+                status=403,
+                code="catalog_recipe_unavailable",
             )
-        if body["recipe_revision"] != entry["recipe_revision"]:
+        if entry.get("id") != body.get("catalog_id"):
+            raise ServiceError(
+                "Catalog recipe does not match the request",
+                status=422,
+                code="invalid_catalog_recipe",
+            )
+        if body["recipe_revision"] != entry.get("recipe_revision"):
             raise ServiceError(
                 "Catalog recipe changed; refresh and retry",
                 status=409,
@@ -929,7 +955,8 @@ class ExtensionsService:
                 status=503,
                 code="plugins_unavailable",
             )
-        if entry.get("mcp", {}).get("transport") != "http":
+        mcp = entry.get("mcp")
+        if not isinstance(mcp, dict) or mcp.get("transport") != "http":
             raise ServiceError(
                 "Only remote HTTP integrations are supported",
                 status=422,
@@ -1593,6 +1620,8 @@ class ExtensionsService:
         plugin_id = str(body.get("plugin_id", ""))
         if not _PLUGIN_ID.fullmatch(plugin_id):
             raise ServiceError("Plugin id is invalid", status=422, code="invalid_plugin_id")
+        native_intent: dict[str, Any] | None = None
+        identity: dict[str, Any] | None = None
         with self._lifecycle(agent_id):
             profile_generation = self._profile_generation(profile, initialize=True)
             if kind in {"install", "update"}:
@@ -1610,15 +1639,30 @@ class ExtensionsService:
                 if requested_source.startswith("bundled:"):
                     if (
                         requested_source != f"bundled:{plugin_id}"
-                        or plugin_id not in bundled_plugins.PROVIDERS
                         or body.get("ref")
                         or body.get("path")
                     ):
                         raise ServiceError(
                             "Bundled source is invalid", status=422, code="invalid_plugin_source"
                         )
-                    bundled_plugins.package_files(plugin_id)
-                    source, ref, path = requested_source, "", ""
+                    native_intent = self._native_provider_intent(trusted, agent_id, kind, plugin_id)
+                    identity = {
+                        "plugin_id": plugin_id,
+                        "source": requested_source,
+                        "ref": "",
+                        "path": "",
+                        "profile_generation": profile_generation,
+                    }
+                    existing = self.store.find_idempotent(
+                        agent_id=agent_id,
+                        owner=owner,
+                        kind=kind,
+                        idempotency_key=str(body.get("idempotency_key", "")),
+                        idempotency_inputs=identity,
+                    )
+                    if existing is not None:
+                        return existing
+                    self._require_plugin_target(profile, kind, plugin_id)
                 elif kind == "install" and str(body.get("source") or "").startswith("upload:"):
                     if not _upload:
                         raise ServiceError(
@@ -1626,8 +1670,14 @@ class ExtensionsService:
                             status=422,
                             code="invalid_git_source",
                         )
-                    source = str(body["source"])
-                    ref, path = "", ""
+                    identity = {
+                        "plugin_id": plugin_id,
+                        "source": str(body["source"]),
+                        "ref": "",
+                        "path": "",
+                        "profile_generation": profile_generation,
+                    }
+                    self._require_plugin_target(profile, kind, plugin_id)
                 elif kind == "update" and self._state(profile)["plugins"].get(plugin_id, {}).get(
                     "source", ""
                 ).startswith("upload:"):
@@ -1650,36 +1700,159 @@ class ExtensionsService:
                         body.get("ref") or prior.get("ref") or "",
                         body.get("path") or prior.get("path") or "",
                     )
+                    identity = {
+                        "plugin_id": plugin_id,
+                        "source": source,
+                        "ref": ref,
+                        "path": path,
+                        "profile_generation": profile_generation,
+                    }
+                    self._require_plugin_target(profile, kind, plugin_id)
                 else:
                     source, ref, path = self._validate_git_source(
                         body.get("source"), body.get("ref"), body.get("path")
                     )
-                target = profile / "plugins" / plugin_id
-                if kind == "install" and target.exists():
-                    raise ServiceError(
-                        "Plugin is already installed; use update", status=409, code="plugin_exists"
-                    )
-                if kind == "update" and not target.is_dir():
-                    raise ServiceError(
-                        "Plugin is not installed", status=404, code="plugin_not_found"
-                    )
+                    identity = {
+                        "plugin_id": plugin_id,
+                        "source": source,
+                        "ref": ref,
+                        "path": path,
+                        "profile_generation": profile_generation,
+                    }
+                    self._require_plugin_target(profile, kind, plugin_id)
             else:
-                source, ref, path = "", "", ""
-            inputs = {
-                "plugin_id": plugin_id,
-                "source": source,
-                "ref": ref,
-                "path": path,
-                "profile_generation": profile_generation,
-            }
-            result, _created = self.store.create(
-                agent_id=agent_id,
-                owner=owner,
-                kind=kind,
-                inputs=inputs,
-                idempotency_key=str(body.get("idempotency_key", "")),
+                identity = {
+                    "plugin_id": plugin_id,
+                    "source": "",
+                    "ref": "",
+                    "path": "",
+                    "profile_generation": profile_generation,
+                }
+            if native_intent is None:
+                result, _created = self.store.create(
+                    agent_id=agent_id,
+                    owner=owner,
+                    kind=kind,
+                    inputs=identity,
+                    idempotency_key=str(body.get("idempotency_key", "")),
+                    idempotency_inputs=identity,
+                )
+                return result
+        # Download and verify outside the lifecycle lock, then revalidate the
+        # captured profile generation before a durable enqueue. The cache lock
+        # spans publication and enqueue so GC cannot evict accepted bytes.
+        pin, raw = self._pin_native_package(trusted, native_intent, plugin_id)
+        inputs = {**identity, "native_package": pin}
+        with native_provider_packages.cache_lock(self.repository.data_dir):
+            native_provider_packages.store_cached_package(
+                self.repository.data_dir, pin["package_sha256"], raw
             )
+            with self._lifecycle(agent_id):
+                self._require_profile_generation(profile, identity["profile_generation"])
+                existing = self.store.find_idempotent(
+                    agent_id=agent_id,
+                    owner=owner,
+                    kind=kind,
+                    idempotency_key=str(body.get("idempotency_key", "")),
+                    idempotency_inputs=identity,
+                )
+                if existing is not None:
+                    return existing
+                self._require_plugin_target(profile, kind, plugin_id)
+                result, _created = self.store.create(
+                    agent_id=agent_id,
+                    owner=owner,
+                    kind=kind,
+                    inputs=inputs,
+                    idempotency_key=str(body.get("idempotency_key", "")),
+                    idempotency_inputs=identity,
+                )
         return result
+
+    def _require_plugin_target(self, profile: Path, kind: str, plugin_id: str) -> None:
+        target = profile / "plugins" / plugin_id
+        if kind == "install" and target.exists():
+            raise ServiceError(
+                "Plugin is already installed; use update", status=409, code="plugin_exists"
+            )
+        if kind == "update" and not target.is_dir():
+            raise ServiceError("Plugin is not installed", status=404, code="plugin_not_found")
+
+    def _native_provider_intent(
+        self, trusted: Any, agent_id: str, kind: str, plugin_id: str
+    ) -> dict[str, Any]:
+        intent = getattr(trusted, "native_provider_intent", None)
+        if not isinstance(intent, dict):
+            raise ServiceError(
+                "A Control-signed native provider intent is required",
+                status=403,
+                code="native_provider_intent_required",
+            )
+        if (
+            intent.get("provider") != plugin_id
+            or intent.get("agent_id") != agent_id
+            or intent.get("kind") != kind
+        ):
+            raise ServiceError(
+                "Native provider intent does not match the request",
+                status=403,
+                code="native_provider_intent_invalid",
+            )
+        return intent
+
+    def _pin_native_package(
+        self, trusted: Any, intent: dict[str, Any], plugin_id: str
+    ) -> tuple[dict[str, Any], bytes]:
+        grant = str(getattr(trusted, "mcp_grant", "") or "").strip()
+        if not grant:
+            raise ServiceError(
+                "A scoped Control grant is required to download the package",
+                status=401,
+                code="native_provider_grant_required",
+            )
+        base = os.environ.get("RUNTIME_CONTROL_URL", "").strip()
+        if not base:
+            raise ServiceError(
+                "Control package endpoint is unavailable",
+                status=503,
+                code="native_provider_package_unavailable",
+            )
+        try:
+            raw = native_provider_packages.download_package(
+                base_url=base,
+                provider=plugin_id,
+                agent_id=str(intent["agent_id"]),
+                grant=grant,
+            )
+            digest = hashlib.sha256(raw).hexdigest()
+            if digest != intent["package_sha256"]:
+                raise ServiceError(
+                    "Native provider package changed before installation",
+                    status=409,
+                    code="native_provider_package_digest_mismatch",
+                )
+            package = native_provider_packages.parse_package(raw, expected_provider=plugin_id)
+            if (
+                package.definition_revision != intent["definition_revision"]
+                or package.package_version != intent["package_version"]
+            ):
+                raise ServiceError(
+                    "Native provider package does not match its intent",
+                    status=409,
+                    code="native_provider_package_digest_mismatch",
+                )
+        except native_provider_packages.NativePackageError as error:
+            raise ServiceError(str(error), status=error.status, code=error.code) from error
+        return (
+            {
+                "schema_version": native_provider_packages.SCHEMA_VERSION,
+                "provider": plugin_id,
+                "package_version": package.package_version,
+                "definition_revision": package.definition_revision,
+                "package_sha256": package.package_sha256,
+            },
+            raw,
+        )
 
     @staticmethod
     def _set_mcp_grant(profile: Path, trusted: Any) -> None:
@@ -1781,6 +1954,10 @@ class ExtensionOperationWorker:
             try:
                 self.service._recover_all_publications()
                 self.service.store.reconcile()
+                native_provider_packages.prune_cached_packages(
+                    self.service.repository.data_dir,
+                    referenced_provider=self.service.store.native_package_digests,
+                )
             except BaseException:
                 self.service.store.release_worker(descriptor)
                 self._worker_fd = None
@@ -1844,6 +2021,12 @@ class ExtensionOperationWorker:
                     uploads = root / "uploads"
                     if not root.is_symlink() and not uploads.is_symlink():
                         (uploads / f"{upload_id}.zip").unlink(missing_ok=True)
+                native = (operation.get("inputs") or {}).get("native_package")
+                if isinstance(native, dict):
+                    native_provider_packages.prune_cached_packages(
+                        self.service.repository.data_dir,
+                        referenced_provider=self.service.store.native_package_digests,
+                    )
 
     def _process(self, operation: dict[str, Any]) -> None:
         inputs = operation.get("inputs") or {}
@@ -2015,27 +2198,60 @@ class ExtensionOperationWorker:
                 status=422,
                 code="upload_update_requires_reupload",
             )
+        native_pin = inputs.get("native_package")
+        if native_pin is not None and not isinstance(native_pin, dict):
+            raise ServiceError(
+                "Native provider package is unavailable",
+                status=503,
+                code="native_provider_package_unavailable",
+            )
         try:
             self.service.store.update(
                 operation,
                 status="PROCESSING",
                 progress={
-                    "phase": "extracting"
-                    if (inputs.get("source") or "").startswith("upload:")
-                    else "cloning"
+                    "phase": (
+                        "packaging"
+                        if native_pin is not None
+                        else "extracting"
+                        if (inputs.get("source") or "").startswith("upload:")
+                        else "cloning"
+                    )
                 },
             )
-            if (inputs.get("source") or "").startswith("bundled:"):
+            if native_pin is not None:
+                digest = str(native_pin.get("package_sha256", ""))
                 if (
-                    inputs["source"] != f"bundled:{plugin_id}"
+                    inputs.get("source") != f"bundled:{plugin_id}"
                     or inputs.get("ref")
                     or inputs.get("path")
                 ):
                     raise ServiceError(
                         "Bundled source is invalid", status=422, code="invalid_plugin_source"
                     )
-                bundled_plugins.stage_package(plugin_id, stage)
-                commit = extension_policy.tree_digest(stage)
+                raw = native_provider_packages.load_cached_package(
+                    self.service.repository.data_dir, digest
+                )
+                package = native_provider_packages.parse_package(raw, expected_provider=plugin_id)
+                if (
+                    package.package_sha256 != digest
+                    or package.definition_revision != native_pin.get("definition_revision")
+                    or package.package_version != native_pin.get("package_version")
+                ):
+                    raise ServiceError(
+                        "Native provider package changed before installation",
+                        status=409,
+                        code="native_provider_package_digest_mismatch",
+                    )
+                native_provider_packages.build_plugin(package, stage)
+                commit = package.package_sha256
+                package_format = plugin_formats.NATIVE
+            elif (inputs.get("source") or "").startswith("bundled:"):
+                raise ServiceError(
+                    "Native provider package is unavailable",
+                    status=503,
+                    code="native_provider_package_unavailable",
+                )
             elif (inputs.get("source") or "").startswith("upload:"):
                 upload_id = inputs["source"].partition(":")[2]
                 if not re.fullmatch(
@@ -2061,7 +2277,9 @@ class ExtensionOperationWorker:
                     cancelled=lambda: self.service.store.cancelled(operation),
                     **({"path": inputs["path"]} if inputs.get("path") else {}),
                 )
-            declared, package_format = plugin_formats.plugin_identity(stage)
+            declared, detected_format = plugin_formats.plugin_identity(stage)
+            if native_pin is None:
+                package_format = detected_format
             dropped: list[str] | None = None
             if package_format == plugin_formats.CLAUDE:
                 # Only skills and remote MCP survive; the rest is reported.
@@ -2164,7 +2382,7 @@ class ExtensionOperationWorker:
                         raise ServiceError("Operation cancelled", code="operation_cancelled")
                     state = self.service._state(profile)
                     previous = state["plugins"].get(plugin_id, {})
-                    state["plugins"][plugin_id] = {
+                    record = {
                         "source": inputs["source"],
                         "ref": inputs["ref"],
                         "path": inputs.get("path") or "",
@@ -2180,6 +2398,13 @@ class ExtensionOperationWorker:
                         "hidden": bool(previous.get("hidden", False)),
                         "revision": int(previous.get("revision", 0)) + 1,
                     }
+                    if native_pin is not None:
+                        record["native_package"] = {
+                            "schema_version": native_provider_packages.SCHEMA_VERSION,
+                            "definition_revision": int(native_pin["definition_revision"]),
+                            "package_sha256": str(native_pin["package_sha256"]),
+                        }
+                    state["plugins"][plugin_id] = record
                     state["plugin_mcp"] = {
                         key: value
                         for key, value in (state.get("plugin_mcp") or {}).items()
@@ -2231,6 +2456,17 @@ class ExtensionOperationWorker:
                     "dropped_components": dropped or [],
                     "artifact_digest": scan_result["artifact_digest"],
                     "scan": self.service._public_scan(scan),
+                    **(
+                        {
+                            "native_package": {
+                                "schema_version": native_provider_packages.SCHEMA_VERSION,
+                                "definition_revision": int(native_pin["definition_revision"]),
+                                "package_sha256": str(native_pin["package_sha256"]),
+                            }
+                        }
+                        if native_pin is not None
+                        else {}
+                    ),
                 },
             )
         finally:

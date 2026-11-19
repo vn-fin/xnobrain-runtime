@@ -23,13 +23,17 @@ from xnobrain.routes import setup_routes
 from xnobrain.services.base import ServiceError
 from xnobrain.services.extensions import ExtensionsService
 from xnobrain.trusted_context import (
+    TRUSTED_CATALOG_RECIPE_HEADER,
+    TRUSTED_CATALOG_RECIPE_SIGNATURE_HEADER,
     TRUSTED_CONVERSATION_CONTEXT_HEADER,
     TRUSTED_CONVERSATION_CONTEXT_SIGNATURE_HEADER,
     TRUSTED_ORGANIZATION_HEADER,
     TRUSTED_SIGNATURE_HEADER,
     TRUSTED_SUBJECT_HEADER,
     TRUSTED_TENANT_HEADER,
+    catalog_recipe_signature,
     conversation_context_signature,
+    encode_catalog_recipe,
     encode_conversation_context,
     principal_signature,
 )
@@ -88,7 +92,9 @@ class ExtensionAPITests(unittest.IsolatedAsyncioTestCase):
         self.temporary.cleanup()
 
     @staticmethod
-    def headers(subject="person-1", tenant="tenant-1", organization="", ownership=None):
+    def headers(
+        subject="person-1", tenant="tenant-1", organization="", ownership=None, recipe=None
+    ):
         result = {
             TRUSTED_SUBJECT_HEADER: subject,
             TRUSTED_TENANT_HEADER: tenant,
@@ -99,6 +105,12 @@ class ExtensionAPITests(unittest.IsolatedAsyncioTestCase):
             encoded = encode_conversation_context(ownership)
             result[TRUSTED_CONVERSATION_CONTEXT_HEADER] = encoded
             result[TRUSTED_CONVERSATION_CONTEXT_SIGNATURE_HEADER] = conversation_context_signature(
+                TOKEN, subject, tenant, organization, encoded
+            )
+        if recipe is not None:
+            encoded = encode_catalog_recipe(recipe)
+            result[TRUSTED_CATALOG_RECIPE_HEADER] = encoded
+            result[TRUSTED_CATALOG_RECIPE_SIGNATURE_HEADER] = catalog_recipe_signature(
                 TOKEN, subject, tenant, organization, encoded
             )
         return result
@@ -163,11 +175,16 @@ class ExtensionAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(detail.status_code, 200, detail.text)
         self.assertEqual(detail.json()["data"]["status"], "PENDING")
 
-    async def test_native_provider_catalog_installs_through_plugin_operations(self):
-        catalog = await self.client.get(f"{API_PREFIX}/plugins/catalog", headers=self.headers())
-        self.assertEqual(catalog.status_code, 200)
-        entries = {item["id"]: item for item in catalog.json()["data"]["entries"]}
-        self.assertEqual(entries["sepay"]["kind"], "native")
+    async def test_native_provider_catalog_requires_control_intent(self):
+        capabilities = await self.client.get(
+            f"{API_PREFIX}/plugins/capabilities", headers=self.headers()
+        )
+        self.assertEqual(capabilities.status_code, 200)
+        self.assertEqual(
+            capabilities.json()["data"]["managed_provider_packages"],
+            {"schema_versions": [1]},
+        )
+        self.assertNotIn("native_packages", capabilities.json()["data"])
         path = f"{API_PREFIX}/agents-extension-operations/research"
         body = {
             "kind": "install",
@@ -177,18 +194,9 @@ class ExtensionAPITests(unittest.IsolatedAsyncioTestCase):
         }
         denied = await self.client.post(path, json=body)
         self.assertEqual(denied.status_code, 401)
-        accepted = await self.client.post(path, headers=self.headers(), json=body)
-        self.assertEqual(accepted.status_code, 202, accepted.text)
-        self.assertTrue(accepted.json()["success"])
-        self.extensions.worker._process(self.extensions.store.claim_next())
-        listed = await self.client.get(
-            f"{API_PREFIX}/agents-plugins/research", headers=self.headers()
-        )
-        self.assertEqual(listed.status_code, 200, listed.text)
-        plugin = next(item for item in listed.json()["data"]["plugins"] if item["id"] == "sepay")
-        self.assertEqual(plugin["source"], "bundled:sepay")
-        self.assertEqual(plugin["provides_skills"], ["sepay"])
-        self.assertFalse(plugin["enabled"])
+        without_intent = await self.client.post(path, headers=self.headers(), json=body)
+        self.assertEqual(without_intent.status_code, 403)
+        self.assertEqual(without_intent.json()["error"]["code"], "native_provider_intent_required")
         invalid = await self.client.post(
             path,
             headers=self.headers(),
@@ -370,9 +378,56 @@ class ExtensionAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(hook.status_code, 422)
         self.assertNotIn(secret, hook.text)
 
+    async def test_catalog_install_requires_signed_control_recipe(self):
+        path = f"{API_PREFIX}/agents-plugins/research/install-catalog"
+        body = {
+            "catalog_id": "render",
+            "recipe_revision": 1,
+            "connection_id": "8b1a8e93-748b-46b0-8d97-d4d2c7a6b221",
+            "fields": {},
+        }
+        missing = await self.client.post(path, headers=self.headers(), json=body)
+        self.assertEqual(missing.status_code, 403)
+        self.assertEqual(missing.json()["error"]["code"], "catalog_recipe_unavailable")
+
+        forged = self.headers()
+        forged[TRUSTED_CATALOG_RECIPE_HEADER] = encode_catalog_recipe(
+            {
+                "id": "render",
+                "recipe_revision": 1,
+                "installability": "installable",
+                "mcp": {"transport": "http", "url": "https://mcp.render.com/mcp"},
+            }
+        )
+        forged[TRUSTED_CATALOG_RECIPE_SIGNATURE_HEADER] = "0" * 64
+        rejected = await self.client.post(path, headers=forged, json=body)
+        self.assertEqual(rejected.status_code, 403)
+        self.assertEqual(rejected.json()["error"]["code"], "catalog_recipe_unavailable")
+
+        mismatch = {
+            "id": "linear",
+            "recipe_revision": 1,
+            "installability": "installable",
+            "mcp": {"transport": "http", "url": "https://mcp.render.com/mcp"},
+        }
+        invalid = await self.client.post(path, headers=self.headers(recipe=mismatch), json=body)
+        self.assertEqual(invalid.status_code, 422)
+        self.assertEqual(invalid.json()["error"]["code"], "invalid_catalog_recipe")
+
     async def test_catalog_api_key_install_uses_proxy_and_rejects_secret_fields(self):
         connection_id = "8b1a8e93-748b-46b0-8d97-d4d2c7a6b221"
         path = f"{API_PREFIX}/agents-plugins/research/install-catalog"
+        recipe = {
+            "id": "render",
+            "recipe_revision": 1,
+            "installability": "installable",
+            "mcp": {
+                "transport": "http",
+                "endpoint_mode": "static",
+                "url": "https://mcp.render.com/mcp",
+                "auth": {"kind": "api_key", "field": "token", "delivery": "header"},
+            },
+        }
         body = {
             "catalog_id": "render",
             "recipe_revision": 1,
@@ -383,7 +438,10 @@ class ExtensionAPITests(unittest.IsolatedAsyncioTestCase):
             grant = "a" * 64
             response = await self.client.post(
                 path,
-                headers={**self.headers(), "x-xnobrain-mcp-grant": grant},
+                headers={
+                    **self.headers(recipe=recipe),
+                    "x-xnobrain-mcp-grant": grant,
+                },
                 json=body,
             )
             self.assertEqual(response.status_code, 200, response.text)
@@ -403,7 +461,9 @@ class ExtensionAPITests(unittest.IsolatedAsyncioTestCase):
                 {**body, "connection_id": None},
                 {**body, "connection_id": "NOT-A-UUID"},
             ):
-                rejected = await self.client.post(path, headers=self.headers(), json=invalid)
+                rejected = await self.client.post(
+                    path, headers=self.headers(recipe=recipe), json=invalid
+                )
                 self.assertEqual(rejected.status_code, 422)
                 self.assertEqual(rejected.json()["error"]["code"], "invalid_catalog_fields")
                 self.assertNotIn(secret, rejected.text)
@@ -427,7 +487,6 @@ class ExtensionAPITests(unittest.IsolatedAsyncioTestCase):
                 "auth": {"kind": "oauth"},
             },
         }
-        self.extensions.catalog = lambda: {"entries": [entry]}
         path = f"{API_PREFIX}/agents-plugins/research/install-catalog"
         body = {
             "catalog_id": "linear",
@@ -436,7 +495,7 @@ class ExtensionAPITests(unittest.IsolatedAsyncioTestCase):
             "fields": {},
         }
         with patch.object(extension_engine, "mcp_profile_isolation_supported", return_value=True):
-            response = await self.client.post(path, headers=self.headers(), json=body)
+            response = await self.client.post(path, headers=self.headers(recipe=entry), json=body)
             self.assertEqual(response.status_code, 200, response.text)
             config = (self.profile / "config.yaml").read_text(encoding="utf-8")
             self.assertIn(
@@ -447,7 +506,7 @@ class ExtensionAPITests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("headers:", config)
             rejected = await self.client.post(
                 path,
-                headers=self.headers(),
+                headers=self.headers(recipe=entry),
                 json={**body, "fields": {"token": "private-value"}},
             )
             self.assertEqual(rejected.status_code, 422)
@@ -481,7 +540,7 @@ class ExtensionAPITests(unittest.IsolatedAsyncioTestCase):
             transport=httpx.ASGITransport(app=disabled), base_url="http://runtime"
         )
         try:
-            response = await client.get(f"{API_PREFIX}/plugins/catalog")
+            response = await client.get(f"{API_PREFIX}/plugins/capabilities")
         finally:
             await client.aclose()
         self.assertEqual(response.status_code, 404)

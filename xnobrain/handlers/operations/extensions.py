@@ -28,7 +28,11 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
             "provider connection removed",
             200,
         ),
-        "extensions_catalog": (service.catalog, "extension catalog retrieved", 200),
+        "extensions_capabilities": (
+            service.capabilities,
+            "extension capabilities retrieved",
+            200,
+        ),
         "extensions_marketplaces_list": (
             lambda: service.list_marketplaces(context()),
             "plugin marketplaces retrieved",

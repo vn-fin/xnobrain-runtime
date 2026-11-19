@@ -22,14 +22,20 @@ from xnobrain.trusted_context import (
     SNAPSHOT_SHA_HEADER,
     SNAPSHOT_SIGNATURE_HEADER,
     SNAPSHOT_SIZE_HEADER,
+    TRUSTED_CATALOG_RECIPE_HEADER,
+    TRUSTED_CATALOG_RECIPE_SIGNATURE_HEADER,
     TRUSTED_CONVERSATION_CONTEXT_HEADER,
     TRUSTED_CONVERSATION_CONTEXT_SIGNATURE_HEADER,
     TRUSTED_IDENTITY_HEADERS,
+    TRUSTED_NATIVE_PROVIDER_INTENT_HEADER,
+    TRUSTED_NATIVE_PROVIDER_SIGNATURE_HEADER,
     TRUSTED_ORGANIZATION_HEADER,
     TRUSTED_SIGNATURE_HEADER,
     TRUSTED_SUBJECT_HEADER,
     TRUSTED_TENANT_HEADER,
+    decode_verified_catalog_recipe,
     decode_verified_conversation_context,
+    decode_verified_native_provider_intent,
     principal_signature,
     snapshot_intent,
     snapshot_signature,
@@ -136,6 +142,104 @@ def _verified_context_headers(
     return [
         (TRUSTED_CONVERSATION_CONTEXT_HEADER, encoded_context),
         (TRUSTED_CONVERSATION_CONTEXT_SIGNATURE_HEADER, signature),
+    ]
+
+
+def _verified_catalog_recipe_headers(
+    values,
+    token: str,
+    method: str,
+    path: str,
+    subject: str,
+    tenant_id: str,
+    organization_id: str,
+) -> list[tuple[str, str]]:
+    """Relay only the Control-signed install recipe for the exact install route."""
+    if (
+        method != "POST"
+        or not path.startswith("/xnobrain/api/runtime/v1/agents-plugins/")
+        or not path.endswith("/install-catalog")
+    ):
+        return []
+    captured: dict[str, list[str]] = {}
+    for header in values:
+        name = str(header.name or "").strip().lower()
+        if name not in {
+            TRUSTED_CATALOG_RECIPE_HEADER,
+            TRUSTED_CATALOG_RECIPE_SIGNATURE_HEADER,
+        }:
+            continue
+        captured.setdefault(name, []).extend(
+            bytes(value).decode("latin-1") for value in header.values
+        )
+    recipes = captured.get(TRUSTED_CATALOG_RECIPE_HEADER, [])
+    signatures = captured.get(TRUSTED_CATALOG_RECIPE_SIGNATURE_HEADER, [])
+    if len(recipes) != 1 or len(signatures) != 1:
+        return []
+    encoded_recipe = recipes[0].strip()
+    signature = signatures[0].strip()
+    verified = decode_verified_catalog_recipe(
+        token,
+        subject,
+        tenant_id,
+        organization_id,
+        encoded_recipe,
+        signature,
+    )
+    if verified is None:
+        return []
+    return [
+        (TRUSTED_CATALOG_RECIPE_HEADER, encoded_recipe),
+        (TRUSTED_CATALOG_RECIPE_SIGNATURE_HEADER, signature),
+    ]
+
+
+def _verified_native_provider_intent_headers(
+    values,
+    token: str,
+    method: str,
+    path: str,
+    subject: str,
+    tenant_id: str,
+    organization_id: str,
+) -> list[tuple[str, str]]:
+    """Relay only a signed package intent for the exact install/update route."""
+    if method != "POST" or not path.startswith(
+        "/xnobrain/api/runtime/v1/agents-extension-operations/"
+    ):
+        return []
+    captured: dict[str, list[str]] = {}
+    for header in values:
+        name = str(header.name or "").strip().lower()
+        if name not in {
+            TRUSTED_NATIVE_PROVIDER_INTENT_HEADER,
+            TRUSTED_NATIVE_PROVIDER_SIGNATURE_HEADER,
+        }:
+            continue
+        captured.setdefault(name, []).extend(
+            bytes(value).decode("latin-1") for value in header.values
+        )
+    intents = captured.get(TRUSTED_NATIVE_PROVIDER_INTENT_HEADER, [])
+    signatures = captured.get(TRUSTED_NATIVE_PROVIDER_SIGNATURE_HEADER, [])
+    if len(intents) != 1 or len(signatures) != 1:
+        return []
+    encoded_intent = intents[0].strip()
+    signature = signatures[0].strip()
+    verified = decode_verified_native_provider_intent(
+        token,
+        method,
+        path,
+        subject,
+        tenant_id,
+        organization_id,
+        encoded_intent,
+        signature,
+    )
+    if verified is None:
+        return []
+    return [
+        (TRUSTED_NATIVE_PROVIDER_INTENT_HEADER, encoded_intent),
+        (TRUSTED_NATIVE_PROVIDER_SIGNATURE_HEADER, signature),
     ]
 
 
@@ -387,7 +491,29 @@ class RuntimeGatewayService(
             )
         )
         relay_headers.extend(
+            _verified_catalog_recipe_headers(
+                head.headers,
+                self._token,
+                method,
+                path,
+                subject,
+                tenant_id,
+                organization_id,
+            )
+        )
+        relay_headers.extend(
             _verified_snapshot_headers(
+                head.headers,
+                self._token,
+                method,
+                path,
+                subject,
+                tenant_id,
+                organization_id,
+            )
+        )
+        relay_headers.extend(
+            _verified_native_provider_intent_headers(
                 head.headers,
                 self._token,
                 method,

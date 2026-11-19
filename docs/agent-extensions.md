@@ -24,8 +24,11 @@ coverage reference only, not a runtime dependency or a source of copied code,
 text, icons, or manifests; see [catalog provenance](plugin-catalog.md).
 
 A recipe's `installability` describes its transport/auth requirements. Runtime
-additionally returns `engine_capabilities` and per-entry `capability`. Clients
-must honor both. Native `mcp_servers` discovery in the pinned engine still
+additionally returns `engine_capabilities`, per-entry `capability`, and
+`managed_provider_packages: {"schema_versions": [1]}`. Clients must honor both.
+Runtime does not report a `native_packages` fallback; all Sapo, SePay and
+KiotViet packages come from Control. Native `mcp_servers` discovery in the pinned
+engine still
 registers process-global tools (the A/B test in `test_extension_engine.py`
 records this), so catalog servers never go through it. They are stored under
 the separate `xnobrain_managed_mcp_servers` config key and run through
@@ -148,6 +151,32 @@ turn. Updates revoke approval and leave the new artifact disabled. Required
 XNOBrain plugins are protected and trusted only when their bytes match the
 packaged reference, never merely because their name matches.
 
+### Control-owned native provider packages
+
+Sapo, SePay and KiotViet are installed from Control-owned packages rather than
+Runtime source. Control exposes `native_package` metadata on each native catalog
+entry and serves exact package bytes from its authenticated internal endpoint.
+The install/update request must use `source: bundled:<provider>` and must arrive
+on the exact extension-operations route with Control's signed intent headers.
+Runtime verifies the signature with the private Runtime token over the verified
+principal, method, path and encoded intent, then rechecks provider, agent, kind,
+path, expiry, package version, definition revision and SHA-256. Only allowlisted
+skill/reference Markdown is copied; Runtime generates `plugin.yaml`, a constant
+`__init__.py` bootstrap and the installed `provider.json`. No package Python,
+scripts, credentials or arbitrary paths are accepted.
+
+The verified bytes are downloaded with the request's scoped MCP grant and cached
+before the operation is queued. The worker consumes only the pinned digest and
+never resolves the latest Control package. Installed inventory exposes
+`native_package: {schema_version, definition_revision, package_sha256}`.
+Idempotency compares stable provider/source/profile-generation identity rather
+than the expiring intent. Approval, scanning, disable-first publication,
+update/reset and removal behavior are unchanged. Old dev installs of the removed
+Runtime packages have no compatible tools or connection form and must be
+reinstalled from Control; Runtime does not delete profile data automatically.
+The wire contract is in
+[native provider packages](contracts/native-provider-packages-v1.md).
+
 ### Native plugin kinds and error codes
 
 Native `kind: standalone` plugins are the only kind this API installs. Their
@@ -226,9 +255,9 @@ envelope and stable error mapping apply. FastAPI generates OpenAPI at runtime.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| GET | `/plugins/catalog` | Static recipe catalog plus engine capabilities |
+| GET | `/plugins/capabilities` | Runtime engine capabilities and `managed_provider_packages` schema versions |
 | GET | `/agents-plugins/{agent_id}` | Plugin and managed MCP inventory |
-| POST | `/agents-plugins/{agent_id}/install-catalog` | Recipe configuration; compatibility-gated |
+| POST | `/agents-plugins/{agent_id}/install-catalog` | Control-resolved trusted recipe configuration; compatibility-gated |
 | POST | `/agents-plugins/{agent_id}/{plugin_id}/approval` | Digest/revision-bound decision |
 | POST | `/agents-plugins/{agent_id}/{plugin_id}/enable` | Enable reviewed artifact |
 | POST | `/agents-plugins/{agent_id}/{plugin_id}/disable` | Disable on subsequent turns |
@@ -248,12 +277,24 @@ envelope and stable error mapping apply. FastAPI generates OpenAPI at runtime.
 | POST | `/agents-hooks/{agent_id}/{hook_id}/disable` | Disable hook |
 | DELETE | `/agents-hooks/{agent_id}/{hook_id}` | Remove hook and revoke approval |
 
+The catalog is owned by Control and served at
+`GET /xnobrain/api/control/v1/plugins/catalog`; Runtime exposes only
+`/plugins/capabilities`. For `install-catalog`, Control resolves `catalog_id`
+and forwards the recipe through the signed trusted channel. Runtime rejects a
+missing or forged recipe with `403 catalog_recipe_unavailable` and a recipe
+whose ID does not match the body with `422 invalid_catalog_recipe`.
+
 Operation creation accepts `kind`, `plugin_id`, optional public `source` and
 `ref`, and a client-generated `idempotency_key`. Reusing a key with a different
-payload is a conflict. Approval accepts `artifact_digest`, `approved`, and
-`expected_revision`; hook approval uses `command_digest`. A toolset patch accepts
-`enabled` and `expected_revision`. Secret recipe fields are write-only and never
-used as background-operation inputs.
+payload is a conflict, except that an accepted native package operation returns
+its existing record even if Control has published a newer package. A
+`source: bundled:<provider>` install/update requires the signed Control package
+intent and is rejected with `403 native_provider_intent_required` or
+`403 native_provider_intent_invalid` without it. Download, digest and schema
+failures occur before enqueue. Approval accepts `artifact_digest`, `approved`,
+and `expected_revision`; hook approval uses `command_digest`. A toolset patch
+accepts `enabled` and `expected_revision`. Secret recipe fields are write-only
+and never used as background-operation inputs.
 
 Operation responses include `plugin_id`. A failed or blocked operation keeps the
 fixed public reason of an expected error in `error.message` (for example
