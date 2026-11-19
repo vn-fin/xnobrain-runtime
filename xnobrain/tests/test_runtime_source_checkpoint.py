@@ -12,6 +12,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from xnobrain.integrations.native_provider_packages import prune_cached_packages
 from xnobrain.integrations.runtime_data_volume import MARKER
 from xnobrain.integrations.runtime_source_checkpoint import (
     checkpoint,
@@ -19,7 +20,10 @@ from xnobrain.integrations.runtime_source_checkpoint import (
     restore_ready,
     verify_extension_locks,
 )
-from xnobrain.integrations.runtime_update_storage import RuntimeUpdateStorage
+from xnobrain.integrations.runtime_update_storage import (
+    NATIVE_PACKAGE_CACHE_LOCK,
+    RuntimeUpdateStorage,
+)
 from xnobrain.repositories.base import RepositoryBase
 from xnobrain.repositories.runtime_updates import RuntimeUpdateRepository
 
@@ -90,15 +94,7 @@ class SourceCheckpointTest(unittest.TestCase):
     def run_checkpoint(self, request=None):
         return checkpoint(request or self.request, data_anchor=self.anchor)
 
-    def test_live_lock_recovery_requires_the_same_failed_scan_and_fence(self):
-        identity = self.run_checkpoint()
-        original = self.journal.checkpoint(identity)
-        request = {**self.request, "checkpoint_id": identity}
-        directory = self.paths[0] / "extension-operations"
-        directory.mkdir()
-        for name in (".lock", ".worker.lock"):
-            (directory / name).touch(mode=0o600)
-        digest = RuntimeUpdateStorage(*self.paths).manifest()["digest"]
+    def record_failed_scan(self, digest, changes=None):
         operation = self.journal.operation(self.binding["operation_id"])
         evidence = {
             "installed": self.binding["target"],
@@ -112,8 +108,27 @@ class SourceCheckpointTest(unittest.TestCase):
             "data_preserved": False,
             "verified": False,
         }
+        if changes is not None:
+            failure["data_verification"] = {
+                "changes": changes,
+                "manifest_digest": digest,
+                "manifest_version": 3,
+                "preserved": False,
+            }
         operation["steps"].update(readiness={**evidence, "ready": True}, post_verify=failure)
         self.journal.save_operation(operation)
+        return failure
+
+    def test_live_lock_recovery_requires_the_same_failed_scan_and_fence(self):
+        identity = self.run_checkpoint()
+        original = self.journal.checkpoint(identity)
+        request = {**self.request, "checkpoint_id": identity}
+        directory = self.paths[0] / "extension-operations"
+        directory.mkdir()
+        for name in (".lock", ".worker.lock"):
+            (directory / name).touch(mode=0o600)
+        digest = RuntimeUpdateStorage(*self.paths).manifest()["digest"]
+        failure = self.record_failed_scan(digest)
         with patch(
             "xnobrain.integrations.runtime_source_checkpoint.source_installed_identity",
             return_value=self.binding["target"],
@@ -130,6 +145,72 @@ class SourceCheckpointTest(unittest.TestCase):
         self.assertEqual(steps["post_verify"], result)
         self.assertEqual(result["data_verification"]["extension_locks_added"], 2)
         self.assertTrue(result["verified"])
+        self.assertEqual(self.journal.checkpoint(identity), original)
+        self.assertTrue(self.journal.maintenance()["dispatch_paused"])
+
+    def test_cache_lock_recovery_replays_only_the_original_single_addition(self):
+        identity = self.run_checkpoint()
+        original = self.journal.checkpoint(identity)
+        request = {**self.request, "checkpoint_id": identity, "action": "verify-native-cache-lock"}
+        storage = RuntimeUpdateStorage(*self.paths)
+        prune_cached_packages(self.paths[0])
+        with patch(
+            "xnobrain.integrations.runtime_source_checkpoint.source_installed_identity",
+            return_value=self.binding["target"],
+        ):
+
+            def record_scan():
+                scan = storage.verify(original["manifest"])
+                return self.record_failed_scan(scan["manifest_digest"], scan["changes"])
+
+            other = (self.paths[0] / NATIVE_PACKAGE_CACHE_LOCK).with_name("package.json")
+            other.write_bytes(b"{}")
+            record_scan()
+            with self.assertRaises(ValueError):
+                verify_extension_locks(request, data_anchor=self.anchor)
+            other.unlink()
+            with self.assertRaises(ValueError):
+                verify_extension_locks(request, data_anchor=self.anchor)
+
+            queue_lock = self.paths[0] / "extension-operations" / ".lock"
+            queue_lock.parent.mkdir()
+            queue_lock.touch(mode=0o600)
+            record_scan()
+            for action in ("verify-native-cache-lock", "verify-extension-locks"):
+                with self.subTest(action=action), self.assertRaises(ValueError):
+                    verify_extension_locks({**request, "action": action}, data_anchor=self.anchor)
+            queue_lock.unlink()
+
+            failed = record_scan()
+            self.record_failed_scan(
+                failed["manifest_digest"], {**failed["data_verification"]["changes"], "added": 2}
+            )
+            with self.assertRaises(ValueError):
+                verify_extension_locks(request, data_anchor=self.anchor)
+            failed = record_scan()
+            with self.assertRaises(ValueError):
+                verify_extension_locks(
+                    {**request, "action": "verify-extension-locks"}, data_anchor=self.anchor
+                )
+            with self.assertRaises(ValueError):
+                verify_extension_locks({**request, "generation": 8}, data_anchor=self.anchor)
+            result = verify_extension_locks(request, data_anchor=self.anchor)
+            self.assertEqual(result["verification_method"], "native_cache_lock_v1")
+            self.assertEqual(result["manifest_digest"], failed["manifest_digest"])
+            self.assertTrue(result["data_preserved"])
+            self.assertEqual(result["data_verification"]["extension_locks_added"], 1)
+            self.assertEqual(verify_extension_locks(request, data_anchor=self.anchor), result)
+            # A Gateway retry first invokes post-verify on the installed release.
+            operation = self.journal.operation(self.binding["operation_id"])
+            operation["steps"]["post_verify"] = {**failed, "verified_at": "later"}
+            self.journal.save_operation(operation)
+            result = verify_extension_locks(request, data_anchor=self.anchor)
+            self.state.write_text("modified after proof")
+            with self.assertRaises(ValueError):
+                verify_extension_locks(request, data_anchor=self.anchor)
+        steps = self.journal.operation(self.binding["operation_id"])["steps"]
+        self.assertEqual(steps["post_verify_before_lock_recovery"], failed)
+        self.assertEqual(steps["post_verify"], result)
         self.assertEqual(self.journal.checkpoint(identity), original)
         self.assertTrue(self.journal.maintenance()["dispatch_paused"])
 

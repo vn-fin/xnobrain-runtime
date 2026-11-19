@@ -127,11 +127,16 @@ outside maintenance still persist their state and back off normally. Connector
 state remains part of the exact durable-data proof; it is not excluded from
 verification.
 
-Extension queue startup creates `extension-operations/.lock` and
-`extension-operations/.worker.lock`. Manifest v3 verification accepts their appearance after
-a checkpoint only as empty, single-link regular files with mode 0600 under the
-Runtime data directory. Locks already in the checkpoint must still be present.
-Extension operation records remain part of the durable data comparison.
+The extension worker reconciles its queue and prunes native provider packages
+after maintenance releases dispatch. Manifest v3 records additions of
+`extension-operations/.lock`, `extension-operations/.worker.lock`, and
+`extension-staging/native-packages/.lock` in the Runtime data directory.
+Verification accepts these paths only as empty, single-link regular files with
+mode 0600. The package cache lock must also belong to the Runtime user.
+Its first appearance sets `data_verification.native_package_cache_lock_added`
+and increments both the lock count and the total addition count.
+Locks present at checkpoint must still match. Operation records and cached
+packages participate in the durable data comparison.
 
 Post-verification now distinguishes HTTP 409 `runtime_update_data_not_preserved`
 from `runtime_update_identity_mismatch`. Data mismatch takes precedence when both
@@ -281,14 +286,21 @@ Normal resume remains mandatory; source restoration verification stays strict.
 
 ## Recovering a legacy extension lock verification
 
-A Gateway retry for the affected legacy container can invoke
-`verify-extension-locks` from a separately verified Runtime package.
+A Gateway retry uses a verifier from a newer, independently verified Runtime
+package. The installed source revision selects the check.
+
+| Installed source revision | Offline action | Eligible additions | Receipt method |
+| --- | --- | --- | --- |
+| `bc75e1db04b6fb7694050801de40c63d0053d259` | `verify-extension-locks` | One or both queue locks | `extension_locks_v1` |
+| `ec17832d467e14c041f4e3dd4fcd815a7f34fc2f` | `verify-native-cache-lock` | Only the native provider package cache lock | `native_cache_lock_v1` |
+
 The service stays in maintenance. The helper locks the operation and checkpoint,
-checks the installed source receipt and the original failed scan, then rescans
-the same v3 checkpoint. Only the exact validated queue lock additions qualify.
-The current manifest digest must match the digest from the legacy scan.
+checks the installed source receipt and the original failed scan, and rescans
+the same v3 checkpoint. The computed manifest digest must match the digest
+from the failed scan. Cache lock recovery also requires both scans to report
+exactly one addition and zero other changes.
 
 On success the operation records the earlier failure under
 `post_verify_before_lock_recovery` and the measured proof under `post_verify`
-with method `extension_locks_v1`. The Gateway still runs the normal resume and
-soak phases. A failed proof leaves maintenance in place.
+with the corresponding method. The Gateway runs the normal resume and soak
+phases. A failed proof leaves maintenance in place.

@@ -26,7 +26,12 @@ EXCLUDED_DATA_DIRECTORIES = ("runtime-updates", MEMORY_ACTIVITY_DIRECTORY)
 # and modification time, so a checkpoint never rereads every durable byte.
 MANIFEST_VERSION = 3
 CONTENT_DIGEST_MAX_BYTES = 1024 * 1024
-EXTENSION_LOCK_PATHS = ("extension-operations/.lock", "extension-operations/.worker.lock")
+NATIVE_PACKAGE_CACHE_LOCK = "extension-staging/native-packages/.lock"
+EXTENSION_LOCK_PATHS = (
+    "extension-operations/.lock",
+    "extension-operations/.worker.lock",
+    NATIVE_PACKAGE_CACHE_LOCK,
+)
 
 
 class RuntimeUpdateStorageError(RuntimeError):
@@ -260,6 +265,10 @@ class RuntimeUpdateStorage:
                         or file_stat.S_IMODE(stat.st_mode) != 0o600
                         or stat.st_size != 0
                         or stat.st_nlink != 1
+                        or (
+                            path == self.data_dir / NATIVE_PACKAGE_CACHE_LOCK
+                            and stat.st_uid != os.geteuid()
+                        )
                     ):
                         raise self._unsafe_data(path, "extension_lock", "invalid extension lock")
                 total += stat.st_size
@@ -364,8 +373,8 @@ class RuntimeUpdateStorage:
         added = after.keys() - before.keys()
         # V3 validates these exact Runtime-owned files while scanning. Preserve
         # the real addition count and digest, including for existing checkpoints.
-        lock_additions = added.intersection(f"data/{name}" for name in EXTENSION_LOCK_PATHS)
-        accepted_added = len(lock_additions) if version == 3 else 0
+        lock_additions = self._added_extension_locks(added) if version == 3 and added else set()
+        accepted_added = len(lock_additions)
         counts = {
             "added": len(added),
             "removed": len(before.keys() - after.keys()),
@@ -406,8 +415,23 @@ class RuntimeUpdateStorage:
             "manifest_version": version,
             "changes": counts,
             **({"extension_locks_added": accepted_added} if accepted_added else {}),
+            **(
+                {"native_package_cache_lock_added": True}
+                if NATIVE_PACKAGE_CACHE_LOCK in lock_additions
+                else {}
+            ),
             **({"accepted_removed": accepted_removed} if accepted else {}),
         }
+
+    def _added_extension_locks(self, added: set[str]) -> set[str]:
+        # A data directory nested in the root profile shares its manifest label.
+        for label, root in self.durable_roots():
+            if self.data_dir.is_relative_to(root):
+                prefix = Path(label) / self.data_dir.relative_to(root)
+                return {
+                    name for name in EXTENSION_LOCK_PATHS if (prefix / name).as_posix() in added
+                }
+        return set()
 
     @staticmethod
     def validate_transfer_acceptance(baseline, paths) -> set[str]:

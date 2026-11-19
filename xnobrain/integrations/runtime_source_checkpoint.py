@@ -22,6 +22,11 @@ from .runtime_build_identity import source_installed_identity
 from .runtime_data_volume import verify_volume
 from .runtime_update_storage import RuntimeUpdateStorage, RuntimeUpdateStorageError
 
+LOCK_VERIFICATION_METHODS = {
+    "verify-extension-locks": "extension_locks_v1",
+    "verify-native-cache-lock": "native_cache_lock_v1",
+}
+
 
 def require_stopped(unit: str = "xnobrain-api.service") -> None:
     if unit not in {"xnobrain-api.service", "xnobrain-runtime.service"}:
@@ -196,11 +201,15 @@ def restore_ready(request: dict, *, data_anchor: Path = Path("/srv/xnobrain-data
 
 def verify_extension_locks(request: dict, *, data_anchor: Path) -> dict:
     """Recheck the original v3 checkpoint under the running service's durable gates."""
+    action = request.get("action", "verify-extension-locks")
+    method = LOCK_VERIFICATION_METHODS[action]
     paths, binding, journal = _context(request, data_anchor, stopped=False)
     checkpoint_id = request["checkpoint_id"]
     with update_operation(paths[0]), checkpoint_gate(paths[0]):
         operation, steps, existing = _fenced_checkpoint(journal, binding, checkpoint_id)
-        failed = steps.get("post_verify") or {}
+        last = steps.get("post_verify") or {}
+        original = steps.get("post_verify_before_lock_recovery")
+        failed = original or last
         ready = steps.get("readiness") or {}
         installed = source_installed_identity()
         if (
@@ -209,6 +218,7 @@ def verify_extension_locks(request: dict, *, data_anchor: Path) -> dict:
             or ready.get("ready") is not True
             or ready.get("installed") != binding["target"]
             or installed != binding["target"]
+            or not failed
             or failed.get("installed") != installed
             or failed.get("installed_identity_matches") is not True
             or failed.get("data_preserved") is not False
@@ -223,9 +233,21 @@ def verify_extension_locks(request: dict, *, data_anchor: Path) -> dict:
         verification = RuntimeUpdateStorage(*paths).verify(existing["manifest"])
         count = verification.get("extension_locks_added", 0)
         changes = verification.get("changes", {})
+        cache_added = verification.get("native_package_cache_lock_added", False)
+        if action == "verify-native-cache-lock":
+            expected_locks = (
+                cache_added
+                and count == 1
+                and changes.get("log_appends") == 0
+                and changes.get("sqlite_equivalent") == 0
+                and failed.get("data_verification", {}).get("changes") == changes
+            )
+        else:
+            expected_locks = not cache_added and count in (1, 2)
         if (
             not verification["preserved"]
-            or count not in (1, 2)
+            or not expected_locks
+            or failed.get("data_loss_accepted")
             or changes.get("added") != count
             or changes.get("removed") != 0
             or changes.get("changed") != 0
@@ -241,10 +263,18 @@ def verify_extension_locks(request: dict, *, data_anchor: Path) -> dict:
             "data_preserved": True,
             "manifest_digest": verification["manifest_digest"],
             "data_verification": verification,
-            "verification_method": "extension_locks_v1",
-            "verified_at": iso(),
+            "verification_method": method,
         }
-        steps["post_verify_before_lock_recovery"] = failed
+        # A lost reply can re-enter the helper directly, or the installed
+        # Runtime can repeat its failed scan before the Gateway calls us again.
+        if last.get("verified") is True:
+            if any(last.get(key) != value for key, value in result.items()):
+                raise ValueError("previous lock verification proof differs")
+            return last
+        if original and {**last, "verified_at": None} != {**original, "verified_at": None}:
+            raise ValueError("original failed scan differs")
+        result["verified_at"] = iso()
+        steps.setdefault("post_verify_before_lock_recovery", failed)
         steps["post_verify"] = result
         journal.save_operation({**operation, "steps": steps, "updated_at": iso()})
         return result
@@ -265,7 +295,7 @@ def main() -> None:
             print(checkpoint(request, data_anchor=data_anchor))
         elif action == "restore-ready":
             print(json.dumps(restore_ready(request, data_anchor=data_anchor)))
-        elif action == "verify-extension-locks":
+        elif action in LOCK_VERIFICATION_METHODS:
             print(json.dumps(verify_extension_locks(request, data_anchor=data_anchor)))
         else:
             raise ValueError("unsupported offline action")
