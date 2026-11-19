@@ -185,7 +185,6 @@ RUN install -d -m 0700 /opt/data /opt/data/home /opt/data/home/.config \
 
 ENV PATH="/usr/local/lib/hermes-agent/venv/bin:/opt/hermes-office-tools/bin:/usr/local/bin:${PATH}" \
     RUN_ENV=${RUN_ENV} \
-    PYTHONDONTWRITEBYTECODE=1 \
     HERMES_INSTALL_DIR=/usr/local/lib/hermes-agent \
     HERMES_RUNTIME_PYTHON=/usr/local/lib/hermes-agent/venv/bin/python \
     HERMES_CLI=/usr/local/bin/agent \

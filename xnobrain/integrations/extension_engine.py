@@ -35,7 +35,6 @@ from .extension_policy import (
     atomic_json,
     fail,
     load_state,
-    normalize_plugin_bytecode,
     prune_plugin_artifact,
     read_config,
     safe_child,
@@ -243,7 +242,6 @@ def plugin_remove(profile: Path, name: str) -> dict[str, Any]:
 
 def scan_plugin(path: Path) -> dict[str, Any]:
     """Bound native regex scanning in a separate, credential-free interpreter."""
-    normalize_plugin_bytecode(path)
     tree_digest(path)
     result = _query(path.parent, "scan", {"artifact": str(path)}, timeout=60)
     # The scan child has no reason to do DNS; check plugin MCP hosts here.
@@ -282,7 +280,6 @@ def _private_mcp_findings(path: Path) -> list[dict[str, Any]]:
 def _scan_plugin(path: Path) -> dict[str, Any]:
     from tools import skills_guard
 
-    normalize_plugin_bytecode(path)
     digest = tree_digest(path)
     package_format = detect_plugin_format(path)
     findings = []
@@ -773,8 +770,6 @@ _CHILD_ERRORS = {
         409,
     ),
     "invalid_path": ("Unsafe extension storage", 409),
-    "plugin_unsafe": ("Plugin artifact is unsafe", 409),
-    "plugin_scan_incomplete": ("Plugin exceeds scan limits", 409),
 }
 
 
