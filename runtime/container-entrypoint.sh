@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Plugin and profile code run from reviewed source only. This is set before
+# the first Python invocation so startup helpers cannot write __pycache__ into
+# a workspace or profile artifact.
+export PYTHONDONTWRITEBYTECODE=1
+
 # Validate operator paths before mkdir, template installation or skill sync.
 hermes_python="${HERMES_RUNTIME_PYTHON:-/usr/local/lib/hermes-agent/venv/bin/python}"
 if [[ ! -x "$hermes_python" ]]; then
