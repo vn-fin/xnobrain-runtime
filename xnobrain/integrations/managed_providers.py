@@ -33,6 +33,8 @@ SAFE_ERRORS = {
     "mcp_connection_not_found",
     "mcp_credentials_unavailable",
     "mcp_needs_sign_in",
+    "mcp_oauth_client_unconfigured",
+    "mcp_oauth_admin_consent_required",
 }
 
 

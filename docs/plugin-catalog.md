@@ -2,8 +2,10 @@
 
 ## Control-owned native provider packages
 
-Discover > Plugins includes Sapo, SePay and KiotViet as `kind: native` catalog
-entries. Control owns their definitions, tool names, input schemas, resources,
+Discover > Plugins includes Sapo, SePay, KiotViet and Outlook as `kind: native`
+catalog entries, and Microsoft 365 Work IQ (`microsoft-workiq`) as an official
+remote HTTP OAuth MCP entry (`https://workiq.svc.cloud.microsoft/mcp`). Control
+owns native provider definitions, tool names, input schemas, resources,
 operation enums, connection-field metadata, skills and reference Markdown. Runtime
 ships no provider package, provider identifier list, resource list or operation
 catalog, and `runtime/optional-plugins/` and `xnobrain/assets/kiotviet_operations.json`
@@ -99,12 +101,13 @@ service token. Runtime rejects a missing or invalid recipe with
 ## Managed provider connections
 
 The installed `provider.json` registers exactly the tools Control declares:
-`sapo_read` (read), `sepay_read` (read), `kiotviet_read` (read) and
-`kiotviet_write` (write). Runtime does not embed those names or their resource
-and operation enums. Install, approve and enable the installed package for the
-agent; enter credentials in the plugin detail connection form. Saving and
-testing a connection do not bypass package approval. These tools never fall back
-to profile environment credentials.
+`sapo_read` (read), `sepay_read` (read), `kiotviet_read` (read),
+`kiotviet_write` (write) and `outlook_read` (read). Runtime does not embed those
+names or their resource and operation enums. Install, approve and enable the
+installed package for the agent; enter credentials or sign in via OAuth in the
+plugin detail connection panel. Saving, signing in and testing a connection do
+not bypass package approval. These tools never fall back to profile environment
+credentials.
 
 Control encrypts provider credentials in its existing vault. Runtime stores only
 `provider_connections[plugin_id].connection_id` in extension state and receives

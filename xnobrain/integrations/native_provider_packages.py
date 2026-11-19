@@ -293,6 +293,9 @@ def validate_definition(value: Any) -> dict[str, Any]:
     version = value.get("version")
     if not isinstance(version, str) or not _PACKAGE_VERSION.fullmatch(version):
         raise _invalid("Native provider definition version is invalid")
+    auth_kind = value.get("auth_kind")
+    if auth_kind not in (None, "", "oauth"):
+        raise _invalid("Native provider definition auth kind is invalid")
     name = _localized(value.get("name"), limit=200, field="name")
     description = _localized(value.get("description"), limit=2000, field="description")
     tools = value.get("tools")
@@ -301,10 +304,15 @@ def validate_definition(value: Any) -> dict[str, Any]:
     seen_tools: set[str] = set()
     normalized_tools = [_validate_tool(tool, seen_tools) for tool in tools]
     fields = value.get("connection_fields", [])
-    if not isinstance(fields, list) or not 1 <= len(fields) <= MAX_CONNECTION_FIELDS:
-        raise _invalid("Native provider connection fields are invalid")
-    seen_fields: set[str] = set()
-    normalized_fields = [_validate_field(field, seen_fields) for field in fields]
+    if auth_kind == "oauth":
+        if not isinstance(fields, list) or len(fields) != 0:
+            raise _invalid("Native provider connection fields are invalid")
+        normalized_fields = []
+    else:
+        if not isinstance(fields, list) or not 1 <= len(fields) <= MAX_CONNECTION_FIELDS:
+            raise _invalid("Native provider connection fields are invalid")
+        seen_fields: set[str] = set()
+        normalized_fields = [_validate_field(field, seen_fields) for field in fields]
     skill = value.get("skill")
     if not isinstance(skill, dict):
         raise _invalid("Native provider skill is invalid")
@@ -345,7 +353,7 @@ def validate_definition(value: Any) -> dict[str, Any]:
         if not title.strip():
             raise _invalid("Native provider reference title is empty")
         normalized_references.append({"path": path, "title": title})
-    return {
+    result = {
         "schema_version": SCHEMA_VERSION,
         "revision": revision,
         "id": provider,
@@ -361,6 +369,9 @@ def validate_definition(value: Any) -> dict[str, Any]:
         },
         "references": normalized_references,
     }
+    if auth_kind == "oauth":
+        result["auth_kind"] = "oauth"
+    return result
 
 
 def parse_package(raw: bytes, *, expected_provider: str | None = None) -> NativeProviderPackage:

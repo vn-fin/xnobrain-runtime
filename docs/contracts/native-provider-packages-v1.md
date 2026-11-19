@@ -201,7 +201,8 @@ Installed plugin status adds:
 
 - Package response and total Markdown: 1 MiB.
 - Files: 1 to 32; each non-empty file at most 256 KiB.
-- Definitions: 1 to 16 tools, 1 to 16 connection fields, 0 to 32 references.
+- Definitions: 1 to 16 tools, 1 to 16 connection fields (or 0 connection fields
+  when `auth_kind` is `"oauth"`), 0 to 32 references.
 - Tool input schema: a JSON object with `additionalProperties: false`, at most
   64 KiB, and no `$ref`, `$dynamicRef` or `$recursiveRef`.
 - Provider ID: `^[a-z0-9][a-z0-9_-]{0,63}$`.
