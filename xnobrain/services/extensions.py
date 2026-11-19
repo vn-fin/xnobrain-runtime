@@ -695,27 +695,28 @@ class ExtensionsService:
             raise ServiceError(
                 "Personal workspace required", status=422, code="mcp_workspace_unsupported"
             )
-        if (
-            not _PLUGIN_ID.fullmatch(str(plugin_id or ""))
-            or self._installed_native_definition(profile, plugin_id) is None
-        ):
+        if not _PLUGIN_ID.fullmatch(str(plugin_id or "")):
             raise ServiceError("Unknown provider", status=422, code="invalid_provider")
         with self._lifecycle(agent_id):
             state = self._state(profile)
+            record = state["plugins"].get(plugin_id)
+            if body is not None and plugin_id not in state["plugins"]:
+                raise ServiceError("Install the plugin first", status=404, code="not_found")
+            if self._installed_native_definition(profile, plugin_id, record) is None:
+                raise ServiceError("Unknown provider", status=422, code="invalid_provider")
             mappings = state.setdefault("provider_connections", {})
             if body is None:
                 mappings.pop(plugin_id, None)
             else:
-                if plugin_id not in state["plugins"]:
-                    raise ServiceError("Install the plugin first", status=404, code="not_found")
                 mappings[plugin_id] = {"connection_id": str(UUID(str(body["connection_id"])))}
             self._save(profile, state)
         self._set_mcp_grant(profile, trusted)
         return {"plugin_id": plugin_id, "configured": body is not None}
 
-    def _installed_native_definition(self, profile: Path, plugin_id: str) -> dict[str, Any] | None:
+    def _installed_native_definition(
+        self, profile: Path, plugin_id: str, record: Any
+    ) -> dict[str, Any] | None:
         """Accept a Control-defined provider only from its installed package."""
-        record = self._state(profile)["plugins"].get(plugin_id)
         if not isinstance(record, dict):
             return None
         if self._public_native_package(record.get("native_package")) is None:

@@ -122,9 +122,55 @@ class ExtensionAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(denied.status_code, 401)
         missing = await self.client.put(path, json=payload, headers=self.headers())
         self.assertEqual(missing.status_code, 404, missing.text)
+        self.assertEqual(missing.json()["error"]["code"], "not_found")
         extension_policy.save_state(
             self.profile, {"plugins": {"kiotviet": {}}, "hooks": {}, "mcp": {}, "revision": 1}
         )
+        legacy = await self.client.put(path, json=payload, headers=self.headers())
+        self.assertEqual(legacy.status_code, 422, legacy.text)
+        self.assertEqual(legacy.json()["error"]["code"], "invalid_provider")
+
+        definition = {
+            "schema_version": 1,
+            "id": "kiotviet",
+            "revision": 1,
+            "version": "1.0.0",
+            "name": {"en": "KiotViet"},
+            "description": {"en": "Test provider"},
+            "tools": [
+                {
+                    "name": "get_product",
+                    "mode": "read",
+                    "description": "Get a product by ID",
+                    "input_schema": {"type": "object", "properties": {"id": {"type": "string"}}},
+                }
+            ],
+            "connection_fields": [
+                {
+                    "name": "token",
+                    "kind": "text",
+                    "secret": True,
+                    "required": True,
+                    "max_length": 128,
+                    "label": {"en": "Access token"},
+                }
+            ],
+            "skill": {
+                "name": "kiotviet",
+                "path": "skills/kiotviet/SKILL.md",
+                "description": "Look up products",
+            },
+        }
+        plugin_dir = self.profile / "plugins" / "kiotviet"
+        plugin_dir.mkdir(parents=True)
+        (plugin_dir / "provider.json").write_text(json.dumps(definition), encoding="utf-8")
+        state = extension_policy.load_state(self.profile)
+        state["plugins"]["kiotviet"]["native_package"] = {
+            "schema_version": 1,
+            "definition_revision": 1,
+            "package_sha256": "a" * 64,
+        }
+        extension_policy.save_state(self.profile, state)
         invalid = await self.client.put(
             path, json={"connection_id": "invalid"}, headers=self.headers()
         )
